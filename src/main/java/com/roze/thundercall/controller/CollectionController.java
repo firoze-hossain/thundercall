@@ -36,6 +36,15 @@ public class CollectionController extends BaseController {
         return ok(responses);
     }
 
+    @GetMapping("/{id}/details")
+    public ResponseEntity<BaseResponse<CollectionResponse>> getCollectionWithDetails(
+            @PathVariable Long id,
+            Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        CollectionResponse response = collectionService.getCollectionWithDetails(id, user);
+        return ok(response);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<BaseResponse<CollectionResponse>> getCollection(@PathVariable Long id, Authentication authentication) {
         User user = authService.getUserFromAuthentication(authentication);

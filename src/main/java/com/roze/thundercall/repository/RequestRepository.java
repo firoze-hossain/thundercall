@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface RequestRepository extends JpaRepository<Request, Long>, JpaSpecificationExecutor<Request> {
@@ -14,4 +15,6 @@ public interface RequestRepository extends JpaRepository<Request, Long>, JpaSpec
     Optional<Request> findByNameAndCollectionWorkspaceOwner(@Param("name") String name, @Param("user") User owner);
 
     Optional<Request> findByIdAndCollectionWorkspaceOwner(Long id, User user);
+
+    List<Request> findByCollectionId(Long id);
 }

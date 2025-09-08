@@ -13,6 +13,8 @@ public interface CollectionService {
 
     CollectionResponse getCollectionById(Long id, User user);
 
+    CollectionResponse getCollectionWithDetails(Long id, User user);
+
     CollectionResponse updateCollection(Long id, CollectionRequest request, User user);
 
     void deleteCollection(Long id, User user);

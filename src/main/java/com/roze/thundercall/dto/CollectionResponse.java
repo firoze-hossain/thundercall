@@ -19,7 +19,9 @@ public class CollectionResponse {
     private Long workspaceId;
     private String workspaceName;
     private int requestCount;
+    private int folderCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<RequestResponse> requests;
+    private List<FolderResponse> folderResponses;
 }
