@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<StackPane xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.roze.thundercall.controllers.FeatureTourController"
+           style="-fx-background-color: rgba(0,0,0,0.7);"
+           maxWidth="Infinity" maxHeight="Infinity">
+
+    <!-- Main tour container -->
+    <VBox alignment="CENTER" spacing="20"
+          style="-fx-background-color: white;
+                 -fx-background-radius: 15;
+                 -fx-padding: 30;
+                 -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.5), 20, 0, 0, 5);"
+          maxWidth="500">
+
+        <!-- Close button in top right corner -->
+        <HBox alignment="TOP_RIGHT" spacing="0" style="-fx-padding: 0 0 10 0;">
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button fx:id="cancelButton" text="✕"
+                    style="-fx-background-color: transparent;
+                           -fx-text-fill: #95a5a6;
+                           -fx-font-size: 18px;
+                           -fx-font-weight: bold;
+                           -fx-min-width: 30;
+                           -fx-min-height: 30;
+                           -fx-padding: 0;"
+                    onAction="#handleSkip">
+                <tooltip>
+                    <Tooltip text="Close tour"/>
+                </tooltip>
+            </Button>
+        </HBox>
+
+        <!-- Tour content -->
+        <Label fx:id="titleLabel"
+               style="-fx-font-size: 28px;
+                      -fx-font-weight: bold;
+                      -fx-text-fill: #2c3e50;
+                      -fx-padding: 0 0 5 0;"></Label>
+
+        <Label fx:id="descriptionLabel"
+               style="-fx-font-size: 16px;
+                      -fx-text-fill: #7f8c8d;
+                      -fx-wrap-text: true;"
+               maxWidth="400"
+               textAlignment="CENTER"/>
+
+        <HBox spacing="10" alignment="CENTER">
+            <Label fx:id="stepIndicator" style="-fx-text-fill: #95a5a6; -fx-font-weight: 600;"/>
+            <ProgressBar fx:id="progressBar" prefWidth="200" style="-fx-accent: #ff6c37;"/>
+        </HBox>
+
+        <!-- Navigation buttons -->
+        <HBox spacing="15" alignment="CENTER" style="-fx-padding: 10 0 0 0;">
+            <Button fx:id="skipButton" text="Skip Tour"
+                    style="-fx-text-fill: #95a5a6;
+                           -fx-background-color: transparent;
+                           -fx-border-color: transparent;
+                           -fx-font-weight: 600;"
+                    onAction="#handleSkip"/>
+
+            <Region HBox.hgrow="ALWAYS"/>
+
+            <Button fx:id="previousButton" text="Previous"
+                    style="-fx-background-color: #e0e0e0;
+                           -fx-text-fill: #333;
+                           -fx-font-weight: bold;
+                           -fx-background-radius: 6;
+                           -fx-padding: 8 16;"
+                    onAction="#handlePrevious"/>
+
+            <Button fx:id="nextButton" text="Next"
+                    style="-fx-background-color: #ff6c37;
+                           -fx-text-fill: white;
+                           -fx-font-weight: bold;
+                           -fx-background-radius: 6;
+                           -fx-padding: 8 20;"
+                    onAction="#handleNext"/>
+        </HBox>
+    </VBox>
+
+</StackPane>
