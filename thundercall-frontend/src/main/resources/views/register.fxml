@@ -1,14 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import java.util.*?>
-<?import javafx.scene.*?>
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
+<HBox xmlns="http://javafx.com/javafx/21"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.roze.thundercall.ui.controllers.AuthController"
+      stylesheets="@../css/main.css"
+      styleClass="auth-root">
 
-<AnchorPane xmlns="http://javafx.com/javafx"
-            xmlns:fx="http://javafx.com/fxml"
-            fx:controller="views.Register"
-            prefHeight="400.0" prefWidth="600.0">
+    <!-- ================= Left: brand panel ================= -->
+    <VBox styleClass="brand-panel" alignment="CENTER_LEFT" spacing="18"
+          prefWidth="320" minWidth="280" HBox.hgrow="NEVER">
+        <padding>
+            <Insets top="48" right="36" bottom="48" left="36"/>
+        </padding>
 
-</AnchorPane>
+        <ImageView fitHeight="64" fitWidth="64" preserveRatio="true">
+            <Image url="@../images/logo.png"/>
+        </ImageView>
+
+        <Label text="Thundercall" styleClass="brand-title" wrapText="true"/>
+        <Label text="Build, test and organize your APIs — fast."
+               styleClass="brand-tagline" wrapText="true"/>
+
+        <Region VBox.vgrow="ALWAYS"/>
+
+        <VBox spacing="12">
+            <Label text="⚡  Send requests in one click" styleClass="brand-feature" wrapText="true"/>
+            <Label text="🗂  Collections, folders &amp; history" styleClass="brand-feature" wrapText="true"/>
+            <Label text="🌱  Environments with variables" styleClass="brand-feature" wrapText="true"/>
+        </VBox>
+    </VBox>
+
+    <!-- ================= Right: form ================= -->
+    <StackPane styleClass="auth-form-side" HBox.hgrow="ALWAYS">
+        <VBox styleClass="auth-card" alignment="CENTER_LEFT" spacing="14"
+              maxWidth="380" minWidth="320">
+            <padding>
+                <Insets top="36" right="36" bottom="36" left="36"/>
+            </padding>
+
+            <Label fx:id="authTitle" text="Welcome back" styleClass="auth-title" wrapText="true"/>
+            <Label fx:id="authSubtitle" text="Sign in to continue to your workspace"
+                   styleClass="auth-subtitle" wrapText="true"/>
+
+            <VBox spacing="6">
+                <Label text="USERNAME" styleClass="field-label"/>
+                <TextField fx:id="usernameField" promptText="Enter username or email"/>
+            </VBox>
+
+            <VBox spacing="6">
+                <Label fx:id="emailLabel" text="EMAIL" styleClass="field-label"
+                       visible="false" managed="false"/>
+                <TextField fx:id="emailField" promptText="Enter email"
+                           visible="false" managed="false"/>
+            </VBox>
+
+            <VBox spacing="6">
+                <Label text="PASSWORD" styleClass="field-label"/>
+                <PasswordField fx:id="passwordField" promptText="Enter password"/>
+            </VBox>
+
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Button fx:id="loginButton" text="Sign in" onAction="#handleAuthAction"
+                        styleClass="primary-button" maxWidth="10000" HBox.hgrow="ALWAYS"/>
+                <Button fx:id="registerButton" text="Create account" onAction="#handleAuthAction"
+                        styleClass="primary-button" maxWidth="10000" HBox.hgrow="ALWAYS"
+                        visible="false" managed="false"/>
+                <ProgressIndicator fx:id="loadingSpinner" visible="false"
+                                   prefWidth="24" prefHeight="24"/>
+            </HBox>
+
+            <Button fx:id="browserLoginButton" text="Sign in with browser"
+                    onAction="#handleBrowserLogin"
+                    styleClass="secondary-button" maxWidth="10000"/>
+
+            <Separator styleClass="auth-separator"/>
+
+            <HBox spacing="5" alignment="CENTER">
+                <Hyperlink fx:id="switchToRegisterLink" text="New here? Create an account"
+                           onAction="#switchViewMode" styleClass="auth-link"/>
+                <Hyperlink fx:id="switchToLoginLink" text="Already have an account? Sign in"
+                           onAction="#switchViewMode" styleClass="auth-link"
+                           visible="false" managed="false"/>
+            </HBox>
+        </VBox>
+    </StackPane>
+</HBox>

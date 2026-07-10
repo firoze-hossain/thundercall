@@ -4,7 +4,6 @@ import com.roze.thundercall.api.dto.OnboardingStep;
 import com.roze.thundercall.api.dto.WorkspaceResponse;
 import com.roze.thundercall.api.dto.WorkspaceSetupRequest;
 import com.roze.thundercall.api.entity.*;
-import com.roze.thundercall.api.entity.*;
 import com.roze.thundercall.api.enums.HttpMethod;
 import com.roze.thundercall.api.exception.ResourceExistException;
 import com.roze.thundercall.api.exception.ResourceNotFoundException;
@@ -22,6 +21,18 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * FIXES over the previous version:
+ *  1. getOrCreateDefaultWorkspace(): every user is guaranteed a workspace.
+ *     Called automatically at registration (AuthServiceImpl) and defensively
+ *     by CollectionServiceImpl / EnvironmentServiceImpl, so existing users
+ *     who registered before this fix are healed on their next action.
+ *     Result: "No workspace found" can never reach the UI.
+ *  2. Sample request headers were broken JSON: the old code produced the
+ *     literal string {\"Content-Type\": \"application/json\"} (with real
+ *     backslashes) and the sample body was wrapped in stray quote marks.
+ *     Both are now valid JSON.
+ */
 @Service
 @RequiredArgsConstructor
 public class WorkspaceServiceImpl implements WorkspaceService {
@@ -38,34 +49,40 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         if (workspaceRepository.existsByOwner(user)) {
             throw new ResourceExistException("User already has workspace");
         }
-        // Debug: Check user ID
-        if (user.getId() == null) {
-            throw new IllegalArgumentException("User must have a valid ID");
-        }
-        Workspace workspace = Workspace.builder()
-                .name(request.getWorkspaceName() != null ?
-                        request.getWorkspaceName() : user.getUsername() + "'s Workspace")
-                .description("Default workspace")
-                .owner(user)
-                .collections(new ArrayList<>())
-                .build();
-        workspaceRepository.save(workspace);
-        if (request.getCreateSampleData() == null || request.getCreateSampleData()) {
-            Collection defaultCollection = createDefaultCollection(workspace);
-            collectionRepository.save(defaultCollection);
-            workspace.getCollections().add(defaultCollection);
-            workspaceRepository.save(workspace);
-        }
+        Workspace workspace = createWorkspace(user,
+                request.getWorkspaceName(),
+                request.getCreateSampleData() == null || request.getCreateSampleData());
         tutorialStatusService.getOrCreateTutorialStatus(user);
-
         return workspaceMapper.toResponse(workspace);
     }
 
     @Override
-    public boolean hasCompletedOnboarding(User user) {
-        return tutorialStatusService.isTutorialCompleted(user);
+    @Transactional
+    public Workspace getOrCreateDefaultWorkspace(User user) {
+        return workspaceRepository.findByOwner(user)
+                .stream()
+                .findFirst()
+                .orElseGet(() -> createWorkspace(user, null, true));
     }
 
+    private Workspace createWorkspace(User user, String name, boolean withSampleData) {
+        Workspace workspace = Workspace.builder()
+                .name(name != null && !name.isBlank()
+                        ? name
+                        : user.getUsername() + "'s Workspace")
+                .description("Default workspace")
+                .owner(user)
+                .collections(new ArrayList<>())
+                .build();
+        workspace = workspaceRepository.save(workspace);
+
+        if (withSampleData) {
+            Collection defaultCollection = createDefaultCollection(workspace);
+            workspace.getCollections().add(defaultCollection);
+            workspace = workspaceRepository.save(workspace);
+        }
+        return workspace;
+    }
 
     private Collection createDefaultCollection(Workspace workspace) {
         Collection collection = Collection.builder()
@@ -84,34 +101,38 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
     private List<Request> createSampleRequests(Collection collection) {
         List<Request> requests = new ArrayList<>();
+
         Request getRequest = Request.builder()
                 .name("Get Users Example")
                 .method(HttpMethod.GET)
                 .url("https://jsonplaceholder.typicode.com/users")
                 .collection(collection)
                 .description("Example GET request to fetch users")
-                .headers("{\\\"Content-Type\\\": \\\"application/json\\\"}")
+                .headers("{\"Accept\": \"application/json\"}")
                 .build();
 
         Request postRequest = Request.builder()
                 .name("Post Create User")
                 .method(HttpMethod.POST)
                 .url("https://jsonplaceholder.typicode.com/users")
-                .body("\"\"\n" +
-                        "                    {\n" +
-                        "                        \"name\": \"John Doe\",\n" +
-                        "                        \"email\": \"john.doe@example.com\",\n" +
-                        "                        \"username\": \"johndoe\"\n" +
-                        "                    }\n" +
-                        "                    \"\"")
+                .body("{\n" +
+                        "  \"name\": \"John Doe\",\n" +
+                        "  \"email\": \"john.doe@example.com\",\n" +
+                        "  \"username\": \"johndoe\"\n" +
+                        "}")
                 .collection(collection)
                 .description("Example POST request to create a user")
-                .headers("{\\\"Content-Type\\\": \\\"application/json\\\"}")
+                .headers("{\"Content-Type\": \"application/json\"}")
                 .build();
+
         requests.add(getRequest);
         requests.add(postRequest);
         return requests;
+    }
 
+    @Override
+    public boolean hasCompletedOnboarding(User user) {
+        return tutorialStatusService.isTutorialCompleted(user);
     }
 
     @Override
@@ -132,7 +153,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
     @Override
     public List<WorkspaceResponse> getUserWorkspaces(User user) {
-        return workspaceRepository.findByOwner(user).stream().map(workspaceMapper::toResponse)
+        return workspaceRepository.findByOwner(user).stream()
+                .map(workspaceMapper::toResponse)
                 .toList();
     }
 

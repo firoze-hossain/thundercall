@@ -14,8 +14,8 @@ import com.roze.thundercall.api.mapper.RequestMapper;
 import com.roze.thundercall.api.repository.CollectionRepository;
 import com.roze.thundercall.api.repository.FolderRepository;
 import com.roze.thundercall.api.repository.RequestRepository;
-import com.roze.thundercall.api.repository.WorkspaceRepository;
 import com.roze.thundercall.api.service.CollectionService;
+import com.roze.thundercall.api.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,12 +23,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * FIX: createCollection() no longer throws "No workspace found".
+ * It asks WorkspaceService to get-or-create the user's default workspace,
+ * which also heals accounts registered before workspaces were auto-created.
+ */
 @Service
 @RequiredArgsConstructor
 public class CollectionServiceImpl implements CollectionService {
     private final CollectionRepository collectionRepository;
     private final CollectionMapper collectionMapper;
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceService workspaceService;
     private final FolderRepository folderRepository;
     private final FolderMapper folderMapper;
     private final RequestRepository requestRepository;
@@ -37,10 +42,7 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional
     public CollectionResponse createCollection(CollectionRequest request, User user) {
-        Workspace workspace = workspaceRepository.findByOwner(user)
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("No workspace found"));
+        Workspace workspace = workspaceService.getOrCreateDefaultWorkspace(user);
         Collection collection = collectionMapper.toEntity(request);
         collection.setWorkspace(workspace);
         collection.setRequests(new ArrayList<>());
@@ -59,11 +61,11 @@ public class CollectionServiceImpl implements CollectionService {
         Collection collection = collectionRepository.findByIdAndWorkspaceOwner(id, user)
                 .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
 
-        List<FolderResponse> folderResponses = folderRepository.findByCollectionIdAndCollectionWorkspaceOwner(id, user)
+        List<FolderResponse> folderResponses = folderRepository
+                .findByCollectionIdAndCollectionWorkspaceOwner(id, user)
                 .stream()
                 .map(folder -> {
                     FolderResponse folderResponse = folderMapper.toResponse(folder);
-                    // Set request count for each folder
                     Long requestCount = folderRepository.countRequestsByFolderId(folder.getId());
                     folderResponse.setRequestCount(requestCount != null ? requestCount.intValue() : 0);
                     return folderResponse;
@@ -107,7 +109,6 @@ public class CollectionServiceImpl implements CollectionService {
         collection.setDescription(request.description());
         Collection updatedCollection = collectionRepository.save(collection);
         return collectionMapper.toShortResponse(updatedCollection);
-
     }
 
     @Override

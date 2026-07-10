@@ -8,38 +8,39 @@ import com.roze.thundercall.api.entity.Workspace;
 import com.roze.thundercall.api.exception.ResourceNotFoundException;
 import com.roze.thundercall.api.mapper.EnvironmentMapper;
 import com.roze.thundercall.api.repository.EnvironmentRepository;
-import com.roze.thundercall.api.repository.WorkspaceRepository;
 import com.roze.thundercall.api.service.EnvironmentService;
+import com.roze.thundercall.api.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * FIX: createEnvironment() no longer throws "No workspace found".
+ * The user's default workspace is created on demand via WorkspaceService.
+ */
 @Service
 @RequiredArgsConstructor
 public class EnvironmentServiceImpl implements EnvironmentService {
     private final EnvironmentRepository environmentRepository;
     private final EnvironmentMapper environmentMapper;
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceService workspaceService;
 
     @Override
     @Transactional
     public EnvironmentResponse createEnvironment(EnvironmentRequest request, User user) {
-        Workspace workspace = workspaceRepository.findByOwner(user)
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("No workspace found"));
-        
-        // Check if environment with same name already exists
+        Workspace workspace = workspaceService.getOrCreateDefaultWorkspace(user);
+
         environmentRepository.findByNameAndWorkspaceOwner(request.name(), user)
                 .ifPresent(env -> {
-                    throw new IllegalArgumentException("Environment with name '" + request.name() + "' already exists");
+                    throw new IllegalArgumentException(
+                            "Environment with name '" + request.name() + "' already exists");
                 });
-        
+
         Environment environment = environmentMapper.toEntity(request);
         environment.setWorkspace(workspace);
-        
+
         Environment savedEnvironment = environmentRepository.save(environment);
         return environmentMapper.toResponse(savedEnvironment);
     }
@@ -64,22 +65,22 @@ public class EnvironmentServiceImpl implements EnvironmentService {
     public EnvironmentResponse updateEnvironment(Long id, EnvironmentRequest request, User user) {
         Environment environment = environmentRepository.findByIdAndWorkspaceOwner(id, user)
                 .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
-        
-        // Check if another environment with the same name exists (excluding current one)
+
         environmentRepository.findByNameAndWorkspaceOwner(request.name(), user)
                 .ifPresent(existingEnv -> {
                     if (!existingEnv.getId().equals(id)) {
-                        throw new IllegalArgumentException("Environment with name '" + request.name() + "' already exists");
+                        throw new IllegalArgumentException(
+                                "Environment with name '" + request.name() + "' already exists");
                     }
                 });
-        
+
         environment.setName(request.name());
         environment.setDescription(request.description());
         environment.setVariables(request.variables());
         if (request.isActive() != null) {
             environment.setIsActive(request.isActive());
         }
-        
+
         Environment updatedEnvironment = environmentRepository.save(environment);
         return environmentMapper.toResponse(updatedEnvironment);
     }
@@ -105,7 +106,7 @@ public class EnvironmentServiceImpl implements EnvironmentService {
     public EnvironmentResponse toggleEnvironmentStatus(Long id, User user, Boolean isActive) {
         Environment environment = environmentRepository.findByIdAndWorkspaceOwner(id, user)
                 .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
-        
+
         environment.setIsActive(isActive);
         Environment updatedEnvironment = environmentRepository.save(environment);
         return environmentMapper.toResponse(updatedEnvironment);

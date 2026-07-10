@@ -8,6 +8,7 @@ import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.utils.AlertUtils;
+import com.roze.thundercall.ui.utils.VariableResolver;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -532,43 +533,28 @@ public class MainController implements Initializable {
     }
 
     private void updateEnvironmentVariables(String environmentName) {
-        if ("No Environment".equals(environmentName) || environmentName == null) {
-            return;
+        // Intentionally does NOT rewrite the URL field or headers table.
+        // Templates like {{baseUrl}} stay visible in the UI and are resolved
+        // at send time by VariableResolver (see handleSendRequest). Switching
+        // environments now works repeatedly, and saved requests keep their
+        // {{variables}} instead of hard-coded values.
+        if (environmentName == null || "No Environment".equals(environmentName)) {
+            updateStatus("No environment selected");
+        } else {
+            updateStatus("Environment: " + environmentName);
         }
+    }
 
-        EnvironmentResponse env = environmentsMap.get(environmentName);
-        if (env != null && env.getVariables() != null) {
-            // Apply environment variables to the URL field if it contains variables
-            String currentUrl = urlField.getText();
-            if (currentUrl != null && !currentUrl.trim().isEmpty()) {
-                for (Map.Entry<String, String> entry : env.getVariables().entrySet()) {
-                    String variable = "{{" + entry.getKey() + "}}";
-                    if (currentUrl.contains(variable)) {
-                        currentUrl = currentUrl.replace(variable, entry.getValue());
-                    }
-                }
-                urlField.setText(currentUrl);
-            }
-
-            // Apply environment variables to headers
-            for (Map.Entry<String, String> entry : env.getVariables().entrySet()) {
-                String headerKey = entry.getKey();
-                if (headerKey.startsWith("header_")) {
-                    String actualHeader = headerKey.substring(7); // Remove "header_" prefix
-                    boolean headerExists = false;
-                    for (KeyValuePair header : headersData) {
-                        if (actualHeader.equalsIgnoreCase(header.getKey())) {
-                            header.setValue(entry.getValue());
-                            headerExists = true;
-                            break;
-                        }
-                    }
-                    if (!headerExists) {
-                        headersData.add(new KeyValuePair(actualHeader, entry.getValue(), "From environment"));
-                    }
-                }
-            }
+    /** Variables of the currently selected environment, or an empty map. */
+    private Map<String, String> currentEnvironmentVariables() {
+        String selected = environmentCombo.getValue();
+        if (selected == null || "No Environment".equals(selected)) {
+            return Collections.emptyMap();
         }
+        EnvironmentResponse env = environmentsMap.get(selected);
+        return (env != null && env.getVariables() != null)
+                ? env.getVariables()
+                : Collections.emptyMap();
     }
 
     private void setupCollectionsTree() {
@@ -1012,10 +998,26 @@ public class MainController implements Initializable {
             sendButton.setDisable(true);
         }
 
-        String url = buildFullUrl();
+        // Resolve {{variables}} from the selected environment at send time.
+        // The UI keeps showing the template; only the outgoing request is resolved.
+        Map<String, String> vars = currentEnvironmentVariables();
+        String url = VariableResolver.resolve(buildFullUrl(), vars);
         String method = methodCombo.getValue();
-        Map<String, String> headers = buildHeaders();
-        String body = buildRequestBody();
+        Map<String, String> headers = VariableResolver.resolveMap(buildHeaders(), vars);
+        String body = VariableResolver.resolve(buildRequestBody(), vars);
+
+        Set<String> unresolved = new LinkedHashSet<>(VariableResolver.findUnresolved(url, vars));
+        unresolved.addAll(VariableResolver.findUnresolved(body, vars));
+        if (!unresolved.isEmpty()) {
+            isRequestInProgress = false;
+            if (sendButton != null) {
+                sendButton.setDisable(false);
+            }
+            AlertUtils.showError("Unresolved variables: " + String.join(", ", unresolved)
+                    + "\nSelect an environment that defines them, or fix the spelling.");
+            updateStatus("Unresolved variables");
+            return;
+        }
 
         // Use Task for proper JavaFX threading
         Task<Optional<ApiResponse>> requestTask = new Task<Optional<ApiResponse>>() {

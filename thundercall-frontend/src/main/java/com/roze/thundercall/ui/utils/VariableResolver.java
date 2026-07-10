@@ -1,6 +1,7 @@
 package com.roze.thundercall.ui.utils;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -8,26 +9,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Resolves {{variable}} placeholders the Postman way: at SEND TIME,
- * without mutating what the user typed.
+ * Resolves {{variable}} placeholders the Postman way: at SEND TIME, without
+ * mutating what the user typed. The URL field keeps showing {{baseUrl}}/users
+ * while the actual request goes out with the value substituted.
  *
- * The current implementation in MainController.updateEnvironmentVariables()
- * rewrites the URL field text when an environment is selected. That is
- * destructive: once {{baseUrl}} is replaced with http://localhost:8080,
- * switching environments no longer works and the saved request loses its
- * template. Instead, keep the template in the UI and resolve copies of the
- * url / headers / body just before building the ApiRequest:
- *
- *   Map<String,String> vars = currentEnvironmentVariables(); // may be empty
- *   String url    = VariableResolver.resolve(buildFullUrl(), vars);
- *   String body   = VariableResolver.resolve(buildRequestBody(), vars);
- *   Map<String,String> headers = VariableResolver.resolveMap(buildHeaders(), vars);
- *
- *   Set<String> missing = VariableResolver.findUnresolved(url, vars);
- *   if (!missing.isEmpty()) {
- *       AlertUtils.showError("Unresolved variables: " + String.join(", ", missing));
- *       return;
- *   }
+ * See FIXES_GUIDE.md for the exact MainController integration (two small
+ * edits: handleSendRequest and updateEnvironmentVariables).
  */
 public final class VariableResolver {
 
@@ -44,8 +31,7 @@ public final class VariableResolver {
         Matcher m = VARIABLE.matcher(input);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
-            String name = m.group(1);
-            String value = variables.get(name);
+            String value = variables.get(m.group(1));
             // Leave unknown variables untouched so findUnresolved can report them
             m.appendReplacement(sb, Matcher.quoteReplacement(value != null ? value : m.group(0)));
         }
@@ -58,7 +44,7 @@ public final class VariableResolver {
         if (map == null || map.isEmpty()) {
             return map;
         }
-        Map<String, String> out = new java.util.LinkedHashMap<>();
+        Map<String, String> out = new LinkedHashMap<>();
         map.forEach((k, v) -> out.put(resolve(k, variables), resolve(v, variables)));
         return out;
     }
