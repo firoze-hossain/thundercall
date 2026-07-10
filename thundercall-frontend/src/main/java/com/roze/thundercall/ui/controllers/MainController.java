@@ -28,6 +28,7 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
@@ -111,6 +112,23 @@ public class MainController implements Initializable {
     private Map<TreeItem<String>, Long> collectionIdMap = new HashMap<>();
     private Map<TreeItem<String>, Long> folderIdMap = new HashMap<>();
     private Map<TreeItem<String>, Long> requestIdMap = new HashMap<>();
+    private final Map<TreeItem<String>, String> requestMethodMap = new HashMap<>();
+    private TreeItem<String> fullCollectionsRoot;
+    @FXML
+    private TextField collectionsSearchField;
+    @FXML
+    private TextField globalSearchField;
+    private final javafx.scene.image.Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
+    private final javafx.scene.image.Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
+
+    private static javafx.scene.image.Image loadTreeIcon(String path) {
+        try {
+            return new javafx.scene.image.Image(
+                    Objects.requireNonNull(MainController.class.getResourceAsStream(path)));
+        } catch (Exception e) {
+            return null;
+        }
+    }
     private Map<String, EnvironmentResponse> environmentsMap = new HashMap<>();
     @FXML
     private ToggleButton noneBodyTypeButton;
@@ -142,8 +160,18 @@ public class MainController implements Initializable {
         Platform.runLater(() -> {
             if (urlField != null && urlField.getScene() != null) {
                 ThemeManager.apply(urlField.getScene());
+                // Global search: Ctrl+K, like Postman
+                urlField.getScene().getAccelerators().put(
+                        new javafx.scene.input.KeyCodeCombination(
+                                javafx.scene.input.KeyCode.K,
+                                javafx.scene.input.KeyCombination.CONTROL_DOWN),
+                        () -> openGlobalSearch(""));
             }
         });
+        if (collectionsSearchField != null) {
+            collectionsSearchField.textProperty()
+                    .addListener((obs, oldVal, newVal) -> applyCollectionsFilter(newVal));
+        }
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -191,23 +219,42 @@ public class MainController implements Initializable {
     }
 
     private void setupTreeViewContextMenu() {
-        // Create context menu for TreeView
+        // Postman-style context menu (right-click or the ⋯ button on a row)
         treeContextMenu = new ContextMenu();
-        MenuItem newRequestItem = new MenuItem("New Request");
-        MenuItem newFolderItem = new MenuItem("New Folder");
+
+        MenuItem addRequestItem = new MenuItem("Add request");
+        MenuItem addFolderItem = new MenuItem("Add folder");
+        MenuItem runItem = new MenuItem("Run");
+        MenuItem shareItem = new MenuItem("Share");
+        MenuItem copyLinkItem = new MenuItem("Copy link");
         MenuItem renameItem = new MenuItem("Rename");
         MenuItem duplicateItem = new MenuItem("Duplicate");
         MenuItem deleteItem = new MenuItem("Delete");
 
-        newRequestItem.setOnAction(event -> handleAddRequestToCollection());
-        newFolderItem.setOnAction(event -> handleNewFolder());
+        addRequestItem.setOnAction(event -> handleAddRequestToCollection());
+        addFolderItem.setOnAction(event -> handleNewFolder());
         renameItem.setOnAction(event -> handleRenameItem());
         duplicateItem.setOnAction(event -> handleDuplicateItem());
         deleteItem.setOnAction(event -> handleDeleteItem());
 
+        // Not implemented yet — shown to match Postman, disabled to stay honest
+        runItem.setDisable(true);
+        shareItem.setDisable(true);
+        copyLinkItem.setDisable(true);
+
+        renameItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+E"));
+        duplicateItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+D"));
+        deleteItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Delete"));
+        deleteItem.getStyleClass().add("danger-menu-item");
+
         treeContextMenu.getItems().addAll(
-                newRequestItem,
-                newFolderItem,
+                addRequestItem,
+                addFolderItem,
+                new SeparatorMenuItem(),
+                runItem,
+                new SeparatorMenuItem(),
+                shareItem,
+                copyLinkItem,
                 new SeparatorMenuItem(),
                 renameItem,
                 duplicateItem,
@@ -264,6 +311,7 @@ public class MainController implements Initializable {
             collectionIdMap.clear();
             folderIdMap.clear();
             requestIdMap.clear();
+            requestMethodMap.clear();
 
             for (CollectionResponse collectionResponse : collectionResponses) {
                 TreeItem<String> collectionItem = new TreeItem<>(collectionResponse.getName());
@@ -281,6 +329,9 @@ public class MainController implements Initializable {
                                 if (requestResponse.getFolderId() != null && requestResponse.getFolderId().equals(folderResponse.getId())) {
                                     TreeItem<String> requestItem = new TreeItem<>(requestResponse.getName());
                                     requestIdMap.put(requestItem, requestResponse.getId());
+                                    if (requestResponse.getMethod() != null) {
+                                        requestMethodMap.put(requestItem, requestResponse.getMethod().name());
+                                    }
                                     folderItem.getChildren().add(requestItem);
                                 }
                             }
@@ -295,6 +346,9 @@ public class MainController implements Initializable {
                         if (requestResponse.getFolderId() == null) {
                             TreeItem<String> requestItem = new TreeItem<>(requestResponse.getName());
                             requestIdMap.put(requestItem, requestResponse.getId());
+                            if (requestResponse.getMethod() != null) {
+                                requestMethodMap.put(requestItem, requestResponse.getMethod().name());
+                            }
                             collectionItem.getChildren().add(requestItem);
                         }
                     }
@@ -303,38 +357,22 @@ public class MainController implements Initializable {
                 root.getChildren().add(collectionItem);
             }
 
+            fullCollectionsRoot = root;
             collectionsTree.setRoot(root);
 
-            // Set up custom cell factory for context menu
-            collectionsTree.setCellFactory(tv -> {
-                TreeCell<String> cell = new TreeCell<String>() {
-                    @Override
-                    protected void updateItem(String item, boolean empty) {
-                        super.updateItem(item, empty);
-                        if (empty || item == null) {
-                            setText(null);
-                            setGraphic(null);
-                        } else {
-                            setText(item);
-                        }
-                    }
-                };
-
-                // Add context menu to each cell
-                cell.emptyProperty().addListener((obs, wasEmpty, isEmpty) -> {
-                    if (isEmpty) {
-                        cell.setContextMenu(null);
-                    } else {
-                        cell.setContextMenu(treeContextMenu);
-                    }
-                });
-
-                return cell;
-            });
+            // Postman-style cells: colored method badges, folder/collection
+            // icons, hover + / ⋯ buttons
+            collectionsTree.setCellFactory(tv -> createPostmanTreeCell());
 
             // Expand all collections by default for better UX
             for (TreeItem<String> item : root.getChildren()) {
                 item.setExpanded(true);
+            }
+
+            // Re-apply any active sidebar search
+            if (collectionsSearchField != null && collectionsSearchField.getText() != null
+                    && !collectionsSearchField.getText().isBlank()) {
+                applyCollectionsFilter(collectionsSearchField.getText());
             }
         });
     }
@@ -731,6 +769,267 @@ public class MainController implements Initializable {
         collectionsPane.setVisible(pane == collectionsPane);
         environmentsPane.setVisible(pane == environmentsPane);
         historyPane.setVisible(pane == historyPane);
+    }
+
+    // ==================== Postman-style collections tree ====================
+
+    private TreeCell<String> createPostmanTreeCell() {
+        return new TreeCell<>() {
+            private final Label methodLabel = new Label();
+            private final Label nameLabel = new Label();
+            private final Button plusBtn = new Button("+");
+            private final Button moreBtn = new Button("⋯");
+            private final Region spacer = new Region();
+            private final HBox box = new HBox(6);
+
+            {
+                methodLabel.getStyleClass().add("tree-method");
+                plusBtn.getStyleClass().add("tree-inline-btn");
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                plusBtn.setTooltip(new Tooltip("Add request"));
+                moreBtn.setTooltip(new Tooltip("More actions"));
+                HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+                box.setAlignment(Pos.CENTER_LEFT);
+
+                plusBtn.setOnAction(e -> {
+                    selectThisItem();
+                    handleAddRequestToCollection();
+                });
+                moreBtn.setOnAction(e -> {
+                    selectThisItem();
+                    if (treeContextMenu != null) {
+                        treeContextMenu.show(moreBtn, javafx.geometry.Side.BOTTOM, 0, 0);
+                    }
+                });
+                // Buttons appear on hover only, like Postman
+                plusBtn.visibleProperty().bind(hoverProperty());
+                moreBtn.visibleProperty().bind(hoverProperty());
+            }
+
+            private void selectThisItem() {
+                if (getTreeItem() != null) {
+                    collectionsTree.getSelectionModel().select(getTreeItem());
+                }
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setContextMenu(null);
+                    return;
+                }
+                setText(null);
+                setContextMenu(treeContextMenu);
+                nameLabel.setText(item);
+                box.getChildren().clear();
+
+                TreeItem<String> treeItem = getTreeItem();
+                String method = treeItem != null ? requestMethodMap.get(treeItem) : null;
+                if (method != null) {
+                    // Request row: colored method badge + name (like Postman)
+                    methodLabel.setText(methodBadge(method));
+                    methodLabel.getStyleClass().removeIf(s -> s.startsWith("method-"));
+                    methodLabel.getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
+                    box.getChildren().addAll(methodLabel, nameLabel);
+                } else {
+                    // Collection/folder row: icon + name + hover actions
+                    javafx.scene.image.Image icon =
+                            (treeItem != null && collectionIdMap.containsKey(treeItem))
+                                    ? collectionIconImg : folderIconImg;
+                    if (icon != null) {
+                        javafx.scene.image.ImageView iv = new javafx.scene.image.ImageView(icon);
+                        iv.setFitWidth(14);
+                        iv.setFitHeight(14);
+                        iv.setPreserveRatio(true);
+                        box.getChildren().add(iv);
+                    }
+                    box.getChildren().addAll(nameLabel, spacer, plusBtn, moreBtn);
+                }
+                setGraphic(box);
+            }
+        };
+    }
+
+    private static String methodBadge(String method) {
+        switch (method) {
+            case "DELETE":
+                return "DEL";
+            case "OPTIONS":
+                return "OPT";
+            case "PATCH":
+                return "PAT";
+            default:
+                return method;
+        }
+    }
+
+    /** Filters the sidebar tree by name, keeping matching branches (Postman-like). */
+    private void applyCollectionsFilter(String query) {
+        if (fullCollectionsRoot == null || collectionsTree == null) {
+            return;
+        }
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (q.isEmpty()) {
+            collectionsTree.setRoot(fullCollectionsRoot);
+            return;
+        }
+        TreeItem<String> filteredRoot = new TreeItem<>("Collections");
+        filteredRoot.setExpanded(true);
+        for (TreeItem<String> collection : fullCollectionsRoot.getChildren()) {
+            TreeItem<String> copy = filteredCopy(collection, q);
+            if (copy != null) {
+                filteredRoot.getChildren().add(copy);
+            }
+        }
+        collectionsTree.setRoot(filteredRoot);
+    }
+
+    private TreeItem<String> filteredCopy(TreeItem<String> source, String q) {
+        boolean selfMatch = source.getValue() != null
+                && source.getValue().toLowerCase(Locale.ROOT).contains(q);
+        List<TreeItem<String>> matchedChildren = new ArrayList<>();
+        for (TreeItem<String> child : source.getChildren()) {
+            TreeItem<String> copy = filteredCopy(child, q);
+            if (copy != null) {
+                matchedChildren.add(copy);
+            }
+        }
+        if (!selfMatch && matchedChildren.isEmpty()) {
+            return null;
+        }
+        TreeItem<String> copy = new TreeItem<>(source.getValue());
+        copy.setExpanded(true);
+        copy.getChildren().addAll(matchedChildren);
+        // Register the copy in the id maps so selection/actions keep working
+        Long collectionId = collectionIdMap.get(source);
+        if (collectionId != null) collectionIdMap.put(copy, collectionId);
+        Long folderId = folderIdMap.get(source);
+        if (folderId != null) folderIdMap.put(copy, folderId);
+        Long requestId = requestIdMap.get(source);
+        if (requestId != null) requestIdMap.put(copy, requestId);
+        String method = requestMethodMap.get(source);
+        if (method != null) requestMethodMap.put(copy, method);
+        return copy;
+    }
+
+    // ==================== Global search (Ctrl+K), like Postman ====================
+
+    @FXML
+    private void handleGlobalSearch() {
+        openGlobalSearch(globalSearchField != null ? globalSearchField.getText() : "");
+        if (globalSearchField != null) {
+            globalSearchField.clear();
+        }
+    }
+
+    private void openGlobalSearch(String initialQuery) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Search Thundercall");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        TextField searchField = new TextField(initialQuery == null ? "" : initialQuery);
+        searchField.setPromptText("Search collections, folders and requests");
+        ListView<TreeItem<String>> results = new ListView<>();
+        results.setPrefSize(480, 320);
+        results.setPlaceholder(new Label("Type to search your workspace"));
+        results.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(TreeItem<String> item, boolean empty) {
+                super.updateItem(item, empty);
+                getStyleClass().removeIf(s -> s.startsWith("method-"));
+                if (empty || item == null) {
+                    setText(null);
+                    return;
+                }
+                String kind;
+                String method = requestMethodMap.get(item);
+                if (method != null) {
+                    kind = method;
+                    getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
+                } else if (collectionIdMap.containsKey(item)) {
+                    kind = "Collection";
+                } else {
+                    kind = "Folder";
+                }
+                setText(kind + "  ·  " + treePath(item));
+            }
+        });
+
+        Runnable refresh = () -> {
+            String q = searchField.getText() == null
+                    ? "" : searchField.getText().trim().toLowerCase(Locale.ROOT);
+            List<TreeItem<String>> hits = new ArrayList<>();
+            if (!q.isEmpty() && fullCollectionsRoot != null) {
+                collectSearchHits(fullCollectionsRoot, q, hits);
+            }
+            results.getItems().setAll(hits);
+        };
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> refresh.run());
+        searchField.setOnAction(e -> {
+            if (!results.getItems().isEmpty()) {
+                revealInTree(results.getItems().get(0));
+                dialog.close();
+            }
+        });
+        results.setOnMouseClicked(e -> {
+            TreeItem<String> selected = results.getSelectionModel().getSelectedItem();
+            if (e.getClickCount() == 2 && selected != null) {
+                revealInTree(selected);
+                dialog.close();
+            }
+        });
+
+        VBox content = new VBox(8, searchField, results);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+        refresh.run();
+        Platform.runLater(searchField::requestFocus);
+        dialog.showAndWait();
+    }
+
+    private void collectSearchHits(TreeItem<String> node, String q, List<TreeItem<String>> out) {
+        for (TreeItem<String> child : node.getChildren()) {
+            if (child.getValue() != null
+                    && child.getValue().toLowerCase(Locale.ROOT).contains(q)) {
+                out.add(child);
+            }
+            collectSearchHits(child, q, out);
+        }
+    }
+
+    private String treePath(TreeItem<String> item) {
+        StringBuilder sb = new StringBuilder(item.getValue());
+        TreeItem<String> parent = item.getParent();
+        while (parent != null && parent.getParent() != null) {
+            sb.insert(0, parent.getValue() + " / ");
+            parent = parent.getParent();
+        }
+        return sb.toString();
+    }
+
+    private void revealInTree(TreeItem<String> item) {
+        if (collectionsSearchField != null) {
+            collectionsSearchField.clear();
+        }
+        collectionsTree.setRoot(fullCollectionsRoot);
+        if (railCollectionsBtn != null) {
+            railCollectionsBtn.setSelected(true);
+        }
+        showSidebarPane(collectionsPane);
+        TreeItem<String> parent = item.getParent();
+        while (parent != null) {
+            parent.setExpanded(true);
+            parent = parent.getParent();
+        }
+        collectionsTree.getSelectionModel().select(item);
+        int row = collectionsTree.getRow(item);
+        if (row >= 0) {
+            collectionsTree.scrollTo(row);
+        }
     }
 
     @FXML

@@ -712,3 +712,53 @@
     -fx-font-weight: bold;
     -fx-padding: 0 6 0 0;
 }
+
+/* ============================================================
+   Search + Postman tree extras
+   ============================================================ */
+.global-search {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-muted;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-padding: 5 12 5 12;
+    -fx-font-size: 12px;
+}
+.global-search:focused { -fx-border-color: -accent; }
+
+.sidebar-search {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-muted;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 6;
+    -fx-padding: 5 10 5 10;
+    -fx-font-size: 12px;
+}
+.sidebar-search:focused { -fx-border-color: -accent; }
+
+/* Method badge inside tree rows (GET / POST / DEL ...) */
+.tree-method {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-min-width: 34;
+    -fx-alignment: CENTER_RIGHT;
+}
+
+/* Hover + / ⋯ buttons on collection & folder rows */
+.tree-inline-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 0 5 0 5;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.tree-inline-btn:hover { -fx-background-color: -bg-active; -fx-text-fill: -text-primary; }
+
+/* Red Delete item in the context menu, like Postman */
+.danger-menu-item .label { -fx-text-fill: -danger; }

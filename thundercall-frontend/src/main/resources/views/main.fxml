@@ -62,6 +62,10 @@
                     <Label text="API Network" styleClass="nav-item"/>
 
                     <Region HBox.hgrow="ALWAYS"/>
+                    <TextField fx:id="globalSearchField" styleClass="global-search"
+                               promptText="Search Thundercall  (Ctrl+K)" prefWidth="300"
+                               onAction="#handleGlobalSearch"/>
+                    <Region HBox.hgrow="ALWAYS"/>
 
                     <HBox alignment="CENTER" spacing="5" styleClass="connection-status">
                         <Circle radius="4" styleClass="status-indicator"/>
@@ -181,11 +185,13 @@
                                     <MenuItem text="New Collection" onAction="#handleNewCollection"/>
                                     <MenuItem text="Refresh" onAction="#handleRefreshCollections"/>
                                     <SeparatorMenuItem/>
-                                    <MenuItem text="Import" onAction="#handleImportCollections"/>
-                                    <MenuItem text="Export" onAction="#handleExportCollections"/>
+                                    <MenuItem text="Import Collection…" onAction="#handleImportCollections"/>
+                                    <MenuItem text="Export Collection…" onAction="#handleExportCollections"/>
                                 </items>
                             </MenuButton>
                         </HBox>
+                        <TextField fx:id="collectionsSearchField" styleClass="sidebar-search"
+                                   promptText="Search collections"/>
                         <TreeView fx:id="collectionsTree" styleClass="collectionResponses-tree"
                                   showRoot="false" VBox.vgrow="ALWAYS"/>
                     </VBox>

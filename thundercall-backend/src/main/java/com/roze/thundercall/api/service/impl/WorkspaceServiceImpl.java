@@ -5,7 +5,6 @@ import com.roze.thundercall.api.dto.WorkspaceResponse;
 import com.roze.thundercall.api.dto.WorkspaceSetupRequest;
 import com.roze.thundercall.api.entity.*;
 import com.roze.thundercall.api.enums.HttpMethod;
-import com.roze.thundercall.api.exception.ResourceExistException;
 import com.roze.thundercall.api.exception.ResourceNotFoundException;
 import com.roze.thundercall.api.mapper.TutorialStatusMapper;
 import com.roze.thundercall.api.mapper.WorkspaceMapper;
@@ -46,9 +45,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     @Transactional
     public WorkspaceResponse setupInitialWorkspace(User user, WorkspaceSetupRequest request) {
-        if (workspaceRepository.existsByOwner(user)) {
-            throw new ResourceExistException("User already has workspace");
-        }
+        // FIX (HTTP 409): users can create additional workspaces, like
+        // Postman. The old code threw "User already has workspace" — but
+        // since registration now auto-creates a default workspace, that
+        // made "Create Workspace" impossible for everyone.
         Workspace workspace = createWorkspace(user,
                 request.getWorkspaceName(),
                 request.getCreateSampleData() == null || request.getCreateSampleData());
