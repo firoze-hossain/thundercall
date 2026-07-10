@@ -15,8 +15,14 @@ public class FolderService {
     private static final String BASE_URL = "/folders";
 
     public static Optional<FolderResponse> createFolder(String name, String description, Long collectionId) {
+        return createFolder(name, description, collectionId, null);
+    }
+
+    /** Nested folders: pass the parent folder id to create a folder inside a folder. */
+    public static Optional<FolderResponse> createFolder(String name, String description,
+                                                        Long collectionId, Long parentFolderId) {
         try {
-            FolderRequest request = new FolderRequest(name, description, collectionId);
+            FolderRequest request = new FolderRequest(name, description, collectionId, parentFolderId);
             BaseResponse<FolderResponse> response = ApiClient.post(BASE_URL, request, new TypeReference<BaseResponse<FolderResponse>>() {
             });
             if (response != null && response.isSuccess()) {

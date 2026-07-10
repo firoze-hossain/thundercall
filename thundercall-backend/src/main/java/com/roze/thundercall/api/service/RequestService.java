@@ -12,5 +12,7 @@ public interface RequestService {
 
     RequestResponse getRequestById(Long id, User user);
 
+    RequestResponse updateRequest(Long id, ApiRequest apiRequest, User user);
+
     void deleteRequest(Long id, User user);
 }

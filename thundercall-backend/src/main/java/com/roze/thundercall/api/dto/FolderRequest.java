@@ -8,5 +8,6 @@ public record FolderRequest(
     String name,
     String description,
     @NotNull(message = "Collection ID is required")
-    Long collectionId
+    Long collectionId,
+    Long parentFolderId
 ) {}

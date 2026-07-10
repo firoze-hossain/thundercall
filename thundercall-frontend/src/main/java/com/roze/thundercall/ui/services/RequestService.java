@@ -27,6 +27,22 @@ public class RequestService {
         return Optional.empty();
     }
 
+
+    /** Saves the current editor state back into an EXISTING request (Ctrl+S). */
+    public static Optional<RequestResponse> updateRequest(Long id, ApiRequest apiRequest) {
+        try {
+            BaseResponse<RequestResponse> response = ApiClient.put(BASE_URL + "/" + id, apiRequest,
+                    new TypeReference<BaseResponse<RequestResponse>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to save request: " + e.getMessage()));
+        }
+        return Optional.empty();
+    }
+
     public static Optional<RequestResponse> saveRequest(ApiRequest request) {
         try {
             BaseResponse<RequestResponse> response = ApiClient.post(BASE_URL, request, new TypeReference<BaseResponse<RequestResponse>>() {

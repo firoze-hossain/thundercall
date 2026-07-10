@@ -42,6 +42,15 @@ public class RequestController extends BaseController {
         return ok(requestResponse);
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<BaseResponse<RequestResponse>> updateRequest(@PathVariable Long id,
+                                                                       @RequestBody ApiRequest apiRequest,
+                                                                       Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        RequestResponse updated = requestService.updateRequest(id, apiRequest, user);
+        return ok(updated, "Request updated successfully");
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<BaseResponse<Void>> deleteRequest(@PathVariable Long id, Authentication authentication) {
         User user = authService.getUserFromAuthentication(authentication);

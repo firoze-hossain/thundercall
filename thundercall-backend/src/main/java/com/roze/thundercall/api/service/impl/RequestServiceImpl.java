@@ -31,19 +31,9 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * Executes user-composed HTTP requests and persists history.
- *
- * FIXES over the previous version:
- *  1. Headers are parsed as JSON (the frontend sends a JSON object via
- *     new JSONObject(headers).toString()). The old regex-based parsing
- *     stripped braces/quotes and split on commas, which corrupted any
- *     header containing a comma (Accept, Date, Cookie...) or a JSON value.
- *  2. HTTP method dispatch uses valueOf mapping instead of a 20-line switch.
- *  3. 4xx/5xx responses are returned as normal responses (requires the
- *     no-throw RestTemplate from HttpClientConfig), so the response body,
- *     headers and status reach the UI exactly like Postman.
- *  4. Content-Type defaults to JSON only when a body is present and the
- *     user did not set one.
+ * Includes the earlier fixes (JSON header parsing instead of the broken
+ * regex; friendly connection errors) plus the NEW updateRequest used by
+ * Ctrl+S / the Save button to save edits back into an existing request.
  */
 @Service
 @RequiredArgsConstructor
@@ -83,7 +73,6 @@ public class RequestServiceImpl implements RequestService {
                     .success(success)
                     .build();
         } catch (ResourceAccessException e) {
-            // Connection refused / timeout / unknown host
             long duration = Duration.between(startTime, Instant.now()).toMillis();
             saveRequestHistory(apiRequest, null, duration, user, false);
             return ApiResponse.builder()
@@ -110,8 +99,9 @@ public class RequestServiceImpl implements RequestService {
     public RequestResponse saveRequestToCollection(ApiRequest apiRequest, User user) {
         Collection collection = collectionRepository.findByIdAndWorkspaceOwner(apiRequest.collectionId(), user)
                 .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        Folder folder = null;
         if (apiRequest.folderId() != null) {
-            Folder folder = folderRepository.findByIdAndCollectionWorkspaceOwner(apiRequest.folderId(), user)
+            folder = folderRepository.findByIdAndCollectionWorkspaceOwner(apiRequest.folderId(), user)
                     .orElseThrow(() -> new ResourceNotFoundException("Folder not found or you don't have access"));
             if (!folder.getCollection().getId().equals(collection.getId())) {
                 throw new IllegalArgumentException("Folder does not belong to the specified collection");
@@ -119,6 +109,9 @@ public class RequestServiceImpl implements RequestService {
         }
         Request request = requestMapper.toEntity(apiRequest);
         request.setCollection(collection);
+        if (folder != null) {
+            request.setFolder(folder);
+        }
         Request savedRequest = requestRepository.save(request);
         return requestMapper.toResponse(savedRequest);
     }
@@ -128,6 +121,27 @@ public class RequestServiceImpl implements RequestService {
         Request request = requestRepository.findByIdAndCollectionWorkspaceOwner(id, user)
                 .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
         return requestMapper.toResponse(request);
+    }
+
+    /**
+     * NEW: saves the current editor state back into an existing request —
+     * used by the Save button / Ctrl+S when a saved request tab is active.
+     * The request stays in its collection/folder.
+     */
+    @Override
+    @Transactional
+    public RequestResponse updateRequest(Long id, ApiRequest apiRequest, User user) {
+        Request request = requestRepository.findByIdAndCollectionWorkspaceOwner(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
+        if (apiRequest.name() != null && !apiRequest.name().isBlank()) {
+            request.setName(apiRequest.name());
+        }
+        request.setMethod(apiRequest.method());
+        request.setUrl(apiRequest.url());
+        request.setHeaders(apiRequest.headers());
+        request.setBody(apiRequest.body());
+        Request saved = requestRepository.save(request);
+        return requestMapper.toResponse(saved);
     }
 
     @Override
@@ -144,11 +158,6 @@ public class RequestServiceImpl implements RequestService {
         return org.springframework.http.HttpMethod.valueOf(method.name());
     }
 
-    /**
-     * Headers arrive from the frontend as a JSON object string,
-     * e.g. {"Authorization":"Bearer x","Accept":"application/json"}.
-     * Falls back to "Key: Value" line format for legacy saved requests.
-     */
     private HttpHeaders prepareHeaders(String headersString, String body) {
         HttpHeaders headers = new HttpHeaders();
         if (headersString != null && !headersString.isBlank()) {
@@ -161,7 +170,6 @@ public class RequestServiceImpl implements RequestService {
                     }
                 });
             } catch (Exception notJson) {
-                // Legacy fallback: one "Key: Value" pair per line
                 for (String line : headersString.split("\\r?\\n")) {
                     int idx = line.indexOf(':');
                     if (idx > 0) {
@@ -192,7 +200,6 @@ public class RequestServiceImpl implements RequestService {
             }
             requestHistoryRepository.save(history);
         } catch (Exception e) {
-            // History persistence must never break request execution
             log.warn("Failed to save request history: {}", e.getMessage());
         }
     }

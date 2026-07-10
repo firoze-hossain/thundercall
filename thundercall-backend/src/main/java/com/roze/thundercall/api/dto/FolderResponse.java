@@ -16,6 +16,7 @@ public class FolderResponse {
     private String name;
     private String description;
     private Long collectionId;
+    private Long parentFolderId;
     private String collectionName;
     private int requestCount;
     private LocalDateTime createdAt;

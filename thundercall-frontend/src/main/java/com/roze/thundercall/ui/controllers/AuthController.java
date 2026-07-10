@@ -57,12 +57,45 @@ public class AuthController {
     @FXML
     public void initialize() {
         updateViewMode();
-        // Remember me: pre-fill saved credentials so one click signs in
+        // Remember me: pre-fill the most recent saved account
         if (rememberMeCheck != null && CredentialStore.hasSaved()) {
             usernameField.setText(CredentialStore.savedUsername());
             passwordField.setText(CredentialStore.savedPassword());
             rememberMeCheck.setSelected(true);
         }
+        setupCredentialSuggestions();
+    }
+
+    /**
+     * Browser-style suggestions: clicking the username field shows the saved
+     * accounts; picking one fills BOTH username and password.
+     */
+    private void setupCredentialSuggestions() {
+        usernameField.setOnMouseClicked(e -> showAccountSuggestions());
+    }
+
+    private void showAccountSuggestions() {
+        java.util.List<String> accounts = CredentialStore.savedUsernames();
+        if (accounts.isEmpty()) {
+            return;
+        }
+        ContextMenu suggestions = new ContextMenu();
+        for (String account : accounts) {
+            MenuItem item = new MenuItem("\uD83D\uDC64  " + account);
+            item.setOnAction(ev -> {
+                usernameField.setText(account);
+                passwordField.setText(CredentialStore.passwordFor(account));
+                if (rememberMeCheck != null) {
+                    rememberMeCheck.setSelected(true);
+                }
+            });
+            suggestions.getItems().add(item);
+        }
+        SeparatorMenuItem sep = new SeparatorMenuItem();
+        MenuItem forget = new MenuItem("Forget saved accounts");
+        forget.setOnAction(ev -> CredentialStore.clear());
+        suggestions.getItems().addAll(sep, forget);
+        suggestions.show(usernameField, javafx.geometry.Side.BOTTOM, 0, 0);
     }
 
     @FXML
@@ -120,6 +153,9 @@ public class AuthController {
             try {
                 AuthResponse response = ApiClient.register(username, email, password);
                 Platform.runLater(() -> {
+                    if (rememberMeCheck != null && rememberMeCheck.isSelected()) {
+                        CredentialStore.save(username, password);
+                    }
                     TokenManager.storeTokens(response);
                     AlertUtils.showSuccess("Registration successful");
                     Main.showMainView();

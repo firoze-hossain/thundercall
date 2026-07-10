@@ -21,6 +21,7 @@ public class FolderMapper {
                 .name(folder.getName())
                 .description(folder.getDescription())
                 .collectionId(folder.getCollection().getId())
+                .parentFolderId(folder.getParentFolder() != null ? folder.getParentFolder().getId() : null)
                 .collectionName(folder.getCollection().getName())
                 .requestCount(folder.getRequests() != null ? folder.getRequests().size() : 0)
                 .createdAt(folder.getCreatedAt())

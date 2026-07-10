@@ -38,7 +38,18 @@ public class FolderServiceImpl implements FolderService {
         
         Folder folder = folderMapper.toEntity(request);
         folder.setCollection(collection);
-        
+
+        // Nested folders: attach to the parent when one is given
+        if (request.parentFolderId() != null) {
+            Folder parent = folderRepository
+                    .findByIdAndCollectionWorkspaceOwner(request.parentFolderId(), user)
+                    .orElseThrow(() -> new ResourceNotFoundException("Parent folder not found"));
+            if (!parent.getCollection().getId().equals(collection.getId())) {
+                throw new IllegalArgumentException("Parent folder belongs to a different collection");
+            }
+            folder.setParentFolder(parent);
+        }
+
         Folder savedFolder = folderRepository.save(folder);
         return folderMapper.toResponse(savedFolder);
     }

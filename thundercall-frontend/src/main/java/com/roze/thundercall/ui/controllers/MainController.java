@@ -174,6 +174,12 @@ public class MainController implements Initializable {
                                 javafx.scene.input.KeyCode.K,
                                 javafx.scene.input.KeyCombination.CONTROL_DOWN),
                         () -> openGlobalSearch(""));
+                // Save request: Ctrl+S, like Postman
+                urlField.getScene().getAccelerators().put(
+                        new javafx.scene.input.KeyCodeCombination(
+                                javafx.scene.input.KeyCode.S,
+                                javafx.scene.input.KeyCombination.CONTROL_DOWN),
+                        this::handleSaveRequest);
             }
         });
         if (collectionsSearchField != null) {
@@ -348,37 +354,43 @@ public class MainController implements Initializable {
                 collectionIdMap.put(collectionItem, collectionResponse.getId());
 
                 // Add folders if they exist
+                // Build the folder hierarchy (nested folders, like Postman)
+                Map<Long, TreeItem<String>> folderItemsById = new HashMap<>();
                 if (collectionResponse.getFolderResponses() != null && !collectionResponse.getFolderResponses().isEmpty()) {
                     for (FolderResponse folderResponse : collectionResponse.getFolderResponses()) {
                         TreeItem<String> folderItem = new TreeItem<>(folderResponse.getName());
                         folderIdMap.put(folderItem, folderResponse.getId());
-
-                        // Add requests in folders if they exist
-                        if (folderResponse.getRequestCount() > 0 && collectionResponse.getRequestResponses() != null) {
-                            for (RequestResponse requestResponse : collectionResponse.getRequestResponses()) {
-                                if (requestResponse.getFolderId() != null && requestResponse.getFolderId().equals(folderResponse.getId())) {
-                                    TreeItem<String> requestItem = new TreeItem<>(requestResponse.getName());
-                                    requestIdMap.put(requestItem, requestResponse.getId());
-                                    if (requestResponse.getMethod() != null) {
-                                        requestMethodMap.put(requestItem, requestResponse.getMethod().name());
-                                    }
-                                    folderItem.getChildren().add(requestItem);
-                                }
-                            }
+                        folderItemsById.put(folderResponse.getId(), folderItem);
+                    }
+                    // Attach each folder to its parent folder, or to the collection
+                    for (FolderResponse folderResponse : collectionResponse.getFolderResponses()) {
+                        TreeItem<String> folderItem = folderItemsById.get(folderResponse.getId());
+                        TreeItem<String> parent = folderResponse.getParentFolderId() != null
+                                ? folderItemsById.get(folderResponse.getParentFolderId())
+                                : null;
+                        if (parent != null) {
+                            parent.getChildren().add(folderItem);
+                        } else {
+                            collectionItem.getChildren().add(folderItem);
                         }
-                        collectionItem.getChildren().add(folderItem);
+                        folderItem.setExpanded(true);
                     }
                 }
 
-                // Add requests directly in collection if they exist
+                // Place every request under its folder (any depth) or the collection
                 if (collectionResponse.getRequestResponses() != null && !collectionResponse.getRequestResponses().isEmpty()) {
                     for (RequestResponse requestResponse : collectionResponse.getRequestResponses()) {
-                        if (requestResponse.getFolderId() == null) {
-                            TreeItem<String> requestItem = new TreeItem<>(requestResponse.getName());
-                            requestIdMap.put(requestItem, requestResponse.getId());
-                            if (requestResponse.getMethod() != null) {
-                                requestMethodMap.put(requestItem, requestResponse.getMethod().name());
-                            }
+                        TreeItem<String> requestItem = new TreeItem<>(requestResponse.getName());
+                        requestIdMap.put(requestItem, requestResponse.getId());
+                        if (requestResponse.getMethod() != null) {
+                            requestMethodMap.put(requestItem, requestResponse.getMethod().name());
+                        }
+                        TreeItem<String> parent = requestResponse.getFolderId() != null
+                                ? folderItemsById.get(requestResponse.getFolderId())
+                                : null;
+                        if (parent != null) {
+                            parent.getChildren().add(requestItem);
+                        } else {
                             collectionItem.getChildren().add(requestItem);
                         }
                     }
@@ -830,7 +842,7 @@ public class MainController implements Initializable {
             darkBtn.setSelected(true);
         }
 
-        VBox content = new VBox(10, darkBtn, lightBtn);
+        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(10, darkBtn, lightBtn);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
@@ -1465,6 +1477,42 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSaveRequest() {
+        // Postman behaviour: if the active tab is an already-saved request,
+        // Save / Ctrl+S updates it IN PLACE (same collection & folder).
+        RequestTabState currentState = null;
+        if (requestTabPane != null) {
+            Tab currentTab = requestTabPane.getSelectionModel().getSelectedItem();
+            currentState = currentTab != null ? tabStates.get(currentTab) : null;
+        }
+        if (currentState != null && currentState.requestId != null) {
+            Long requestId = currentState.requestId;
+            String requestName = currentState.name;
+            new Thread(() -> {
+                try {
+                    ApiRequest apiRequest = new ApiRequest();
+                    apiRequest.setName(requestName);
+                    apiRequest.setMethod(HttpMethod.valueOf(methodCombo.getValue()));
+                    apiRequest.setUrl(urlField.getText());
+                    apiRequest.setHeaders(new JSONObject(buildHeaders()).toString());
+                    apiRequest.setBody(buildRequestBody());
+                    Optional<RequestResponse> updated = RequestService.updateRequest(requestId, apiRequest);
+                    Platform.runLater(() -> {
+                        if (updated.isPresent()) {
+                            refreshCollectionsTree();
+                            updateStatus("Saved: " + requestName);
+                        } else {
+                            AlertUtils.showError("Failed to save request");
+                        }
+                    });
+                } catch (Exception e) {
+                    Platform.runLater(() -> handleApiError(e, "Saving request"));
+                }
+            }).start();
+            return;
+        }
+
+        // Unsaved tab: ask for a name and a destination (selected
+        // collection/folder in the tree)
         String name = showSaveDialog();
         if (name != null && !name.trim().isEmpty()) {
             TreeItem<String> selectedItem = collectionsTree.getSelectionModel().getSelectedItem();
@@ -2041,23 +2089,23 @@ public class MainController implements Initializable {
     private void handleNewFolder() {
         TreeItem<String> selectedItem = collectionsTree.getSelectionModel().getSelectedItem();
 
-        // Works from a collection OR from a folder/request inside it —
-        // the folder is created in the enclosing collection. (Nested
-        // folders need backend support for a parent-folder id; the data
-        // model is flat today, so we stay honest instead of silently
-        // dropping the folder.)
         Long collectionId = selectedItem != null ? getCollectionIdFromTreeItem(selectedItem) : null;
+        // Nested folders, like Postman: creating from a folder puts the new
+        // folder INSIDE it; creating from a collection makes a top-level one
+        Long parentFolderId = selectedItem != null ? folderIdMap.get(selectedItem) : null;
         if (collectionId != null) {
             TextInputDialog dialog = new TextInputDialog();
             dialog.setTitle("New Folder");
-            dialog.setHeaderText("Create a new folder");
+            dialog.setHeaderText(parentFolderId != null
+                    ? "Create a folder inside \"" + selectedItem.getValue() + "\""
+                    : "Create a new folder");
             dialog.setContentText("Folder name:");
             ThemeManager.styleDialog(dialog.getDialogPane());
 
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(name -> {
                 if (!name.trim().isEmpty()) {
-                    createNewFolder(name, collectionId);
+                    createNewFolder(name, collectionId, parentFolderId);
                 }
             });
         } else {
@@ -2445,10 +2493,10 @@ public class MainController implements Initializable {
         }).start();
     }
 
-    private void createNewFolder(String name, Long collectionId) {
+    private void createNewFolder(String name, Long collectionId, Long parentFolderId) {
         if (collectionId != null) {
             new Thread(() -> {
-                Optional<FolderResponse> folder = FolderService.createFolder(name, "", collectionId);
+                Optional<FolderResponse> folder = FolderService.createFolder(name, "", collectionId, parentFolderId);
                 if (folder.isPresent()) {
                     Platform.runLater(() -> {
                         refreshCollectionsTree();
