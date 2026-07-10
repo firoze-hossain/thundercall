@@ -1,5 +1,6 @@
 package com.roze.thundercall.ui.models;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -22,6 +23,8 @@ public class CollectionResponse {
     private int folderCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    // Backend serializes this list as "requests" — alias keeps it deserializing
+    @JsonAlias("requests")
     private List<RequestResponse> requestResponses;
     private List<FolderResponse> folderResponses;
 }

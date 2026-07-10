@@ -8,6 +8,7 @@ import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.utils.AlertUtils;
+import com.roze.thundercall.ui.utils.ScriptRunner;
 import com.roze.thundercall.ui.utils.ThemeManager;
 import com.roze.thundercall.ui.utils.VariableResolver;
 import javafx.application.Platform;
@@ -23,6 +24,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.*;
+import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -80,6 +82,10 @@ public class MainController implements Initializable {
     @FXML
     private TextArea testsArea;
     @FXML
+    private TextArea preRequestScriptsArea;
+    @FXML
+    private TextArea postRequestScriptsArea;
+    @FXML
     private ListView<String> testResultsList;
     @FXML
     private WebView responsePreview;
@@ -124,6 +130,8 @@ public class MainController implements Initializable {
     private Label workspaceNameLabel;
     @FXML
     private TabPane requestTabPane;
+    @FXML
+    private ListView<EnvironmentResponse> environmentsList;
     private final Map<Tab, RequestTabState> tabStates = new HashMap<>();
     private boolean switchingTabs = false;
     private final javafx.scene.image.Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
@@ -187,6 +195,7 @@ public class MainController implements Initializable {
                     .addListener((obs, oldVal, newVal) -> applyCollectionsFilter(newVal));
         }
         setupRequestTabs();
+        setupEnvironmentsList();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -300,6 +309,23 @@ public class MainController implements Initializable {
 
         // Initialize form data table
         setupKeyValueTable(formDataTable, formData, "Key", "Value", "Description");
+
+        // Default to "None" so the state is always visible
+        if (bodyTypeGroup.getSelectedToggle() == null && noneBodyTypeButton != null) {
+            noneBodyTypeButton.setSelected(true);
+        }
+
+        // FIX: typing a body while "None" is selected silently sent NO body
+        // (your login JSON never left the app → server said "Required request
+        // body is missing"). Typing now auto-selects "Raw", like Postman.
+        bodyTextArea.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && !newVal.isBlank() && rawBodyTypeButton != null) {
+                Toggle selected = bodyTypeGroup.getSelectedToggle();
+                if (selected == null || selected == noneBodyTypeButton) {
+                    rawBodyTypeButton.setSelected(true);
+                }
+            }
+        });
     }
 
     private void loadCollectionsFromServer() {
@@ -433,6 +459,10 @@ public class MainController implements Initializable {
                                 environmentCombo.getItems().add(env.getName());
                                 environmentsMap.put(env.getName(), env);
                             }
+                        }
+
+                        if (environmentsList != null) {
+                            environmentsList.getItems().setAll(environments.get());
                         }
 
                         if (!environmentCombo.getItems().isEmpty()) {
@@ -814,6 +844,12 @@ public class MainController implements Initializable {
 
             // Load body
             bodyTextArea.setText(requestResponse.getBody());
+            if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
+                    && rawBodyTypeButton != null) {
+                rawBodyTypeButton.setSelected(true);
+            } else if (noneBodyTypeButton != null) {
+                noneBodyTypeButton.setSelected(true);
+            }
 
             updateStatus("Request loaded: " + requestResponse.getName());
         });
@@ -904,6 +940,133 @@ public class MainController implements Initializable {
         collectionsPane.setVisible(pane == collectionsPane);
         environmentsPane.setVisible(pane == environmentsPane);
         historyPane.setVisible(pane == historyPane);
+    }
+
+    /**
+     * Runs a script (Postman pm.* patterns via ScriptRunner) and applies any
+     * pm.environment.set/unset results to the SELECTED environment — locally
+     * right away (so {{vars}} resolve on the next send) and persisted to the
+     * server in the background.
+     */
+    private void runScriptsAndApply(String script, String responseBody, int statusCode, String label) {
+        if (script == null || script.isBlank()) {
+            return;
+        }
+        Map<String, String> current = new LinkedHashMap<>(currentEnvironmentVariables());
+        ScriptRunner.Result result = ScriptRunner.run(script, responseBody, statusCode, current);
+        result.log.forEach(line -> System.out.println("[" + label + "] " + line));
+        if (result.setVariables.isEmpty() && result.unsetVariables.isEmpty()) {
+            return;
+        }
+        String envName = environmentCombo.getValue();
+        EnvironmentResponse env = envName != null ? environmentsMap.get(envName) : null;
+        if (env == null) {
+            updateStatus(label + ": select an environment to store variables");
+            return;
+        }
+        Map<String, String> merged = new LinkedHashMap<>(
+                env.getVariables() != null ? env.getVariables() : Collections.emptyMap());
+        merged.putAll(result.setVariables);
+        result.unsetVariables.forEach(merged::remove);
+        env.setVariables(merged); // effective immediately for {{variables}}
+        updateStatus(label + ": " + (result.setVariables.isEmpty()
+                ? "variables updated"
+                : "set " + String.join(", ", result.setVariables.keySet())));
+        new Thread(() -> EnvironmentService.updateEnvironmentVariables(env.getId(), merged)).start();
+    }
+
+    // ==================== Environments sidebar ====================
+
+    private void setupEnvironmentsList() {
+        if (environmentsList == null) {
+            return;
+        }
+        environmentsList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(EnvironmentResponse item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null
+                        : item.getName()
+                        + (Boolean.TRUE.equals(item.getIsActive()) ? "" : "  (inactive)"));
+            }
+        });
+        environmentsList.setOnMouseClicked(e -> {
+            EnvironmentResponse selected = environmentsList.getSelectionModel().getSelectedItem();
+            if (e.getClickCount() == 2 && selected != null) {
+                openEnvironmentEditor(selected);
+            }
+        });
+    }
+
+    /** Postman-style variable editor: key/value table with add/delete/save. */
+    private void openEnvironmentEditor(EnvironmentResponse env) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Environment");
+        dialog.setHeaderText("Variables of \"" + env.getName() + "\"");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        TableView<KeyValuePair> table = new TableView<>();
+        ObservableList<KeyValuePair> data = FXCollections.observableArrayList();
+        if (env.getVariables() != null) {
+            env.getVariables().forEach((k, v) -> data.add(new KeyValuePair(k, v, "")));
+        }
+        table.setItems(data);
+        table.setEditable(true);
+        table.setPrefSize(460, 260);
+
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Variable");
+        keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
+        keyCol.setCellFactory(TextFieldTableCell.forTableColumn());
+        keyCol.setOnEditCommit(e -> e.getRowValue().setKey(e.getNewValue()));
+        keyCol.setPrefWidth(170);
+
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
+        valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
+        valueCol.setOnEditCommit(e -> e.getRowValue().setValue(e.getNewValue()));
+        valueCol.setPrefWidth(260);
+
+        table.getColumns().add(keyCol);
+        table.getColumns().add(valueCol);
+
+        Button addBtn = new Button("Add Variable");
+        addBtn.setOnAction(e -> data.add(new KeyValuePair("KEY", "value", "")));
+        Button deleteBtn = new Button("Delete");
+        deleteBtn.setOnAction(e -> {
+            KeyValuePair selected = table.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                data.remove(selected);
+            }
+        });
+        HBox buttons = new HBox(8, addBtn, deleteBtn);
+
+        VBox content = new VBox(10, table, buttons);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(button -> {
+            if (button == ButtonType.OK) {
+                Map<String, String> variables = new LinkedHashMap<>();
+                for (KeyValuePair kv : data) {
+                    if (kv.getKey() != null && !kv.getKey().isBlank()) {
+                        variables.put(kv.getKey().trim(), kv.getValue() == null ? "" : kv.getValue());
+                    }
+                }
+                new Thread(() -> {
+                    Optional<EnvironmentResponse> updated =
+                            EnvironmentService.updateEnvironmentVariables(env.getId(), variables);
+                    Platform.runLater(() -> {
+                        if (updated.isPresent()) {
+                            updateStatus("Environment saved: " + env.getName());
+                            loadEnvironments();
+                        } else {
+                            AlertUtils.showError("Failed to save environment variables");
+                        }
+                    });
+                }).start();
+            }
+        });
     }
 
     // ==================== Postman-style request tabs ====================
@@ -1667,6 +1830,10 @@ public class MainController implements Initializable {
             sendButton.setDisable(true);
         }
 
+        // Run pre-request scripts first (they may set environment variables)
+        runScriptsAndApply(preRequestScriptsArea != null ? preRequestScriptsArea.getText() : null,
+                null, -1, "Pre-request script");
+
         // Resolve {{variables}} from the selected environment at send time.
         // The UI keeps showing the template; only the outgoing request is resolved.
         Map<String, String> vars = currentEnvironmentVariables();
@@ -1729,6 +1896,11 @@ public class MainController implements Initializable {
                 }
 
                 updateStatus("Request completed");
+
+                // Post-response scripts: pm.environment.set / pm.response.json()
+                runScriptsAndApply(
+                        postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null,
+                        apiResponse.getResponse(), apiResponse.getStatusCode(), "Script");
             } else {
                 AlertUtils.showError("Request failed with no response");
                 updateStatus("Request failed");

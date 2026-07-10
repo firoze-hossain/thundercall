@@ -216,7 +216,8 @@
                             </Button>
                         </HBox>
                         <Label styleClass="sidebar-hint" wrapText="true"
-                               text="Create environments to manage variables like {{baseUrl}}. Pick the active one from the selector at the top right."/>
+                               text="Double-click an environment to edit its variables. Pick the active one at the top right."/>
+                        <ListView fx:id="environmentsList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
 
                     <!-- History pane -->
@@ -435,11 +436,11 @@
                                 <VBox spacing="10" styleClass="scripts-panel">
                                     <Label text="Pre-request Scripts" styleClass="scripts-section-label"/>
                                     <TextArea fx:id="preRequestScriptsArea"
-                                              promptText="Write scripts to run before request"
+                                              promptText="Runs before send. Supported: pm.environment.set(&quot;KEY&quot;, &quot;value&quot;), pm.environment.get(&quot;KEY&quot;), pm.environment.unset(&quot;KEY&quot;)"
                                               styleClass="scripts-textarea" VBox.vgrow="ALWAYS"/>
                                     <Label text="Tests (Post-request Scripts)" styleClass="scripts-section-label"/>
                                     <TextArea fx:id="postRequestScriptsArea"
-                                              promptText="Write scripts to run after response"
+                                              promptText="Runs after the response. Supported: const d = pm.response.json().data;  pm.environment.set(&quot;TOKEN&quot;, d.token);  pm.response.code"
                                               styleClass="scripts-textarea" VBox.vgrow="ALWAYS"/>
                                     <HBox spacing="10" alignment="CENTER_RIGHT">
                                         <Button text="Run Pre-request Scripts" styleClass="run-scripts-btn"/>
