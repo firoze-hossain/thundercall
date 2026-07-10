@@ -143,7 +143,6 @@
 .list-cell:selected { -fx-background-color: -accent-soft; -fx-text-fill: -text-primary; }
 .list-cell:empty { -fx-background-color: transparent; }
 
-.environment-combo { -fx-pref-width: 10000; }
 
 /* ============ Split panes / panels ============ */
 .main-split, .split-pane { -fx-background-color: -bg-base; -fx-padding: 0; }

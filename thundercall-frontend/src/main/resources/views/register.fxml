@@ -63,6 +63,8 @@
                 <PasswordField fx:id="passwordField" promptText="Enter password"/>
             </VBox>
 
+            <CheckBox fx:id="rememberMeCheck" text="Remember me"/>
+
             <HBox spacing="10" alignment="CENTER_LEFT">
                 <Button fx:id="loginButton" text="Sign in" onAction="#handleAuthAction"
                         styleClass="primary-button" maxWidth="10000" HBox.hgrow="ALWAYS"/>

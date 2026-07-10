@@ -6,6 +6,7 @@ import com.roze.thundercall.ui.services.ApiClient;
 import com.roze.thundercall.ui.services.DeepLinkService;
 import com.roze.thundercall.ui.services.TokenManager;
 import com.roze.thundercall.ui.utils.AlertUtils;
+import com.roze.thundercall.ui.utils.CredentialStore;
 import com.roze.thundercall.ui.utils.Validator;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -48,12 +49,20 @@ public class AuthController {
     private Label authTitle;
     @FXML
     private Label authSubtitle;
+    @FXML
+    private CheckBox rememberMeCheck;
 
     private Boolean isLoginMode = true;
 
     @FXML
     public void initialize() {
         updateViewMode();
+        // Remember me: pre-fill saved credentials so one click signs in
+        if (rememberMeCheck != null && CredentialStore.hasSaved()) {
+            usernameField.setText(CredentialStore.savedUsername());
+            passwordField.setText(CredentialStore.savedPassword());
+            rememberMeCheck.setSelected(true);
+        }
     }
 
     @FXML
@@ -79,6 +88,11 @@ public class AuthController {
             try {
                 AuthResponse response = ApiClient.login(usernameOrEmail, password);
                 Platform.runLater(() -> {
+                    if (rememberMeCheck != null && rememberMeCheck.isSelected()) {
+                        CredentialStore.save(usernameOrEmail, password);
+                    } else {
+                        CredentialStore.clear();
+                    }
                     TokenManager.storeTokens(response);
                     Main.showMainView();
                 });

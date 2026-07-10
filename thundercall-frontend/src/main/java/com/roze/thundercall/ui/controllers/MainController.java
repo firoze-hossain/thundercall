@@ -118,6 +118,10 @@ public class MainController implements Initializable {
     private TextField collectionsSearchField;
     @FXML
     private TextField globalSearchField;
+    @FXML
+    private MenuButton workspacesMenuBtn;
+    @FXML
+    private Label workspaceNameLabel;
     private final javafx.scene.image.Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
     private final javafx.scene.image.Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
 
@@ -313,7 +317,16 @@ public class MainController implements Initializable {
             requestIdMap.clear();
             requestMethodMap.clear();
 
+            Workspace currentWorkspace = WorkspaceManager.getCurrentWorkspace();
             for (CollectionResponse collectionResponse : collectionResponses) {
+                // Show only the selected workspace's collections, like Postman.
+                // (This also removes the duplicate "Getting started" entries
+                // that came from other workspaces.)
+                if (currentWorkspace != null && collectionResponse.getWorkspaceId() != null
+                        && !String.valueOf(currentWorkspace.getId())
+                        .equals(collectionResponse.getWorkspaceId())) {
+                    continue;
+                }
                 TreeItem<String> collectionItem = new TreeItem<>(collectionResponse.getName());
                 collectionIdMap.put(collectionItem, collectionResponse.getId());
 
@@ -430,11 +443,25 @@ public class MainController implements Initializable {
         if (TokenManager.isLoggedIn()) {
             new Thread(() -> {
                 try {
-                    boolean hasWorkspace = WorkspaceManager.hasWorkspace();
-                    if (!hasWorkspace) {
+                    // FIX: hasWorkspace() was an in-memory flag, always false at
+                    // startup — the setup popup opened on EVERY login. Ask the
+                    // server instead, and remember the workspace list.
+                    List<Workspace> workspaces =
+                            WorkspaceService.getUserWorkspaces().orElse(new ArrayList<>());
+                    if (workspaces.isEmpty()) {
                         Platform.runLater(this::showWorkspaceSetup);
-                    } else if (!WorkspaceService.checkTutorialStatus()) {
-                        Platform.runLater(this::showFeatureTour);
+                    } else {
+                        Platform.runLater(() -> {
+                            if (WorkspaceManager.getCurrentWorkspace() == null) {
+                                WorkspaceManager.setCurrentWorkspace(workspaces.get(0));
+                            }
+                            refreshWorkspacesMenu(workspaces);
+                            updateWorkspaceLabels();
+                            refreshCollectionsTree();
+                        });
+                        if (!WorkspaceService.checkTutorialStatus()) {
+                            Platform.runLater(this::showFeatureTour);
+                        }
                     }
                 } catch (Exception e) {
                     System.out.println("Error checking onboarding: " + e.getMessage());
@@ -443,16 +470,67 @@ public class MainController implements Initializable {
         }
     }
 
+    /** Rebuilds the Workspaces ▾ menu with the user's real workspaces. */
+    private void refreshWorkspacesMenu(List<Workspace> workspaces) {
+        if (workspacesMenuBtn == null) {
+            return;
+        }
+        workspacesMenuBtn.getItems().clear();
+        for (Workspace ws : workspaces) {
+            MenuItem item = new MenuItem(ws.getName());
+            if (WorkspaceManager.getCurrentWorkspace() != null
+                    && Objects.equals(WorkspaceManager.getCurrentWorkspace().getId(), ws.getId())) {
+                item.setText("✓ " + ws.getName());
+            }
+            item.setOnAction(e -> switchWorkspace(ws));
+            workspacesMenuBtn.getItems().add(item);
+        }
+        workspacesMenuBtn.getItems().add(new SeparatorMenuItem());
+        MenuItem create = new MenuItem("Create Workspace…");
+        create.setOnAction(e -> handleCreateWorkspace());
+        workspacesMenuBtn.getItems().add(create);
+    }
+
+    private void switchWorkspace(Workspace workspace) {
+        WorkspaceManager.setCurrentWorkspace(workspace);
+        updateWorkspaceLabels();
+        reloadWorkspacesAndCollections();
+        updateStatus("Workspace: " + workspace.getName());
+    }
+
+    private void updateWorkspaceLabels() {
+        Workspace current = WorkspaceManager.getCurrentWorkspace();
+        if (workspaceNameLabel != null && current != null) {
+            workspaceNameLabel.setText(current.getName());
+        }
+    }
+
+    private void reloadWorkspacesAndCollections() {
+        new Thread(() -> {
+            List<Workspace> workspaces =
+                    WorkspaceService.getUserWorkspaces().orElse(new ArrayList<>());
+            Platform.runLater(() -> {
+                refreshWorkspacesMenu(workspaces);
+                refreshCollectionsTree();
+            });
+        }).start();
+    }
+
     private void showWorkspaceSetup() {
         WorkspaceSetupDialog dialog = new WorkspaceSetupDialog();
-        Optional<String> result = dialog.showAndAwait();
-        result.ifPresent(workspaceName -> {
+        Optional<javafx.util.Pair<String, Boolean>> result = dialog.showAndAwait();
+        result.ifPresent(nameAndSample -> {
             new Thread(() -> {
-                Optional<Workspace> workspace = WorkspaceService.setupInitialWorkspace(workspaceName);
+                Optional<Workspace> workspace = WorkspaceService.setupInitialWorkspace(
+                        nameAndSample.getKey(), nameAndSample.getValue());
                 workspace.ifPresent(ws -> {
                     Platform.runLater(() -> {
+                        // FIX: the newly created workspace is now SELECTED and
+                        // the sidebar switches to it immediately
                         WorkspaceManager.setCurrentWorkspace(ws);
-                        showFeatureTour();
+                        updateWorkspaceLabels();
+                        reloadWorkspacesAndCollections();
+                        updateStatus("Workspace created: " + ws.getName());
                     });
                 });
             }).start();
@@ -1818,22 +1896,27 @@ public class MainController implements Initializable {
     private void handleNewFolder() {
         TreeItem<String> selectedItem = collectionsTree.getSelectionModel().getSelectedItem();
 
-        // Check if the selected item is a collection (has a collection ID)
-        if (selectedItem != null && collectionIdMap.containsKey(selectedItem)) {
-            // This is a collection, add folder to it
+        // Works from a collection OR from a folder/request inside it —
+        // the folder is created in the enclosing collection. (Nested
+        // folders need backend support for a parent-folder id; the data
+        // model is flat today, so we stay honest instead of silently
+        // dropping the folder.)
+        Long collectionId = selectedItem != null ? getCollectionIdFromTreeItem(selectedItem) : null;
+        if (collectionId != null) {
             TextInputDialog dialog = new TextInputDialog();
             dialog.setTitle("New Folder");
-            dialog.setHeaderText("Create a new folder in " + selectedItem.getValue());
+            dialog.setHeaderText("Create a new folder");
             dialog.setContentText("Folder name:");
+            ThemeManager.styleDialog(dialog.getDialogPane());
 
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(name -> {
                 if (!name.trim().isEmpty()) {
-                    createNewFolder(name, selectedItem);
+                    createNewFolder(name, collectionId);
                 }
             });
         } else {
-            AlertUtils.showError("Please select a collection to add a folder to");
+            AlertUtils.showError("Please select a collection (or an item inside one) to add a folder to");
         }
     }
 
@@ -2207,8 +2290,7 @@ public class MainController implements Initializable {
         }).start();
     }
 
-    private void createNewFolder(String name, TreeItem<String> parentItem) {
-        Long collectionId = collectionIdMap.get(parentItem);
+    private void createNewFolder(String name, Long collectionId) {
         if (collectionId != null) {
             new Thread(() -> {
                 Optional<FolderResponse> folder = FolderService.createFolder(name, "", collectionId);

@@ -8,7 +8,7 @@ import javafx.util.Pair;
 import java.util.Optional;
 
 public class WorkspaceSetupDialog {
-    public Optional<String> showAndAwait() {
+    public Optional<Pair<String, Boolean>> showAndAwait() {
         Dialog<Pair<String, Boolean>> dialog = new Dialog<>();
         dialog.setTitle("Workspace Setup");
         dialog.setHeaderText("Configure your Workspace");
@@ -27,6 +27,7 @@ public class WorkspaceSetupDialog {
         gridPane.add(sampleDataCheckbox, 0, 1, 2, 1);
 
         dialog.getDialogPane().setContent(gridPane);
+        com.roze.thundercall.ui.utils.ThemeManager.styleDialog(dialog.getDialogPane());
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == createButtonType) {
                 String workspaceName = workspaceNameField.getText().trim();
@@ -37,7 +38,6 @@ public class WorkspaceSetupDialog {
             }
             return null;
         });
-        Optional<Pair<String, Boolean>> result = dialog.showAndWait();
-        return result.map(Pair::getKey);
+        return dialog.showAndWait();
     }
 }

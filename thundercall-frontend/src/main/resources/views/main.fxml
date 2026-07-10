@@ -52,7 +52,7 @@
                         <Image url="@../images/logo.png"/>
                     </ImageView>
                     <Label text="Home" styleClass="nav-item"/>
-                    <MenuButton text="Workspaces" styleClass="nav-item-menu">
+                    <MenuButton fx:id="workspacesMenuBtn" text="Workspaces" styleClass="nav-item-menu">
                         <items>
                             <MenuItem text="My Workspace"/>
                             <SeparatorMenuItem/>
@@ -99,7 +99,7 @@
                     <padding>
                         <Insets left="12" right="12" top="5" bottom="5"/>
                     </padding>
-                    <Label text="My Workspace" styleClass="workspace-name"/>
+                    <Label fx:id="workspaceNameLabel" text="My Workspace" styleClass="workspace-name"/>
                     <MenuButton text="New" styleClass="workspace-btn">
                         <items>
                             <MenuItem text="Collection" onAction="#handleNewCollection"/>
@@ -483,7 +483,7 @@
                                 <SplitPane orientation="HORIZONTAL" dividerPositions="0.7">
                                     <TextArea fx:id="responseBodyArea" styleClass="response-body" editable="false"
                                               promptText="Click Send to get a response"/>
-                                    <WebView fx:id="responsePreview" styleClass="response-preview"/>
+                                    <WebView fx:id="responsePreview"/>
                                 </SplitPane>
                             </Tab>
                             <Tab text="Cookies">

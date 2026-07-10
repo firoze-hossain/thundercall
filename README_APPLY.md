@@ -1,46 +1,62 @@
-# Round 5 — workspace 409 fix, Postman tree, search
+# Round 6 — all reported bugs fixed
 
 | File | Destination |
 |---|---|
-| WorkspaceServiceImpl.java | thundercall-backend/.../api/service/impl/  (BACKEND) |
-| MainController.java | thundercall-frontend/.../ui/controllers/ |
-| main.fxml | thundercall-frontend/src/main/resources/views/ |
-| main.css | thundercall-frontend/src/main/resources/css/ |
+| MainController.java | .../ui/controllers/ |
+| AuthController.java | .../ui/controllers/ |
+| WorkspaceSetupDialog.java | .../ui/dialogs/ |
+| WorkspaceService.java | .../ui/services/  (FRONTEND service) |
+| CredentialStore.java | .../ui/utils/  (NEW) |
+| main.fxml | src/main/resources/views/ |
+| login.fxml | src/main/resources/views/ |
+| register.fxml | src/main/resources/views/ |
+| main.css | src/main/resources/css/ |
 
-(Keep light.css, ThemeManager.java, AlertUtils.java, module-info.java from the
-previous delivery — they are unchanged and still required.)
+## Console exception — FIXED
+"Unable to coerce response-preview to interface java.util.Collection":
+WebView is constructed through a Builder by FXMLLoader, and builder classes
+cannot take styleClass as an attribute. Removed the attribute from main.fxml.
 
-## 1. Create Workspace error (HTTP 409) — FIXED
-Root cause: registration now auto-creates a default workspace, but
-setupInitialWorkspace still threw "User already has workspace" — so
-Create Workspace could never succeed for anyone. Fix (backend
-WorkspaceServiceImpl): users can now create ADDITIONAL workspaces, exactly
-like Postman. No frontend change needed; the same dialog now succeeds.
+## Squeezed bar showing "… …▾ …" (image 2) — FIXED
+main.css had `.environment-combo { -fx-pref-width: 10000; }` (from the old
+sidebar layout). In the new workspace bar it made the environment selector
+swallow the whole row, crushing "My Workspace", New and Import into "…".
+Rule removed; the combo uses its normal 200px width.
 
-## 2. Postman-style collections tree
-- Requests show a COLORED method badge before the name: GET green,
-  POST amber, PUT blue, DEL red, PAT purple — same as Postman.
-- Collections and folders show their icon.
-- Hovering a collection/folder row reveals  +  and  ⋯  buttons like Postman:
-  + adds a request there, ⋯ opens the actions menu.
-- Right-click (or ⋯) shows the Postman menu: Add request, Add folder | Run |
-  Share, Copy link | Rename (Ctrl+E), Duplicate (Ctrl+D), Delete (Del, in red).
-  Run/Share/Copy link are visible but disabled (not implemented yet) —
-  Rename/Duplicate/Delete/Add all work through your existing logic.
-- The ⋯ sidebar menu now reads "Import Collection…" / "Export Collection…".
+## Workspace popup on EVERY login — FIXED
+WorkspaceManager.hasWorkspace() was an in-memory flag, always false at app
+start, so the setup dialog opened each login. Now the app asks the server
+(GET /workspaces): if you have workspaces, the first becomes current, the
+Workspaces ▾ menu is filled with the REAL list, and no popup appears. The
+popup only shows for a genuinely new account with zero workspaces.
 
-## 3. Search — both kinds
-- SIDEBAR SEARCH: a "Search collections" box above the tree filters it live,
-  keeping matching branches expanded (Postman behaviour). Clearing the box
-  restores the full tree. Actions still work on filtered results.
-- GLOBAL SEARCH: press Ctrl+K anywhere, or use the "Search Thundercall"
-  box centered in the header. A dialog searches every collection, folder and
-  request, shows "TYPE · Collection / Folder / path", and double-click or
-  Enter jumps to the item in the tree (expands parents, scrolls, selects).
+## New workspace not selected + duplicate "Getting started" — FIXED
+- Creating a workspace now SELECTS it: the workspace-bar name updates, the
+  Workspaces ▾ menu shows a ✓ next to it, and the sidebar reloads.
+- The collections tree now shows ONLY the current workspace's collections
+  (Postman behaviour) — the duplicate "Getting started" entries were
+  collections from your other workspaces all mixed together.
+- Switch workspaces any time from Workspaces ▾.
+- The "Create sample requests" checkbox in the dialog is now honored
+  (it was silently ignored — every workspace got sample data).
+
+## Folder under folder — honest behaviour
+Your backend's Folder has no parent-folder field, so nested folders cannot
+exist in the data model (that's why nothing appeared). Now: using "Add
+folder" from a folder creates it in the enclosing collection and the tree
+refreshes immediately. True nested folders need a backend change (parent_id
+column + recursion) — say the word and I'll build it next round.
+
+## Remember me — NEW
+Login page has a "Remember me" checkbox. When checked, your username and
+password are saved (Base64-obfuscated in OS user preferences) and pre-filled
+next launch — one click to sign in. Unchecking clears them. Note in code:
+for public distribution this should move to the OS keychain.
 
 ## Build & test
-1. Backend: replace WorkspaceServiceImpl.java → mvn clean package → restart.
-2. Frontend: replace the 3 files → mvn clean package → run.
-3. Test: Workspaces ▾ → Create Workspace… (no more 409) · hover a folder →
-   + and ⋯ appear · right-click a folder → Postman menu · type in
-   "Search collections" · press Ctrl+K and jump to any request.
+1. Frontend only this round: copy files → mvn clean package → run.
+2. Test: login (no popup!) → Workspaces ▾ shows your real workspaces with ✓ →
+   create workspace → it becomes selected, sidebar shows only its collections
+   → uncheck "Create sample requests" → no extra "Getting started" →
+   folder "Add folder" works from any tree item → logout, login with
+   Remember me → fields pre-filled → console: no coerce exception.

@@ -16,7 +16,12 @@ public class WorkspaceService {
     private static final String BASE_URL = "/workspaces";
 
     public static Optional<Workspace> setupInitialWorkspace(String workspaceName) {
+        return setupInitialWorkspace(workspaceName, true);
+    }
+
+    public static Optional<Workspace> setupInitialWorkspace(String workspaceName, boolean createSampleData) {
         WorkspaceSetupRequest request = new WorkspaceSetupRequest(workspaceName);
+        request.setCreateSampleData(createSampleData);
         try {
             BaseResponse<Workspace> response = ApiClient.post(BASE_URL + "/setup", request, new TypeReference<BaseResponse<Workspace>>() {
             });
@@ -25,6 +30,21 @@ public class WorkspaceService {
             }
         } catch (IOException e) {
             Platform.runLater(() -> AlertUtils.showError("Failed to setup workspace: " + e.getMessage()));
+        }
+        return Optional.empty();
+    }
+
+    /** Fetches all workspaces of the logged-in user (GET /workspaces). */
+    public static Optional<java.util.List<Workspace>> getUserWorkspaces() {
+        try {
+            BaseResponse<java.util.List<Workspace>> response = ApiClient.get(BASE_URL,
+                    new TypeReference<BaseResponse<java.util.List<Workspace>>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            System.out.println("Failed to load workspaces: " + e.getMessage());
         }
         return Optional.empty();
     }
