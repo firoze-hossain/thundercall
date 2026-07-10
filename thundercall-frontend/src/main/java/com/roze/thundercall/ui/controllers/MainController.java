@@ -122,6 +122,10 @@ public class MainController implements Initializable {
     private MenuButton workspacesMenuBtn;
     @FXML
     private Label workspaceNameLabel;
+    @FXML
+    private TabPane requestTabPane;
+    private final Map<Tab, RequestTabState> tabStates = new HashMap<>();
+    private boolean switchingTabs = false;
     private final javafx.scene.image.Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
     private final javafx.scene.image.Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
 
@@ -176,6 +180,7 @@ public class MainController implements Initializable {
             collectionsSearchField.textProperty()
                     .addListener((obs, oldVal, newVal) -> applyCollectionsFilter(newVal));
         }
+        setupRequestTabs();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -296,7 +301,19 @@ public class MainController implements Initializable {
             try {
                 Optional<List<CollectionResponse>> collections = CollectionService.getUserCollections();
                 if (collections.isPresent()) {
-                    populateCollectionsTree(collections.get());
+                    // FIX: the list endpoint returns SHORT responses with no
+                    // folders/requests — that's why children never appeared.
+                    // Fetch full details per collection (current workspace only).
+                    Workspace cur = WorkspaceManager.getCurrentWorkspace();
+                    List<CollectionResponse> detailed = new ArrayList<>();
+                    for (CollectionResponse c : collections.get()) {
+                        if (cur != null && c.getWorkspaceId() != null
+                                && !String.valueOf(cur.getId()).equals(c.getWorkspaceId())) {
+                            continue;
+                        }
+                        detailed.add(CollectionService.getCollectionWithDetails(c.getId()).orElse(c));
+                    }
+                    populateCollectionsTree(detailed);
                 } else {
                     Platform.runLater(() ->
                             AlertUtils.showError("Failed to load collections from server"));
@@ -723,6 +740,14 @@ public class MainController implements Initializable {
     private void handleItemSelected(TreeItem<String> item) {
         Long requestId = requestIdMap.get(item);
         if (requestId != null) {
+            // Postman-style tabs: reuse an open tab (keeps unsaved edits),
+            // otherwise open a new one and load from the server
+            Tab existing = findTabByRequestId(requestId);
+            if (existing != null && requestTabPane != null) {
+                requestTabPane.getSelectionModel().select(existing);
+                return;
+            }
+            openRequestTab(item.getValue(), requestId);
             new Thread(() -> {
                 try {
                     Optional<RequestResponse> request = RequestService.getRequest(requestId);
@@ -742,6 +767,16 @@ public class MainController implements Initializable {
 
     private void loadRequestIntoUI(RequestResponse requestResponse) {
         Platform.runLater(() -> {
+            // Keep the active tab in sync with the loaded request
+            if (requestTabPane != null) {
+                Tab currentTab = requestTabPane.getSelectionModel().getSelectedItem();
+                RequestTabState state = currentTab != null ? tabStates.get(currentTab) : null;
+                if (state != null) {
+                    currentTab.setText(requestResponse.getName());
+                    state.name = requestResponse.getName();
+                    state.requestId = requestResponse.getId();
+                }
+            }
             methodCombo.setValue(requestResponse.getMethod().name());
             urlField.setText(requestResponse.getUrl());
 
@@ -795,7 +830,7 @@ public class MainController implements Initializable {
             darkBtn.setSelected(true);
         }
 
-        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(10, darkBtn, lightBtn);
+        VBox content = new VBox(10, darkBtn, lightBtn);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
@@ -857,6 +892,106 @@ public class MainController implements Initializable {
         collectionsPane.setVisible(pane == collectionsPane);
         environmentsPane.setVisible(pane == environmentsPane);
         historyPane.setVisible(pane == historyPane);
+    }
+
+    // ==================== Postman-style request tabs ====================
+
+    /** Snapshot of the request editor for one tab. */
+    private static class RequestTabState {
+        String name = "Untitled Request";
+        Long requestId;
+        String method = "GET";
+        String url = "";
+        String body = "";
+        List<KeyValuePair> params = new ArrayList<>();
+        List<KeyValuePair> headers = new ArrayList<>();
+    }
+
+    private void setupRequestTabs() {
+        if (requestTabPane == null) {
+            return; // old FXML without the tab bar
+        }
+        requestTabPane.getSelectionModel().selectedItemProperty()
+                .addListener((obs, oldTab, newTab) -> {
+                    if (switchingTabs) {
+                        return;
+                    }
+                    if (oldTab != null && tabStates.containsKey(oldTab)) {
+                        captureTabState(oldTab);
+                    }
+                    if (newTab != null && tabStates.containsKey(newTab)) {
+                        restoreTabState(newTab);
+                    }
+                });
+        openRequestTab("Untitled Request", null);
+    }
+
+    /** Opens a new editor tab (blank when requestId is null) and selects it. */
+    private Tab openRequestTab(String name, Long requestId) {
+        if (requestTabPane == null) {
+            return null;
+        }
+        RequestTabState state = new RequestTabState();
+        state.name = name;
+        state.requestId = requestId;
+
+        Tab tab = new Tab(name);
+        tab.setClosable(true);
+        tabStates.put(tab, state);
+        tab.setOnClosed(e -> {
+            tabStates.remove(tab);
+            if (requestTabPane.getTabs().isEmpty()) {
+                openRequestTab("Untitled Request", null);
+            }
+        });
+
+        switchingTabs = true;
+        Tab previous = requestTabPane.getSelectionModel().getSelectedItem();
+        if (previous != null && tabStates.containsKey(previous)) {
+            captureTabState(previous);
+        }
+        requestTabPane.getTabs().add(tab);
+        requestTabPane.getSelectionModel().select(tab);
+        switchingTabs = false;
+
+        restoreTabState(tab); // blank editor for a fresh tab
+        return tab;
+    }
+
+    private void captureTabState(Tab tab) {
+        RequestTabState state = tabStates.get(tab);
+        if (state == null) {
+            return;
+        }
+        state.method = methodCombo.getValue();
+        state.url = urlField.getText();
+        state.body = bodyTextArea.getText();
+        state.params = new ArrayList<>(paramsData);
+        state.headers = new ArrayList<>(headersData);
+    }
+
+    private void restoreTabState(Tab tab) {
+        RequestTabState state = tabStates.get(tab);
+        if (state == null) {
+            return;
+        }
+        methodCombo.setValue(state.method == null ? "GET" : state.method);
+        urlField.setText(state.url == null ? "" : state.url);
+        bodyTextArea.setText(state.body == null ? "" : state.body);
+        paramsData.setAll(state.params);
+        headersData.setAll(state.headers);
+    }
+
+    private Tab findTabByRequestId(Long requestId) {
+        if (requestId == null) {
+            return null;
+        }
+        for (Map.Entry<Tab, RequestTabState> entry : tabStates.entrySet()) {
+            if (requestId.equals(entry.getValue().requestId)) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     // ==================== Postman-style collections tree ====================
@@ -2294,6 +2429,9 @@ public class MainController implements Initializable {
                         Platform.runLater(() -> {
                             refreshCollectionsTree();
                             updateStatus("Request created: " + name);
+                            // Open the new request in its own tab, like Postman
+                            openRequestTab(name, savedRequest.get().getId());
+                            loadRequestIntoUI(savedRequest.get());
                         });
                     } else {
                         Platform.runLater(() -> {

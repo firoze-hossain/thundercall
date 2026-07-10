@@ -761,3 +761,40 @@
 
 /* Red Delete item in the context menu, like Postman */
 .danger-menu-item .label { -fx-text-fill: -danger; }
+
+/* ============================================================
+   Postman-style open-request tab bar (above the URL bar)
+   ============================================================ */
+.request-tab-bar {
+    -fx-background-color: transparent;
+    -fx-tab-min-height: 30;
+    -fx-tab-max-height: 30;
+}
+.request-tab-bar .tab-header-background {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.request-tab-bar .tab {
+    -fx-background-color: transparent;
+    -fx-padding: 3 10 3 12;
+}
+.request-tab-bar .tab:hover { -fx-background-color: -bg-hover; }
+.request-tab-bar .tab:selected {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: transparent transparent -accent transparent;
+    -fx-border-width: 0 0 2 0;
+}
+.request-tab-bar .tab .tab-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+    -fx-font-weight: normal;
+}
+.request-tab-bar .tab:selected .tab-label { -fx-text-fill: -text-primary; }
+.request-tab-bar .tab .tab-close-button {
+    -fx-background-color: -text-muted;
+    -fx-shape: "M 0,0 L 6,6 M 6,0 L 0,6";
+    -fx-scale-shape: false;
+}
+.request-tab-bar .tab:hover .tab-close-button,
+.request-tab-bar .tab:selected .tab-close-button { -fx-background-color: -text-primary; }

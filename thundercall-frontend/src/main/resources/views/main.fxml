@@ -249,6 +249,10 @@
             <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
                 <!-- Request builder -->
                 <VBox styleClass="requestResponse-panel">
+                    <!-- Postman-style open-request tabs -->
+                    <TabPane fx:id="requestTabPane" styleClass="request-tab-bar"
+                             tabClosingPolicy="ALL_TABS"
+                             minHeight="36" prefHeight="36" maxHeight="36"/>
                     <HBox styleClass="url-bar" spacing="8" alignment="CENTER_LEFT">
                         <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"/>
                         <TextField fx:id="urlField" styleClass="url-field"
