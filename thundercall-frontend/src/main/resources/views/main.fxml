@@ -6,138 +6,253 @@
 <?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.shape.Circle?>
-<?import javafx.scene.text.Text?>
 <?import javafx.scene.web.WebView?>
 <StackPane xmlns="http://javafx.com/javafx/21"
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.roze.thundercall.ui.controllers.MainController"
            stylesheets="@../css/main.css">
-    <BorderPane>
-        <!-- Top Navigation Bar -->
-        <top>
-            <HBox styleClass="header" spacing="10" alignment="CENTER_LEFT" prefHeight="60">
-                <padding>
-                    <Insets left="20" right="20" top="10" bottom="10"/>
-                </padding>
-                <!-- Logo and App Name -->
-                <HBox alignment="CENTER_LEFT" spacing="10">
-                    <ImageView fitHeight="32" fitWidth="32" preserveRatio="true">
-                        <Image url="@../images/logo.png"/>
-                    </ImageView>
-                    <Text text="Thundercall" styleClass="app-title"/>
-                </HBox>
 
-                <!-- Spacer -->
-                <Region HBox.hgrow="ALWAYS"/>
-                <!-- Connection status -->
-                <HBox alignment="CENTER" spacing="5" styleClass="connection-status">
-                    <Circle radius="5" fill="green" styleClass="status-indicator"/>
-                    <Label text="Connected" styleClass="status-text"/>
-                </HBox>
-                <!-- User Menu -->
-                <MenuButton text="User" styleClass="user-menu">
-                    <graphic>
-                        <ImageView fitHeight="24" fitWidth="24" preserveRatio="true">
-                            <Image url="@../images/user-icon.png"/>
-                        </ImageView>
-                    </graphic>
-                    <items>
-                        <MenuItem text="Profile" onAction="#handleProfile"/>
-                        <MenuItem text="Settings" onAction="#handleSettings"/>
+    <fx:define>
+        <ToggleGroup fx:id="sidebarRailGroup"/>
+    </fx:define>
+
+    <BorderPane>
+        <!-- ============ TOP: menu bar + header + workspace bar (Postman rows 1-3) ============ -->
+        <top>
+            <VBox>
+                <!-- Row 1: application menu bar -->
+                <MenuBar styleClass="app-menu-bar">
+                    <Menu text="File">
+                        <MenuItem text="New Collection" onAction="#handleNewCollection"/>
+                        <MenuItem text="New Environment" onAction="#handleNewEnvironment"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Import…" onAction="#handleImportCollections"/>
+                        <MenuItem text="Export…" onAction="#handleExportCollections"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Settings…" onAction="#handleSettings"/>
                         <SeparatorMenuItem/>
                         <MenuItem text="Logout" onAction="#handleLogout"/>
-                    </items>
-                </MenuButton>
-            </HBox>
+                        <MenuItem text="Exit" onAction="#handleExit"/>
+                    </Menu>
+                    <Menu text="View">
+                        <MenuItem text="Dark Theme" onAction="#handleThemeDark"/>
+                        <MenuItem text="Light Theme" onAction="#handleThemeLight"/>
+                    </Menu>
+                    <Menu text="Help">
+                        <MenuItem text="About Thundercall" onAction="#handleAbout"/>
+                    </Menu>
+                </MenuBar>
+
+                <!-- Row 2: Home / Workspaces / API Network  ...  status / settings / user -->
+                <HBox styleClass="header" spacing="4" alignment="CENTER_LEFT" prefHeight="46">
+                    <padding>
+                        <Insets left="12" right="12" top="6" bottom="6"/>
+                    </padding>
+                    <ImageView fitHeight="24" fitWidth="24" preserveRatio="true">
+                        <Image url="@../images/logo.png"/>
+                    </ImageView>
+                    <Label text="Home" styleClass="nav-item"/>
+                    <MenuButton text="Workspaces" styleClass="nav-item-menu">
+                        <items>
+                            <MenuItem text="My Workspace"/>
+                            <SeparatorMenuItem/>
+                            <MenuItem text="Create Workspace…" onAction="#handleCreateWorkspace"/>
+                        </items>
+                    </MenuButton>
+                    <Label text="API Network" styleClass="nav-item"/>
+
+                    <Region HBox.hgrow="ALWAYS"/>
+
+                    <HBox alignment="CENTER" spacing="5" styleClass="connection-status">
+                        <Circle radius="4" styleClass="status-indicator"/>
+                        <Label text="Connected" styleClass="status-text"/>
+                    </HBox>
+                    <Button styleClass="icon-button" onAction="#handleSettings">
+                        <tooltip>
+                            <Tooltip text="Settings"/>
+                        </tooltip>
+                        <graphic>
+                            <Label text="⚙" styleClass="gear-icon"/>
+                        </graphic>
+                    </Button>
+                    <MenuButton text="User" styleClass="user-menu">
+                        <graphic>
+                            <ImageView fitHeight="20" fitWidth="20" preserveRatio="true">
+                                <Image url="@../images/user-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <items>
+                            <MenuItem text="Profile" onAction="#handleProfile"/>
+                            <MenuItem text="Settings" onAction="#handleSettings"/>
+                            <SeparatorMenuItem/>
+                            <MenuItem text="Logout" onAction="#handleLogout"/>
+                        </items>
+                    </MenuButton>
+                </HBox>
+
+                <!-- Row 3: workspace bar -->
+                <HBox styleClass="workspace-bar" spacing="8" alignment="CENTER_LEFT" prefHeight="40">
+                    <padding>
+                        <Insets left="12" right="12" top="5" bottom="5"/>
+                    </padding>
+                    <Label text="My Workspace" styleClass="workspace-name"/>
+                    <MenuButton text="New" styleClass="workspace-btn">
+                        <items>
+                            <MenuItem text="Collection" onAction="#handleNewCollection"/>
+                            <MenuItem text="Environment" onAction="#handleNewEnvironment"/>
+                            <MenuItem text="Request" onAction="#handleAddRequest"/>
+                        </items>
+                    </MenuButton>
+                    <Button text="Import" styleClass="workspace-btn" onAction="#handleImportCollections"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <ComboBox fx:id="environmentCombo" styleClass="environment-combo"
+                              promptText="No Environment" prefWidth="200"/>
+                </HBox>
+            </VBox>
         </top>
 
-        <!-- Left sidebar - Collections & history -->
+        <!-- ============ LEFT: Postman icon rail + switchable sidebar ============ -->
         <left>
-            <VBox prefWidth="250" styleClass="sidebar">
-                <!-- Collections section -->
-                <VBox styleClass="sidebar-section">
-                    <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
-                        <Label text="Collections" styleClass="section-title"/>
-                        <Region HBox.hgrow="ALWAYS"/>
-                        <!-- Three-dot menu button -->
-                        <MenuButton styleClass="icon-button" fx:id="collectionsMenuBtn">
-                            <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
-                                    <Image url="@../images/more-icon.png"/>
-                                </ImageView>
-                            </graphic>
-                            <items>
-                                <MenuItem text="New Collection" onAction="#handleNewCollection"/>
-                                <MenuItem text="Refresh" onAction="#handleRefreshCollections"/>
-                                <SeparatorMenuItem/>
-                                <MenuItem text="Import" onAction="#handleImportCollections"/>
-                                <MenuItem text="Export" onAction="#handleExportCollections"/>
-                            </items>
-                        </MenuButton>
-                        <!-- Plus button to add requestResponse -->
-                        <Button styleClass="icon-button" onAction="#handleAddRequest" fx:id="addRequestBtn">
-                            <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
-                                    <Image url="@../images/add-icon.png"/>
-                                </ImageView>
-                            </graphic>
-                        </Button>
-                    </HBox>
-                    <TreeView fx:id="collectionsTree" styleClass="collectionResponses-tree" showRoot="false"
-                              prefHeight="300"/>
+            <HBox>
+                <!-- Icon rail -->
+                <VBox styleClass="icon-rail" spacing="4" alignment="TOP_CENTER" prefWidth="78">
+                    <padding>
+                        <Insets top="8" bottom="8" left="4" right="4"/>
+                    </padding>
+                    <ToggleButton fx:id="railCollectionsBtn" text="Collections" styleClass="rail-btn"
+                                  toggleGroup="$sidebarRailGroup" selected="true"
+                                  onAction="#handleShowCollections" maxWidth="10000">
+                        <graphic>
+                            <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
+                                <Image url="@../images/collection-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <contentDisplay>TOP</contentDisplay>
+                    </ToggleButton>
+                    <ToggleButton fx:id="railEnvironmentsBtn" text="Environments" styleClass="rail-btn"
+                                  toggleGroup="$sidebarRailGroup"
+                                  onAction="#handleShowEnvironments" maxWidth="10000">
+                        <graphic>
+                            <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
+                                <Image url="@../images/folder-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <contentDisplay>TOP</contentDisplay>
+                    </ToggleButton>
+                    <ToggleButton fx:id="railHistoryBtn" text="History" styleClass="rail-btn"
+                                  toggleGroup="$sidebarRailGroup"
+                                  onAction="#handleShowHistory" maxWidth="10000">
+                        <graphic>
+                            <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
+                                <Image url="@../images/request-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <contentDisplay>TOP</contentDisplay>
+                    </ToggleButton>
                 </VBox>
 
-                <!-- Environment section -->
-                <VBox styleClass="sidebar-section">
-                    <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
-                        <Label text="Environments" styleClass="section-title"/>
-                        <Region HBox.hgrow="ALWAYS"/>
-                        <Button styleClass="icon-button" onAction="#handleNewEnvironment">
-                            <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
-                                    <Image url="@../images/add-icon.png"/>
-                                </ImageView>
-                            </graphic>
-                        </Button>
-                    </HBox>
-                    <ComboBox fx:id="environmentCombo" styleClass="environment-combo" promptText="Select Environment"/>
-                </VBox>
+                <!-- Switchable sidebar -->
+                <StackPane prefWidth="264" styleClass="sidebar">
+                    <!-- Collections pane (default) -->
+                    <VBox fx:id="collectionsPane" spacing="6">
+                        <padding>
+                            <Insets top="8" right="8" bottom="8" left="8"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" spacing="4" styleClass="sidebar-header">
+                            <Label text="Collections" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleAddRequest" fx:id="addRequestBtn">
+                                <tooltip>
+                                    <Tooltip text="New request"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/add-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                            <MenuButton styleClass="icon-button" fx:id="collectionsMenuBtn">
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/more-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                                <items>
+                                    <MenuItem text="New Collection" onAction="#handleNewCollection"/>
+                                    <MenuItem text="Refresh" onAction="#handleRefreshCollections"/>
+                                    <SeparatorMenuItem/>
+                                    <MenuItem text="Import" onAction="#handleImportCollections"/>
+                                    <MenuItem text="Export" onAction="#handleExportCollections"/>
+                                </items>
+                            </MenuButton>
+                        </HBox>
+                        <TreeView fx:id="collectionsTree" styleClass="collectionResponses-tree"
+                                  showRoot="false" VBox.vgrow="ALWAYS"/>
+                    </VBox>
 
-                <VBox styleClass="sidebar-section" VBox.vgrow="ALWAYS">
-                    <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
-                        <Label text="History" styleClass="section-title"/>
-                        <Region HBox.hgrow="ALWAYS"/>
-                        <Button styleClass="icon-button" onAction="#handleClearHistory">
-                            <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
-                                    <Image url="@../images/clear-icon.png"/>
-                                </ImageView>
-                            </graphic>
-                        </Button>
-                    </HBox>
-                    <ListView fx:id="historyList" styleClass="history-list"/>
-                </VBox>
-            </VBox>
+                    <!-- Environments pane -->
+                    <VBox fx:id="environmentsPane" spacing="6" visible="false">
+                        <padding>
+                            <Insets top="8" right="8" bottom="8" left="8"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
+                            <Label text="Environments" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleNewEnvironment">
+                                <tooltip>
+                                    <Tooltip text="New environment"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/add-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                        <Label styleClass="sidebar-hint" wrapText="true"
+                               text="Create environments to manage variables like {{baseUrl}}. Pick the active one from the selector at the top right."/>
+                    </VBox>
+
+                    <!-- History pane -->
+                    <VBox fx:id="historyPane" spacing="6" visible="false">
+                        <padding>
+                            <Insets top="8" right="8" bottom="8" left="8"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
+                            <Label text="History" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleClearHistory">
+                                <tooltip>
+                                    <Tooltip text="Clear history"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/clear-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                        <ListView fx:id="historyList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                    </VBox>
+                </StackPane>
+            </HBox>
         </left>
 
-        <!-- Center Content - Request Builder and Response Viewer -->
+        <!-- ============ CENTER: request builder + response viewer ============ -->
         <center>
-            <SplitPane orientation="VERTICAL" dividerPositions="0.6" styleClass="main-split">
-                <!-- Request Builder -->
+            <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
+                <!-- Request builder -->
                 <VBox styleClass="requestResponse-panel">
-                    <!-- Request URL Bar -->
-                    <HBox styleClass="url-bar" spacing="10" alignment="CENTER_LEFT">
-                        <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="100"/>
-                        <TextField fx:id="urlField" styleClass="url-field" promptText="Enter Request URL"
+                    <HBox styleClass="url-bar" spacing="8" alignment="CENTER_LEFT">
+                        <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"/>
+                        <TextField fx:id="urlField" styleClass="url-field"
+                                   promptText="Enter URL or paste text — use {{variables}} from the selected environment"
                                    HBox.hgrow="ALWAYS"/>
-                        <Button text="Send" styleClass="send-button" onAction="#handleSendRequest">
-                            <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
-                                    <Image url="@../images/send-icon.png"/>
-                                </ImageView>
-                            </graphic>
-                        </Button>
+                        <Button text="Send" styleClass="send-button" onAction="#handleSendRequest"/>
                         <Button styleClass="icon-button" onAction="#handleSaveRequest">
+                            <tooltip>
+                                <Tooltip text="Save request"/>
+                            </tooltip>
                             <graphic>
                                 <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
                                     <Image url="@../images/save-icon.png"/>
@@ -146,7 +261,7 @@
                         </Button>
                         <Button styleClass="icon-button" onAction="#handleSamplePostRequest">
                             <tooltip>
-                                <Tooltip text="Load sample POST requestResponse"/>
+                                <Tooltip text="Load sample POST request"/>
                             </tooltip>
                             <graphic>
                                 <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
@@ -156,15 +271,14 @@
                         </Button>
                     </HBox>
 
-                    <!-- Request Tabs -->
-                    <TabPane styleClass="requestResponse-tabs" tabClosingPolicy="UNAVAILABLE">
+                    <!-- Request tabs: Postman order -->
+                    <TabPane styleClass="requestResponse-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                         <tabs>
-                            <!-- Params Tab -->
                             <Tab text="Params">
                                 <VBox>
-                                    <TableView fx:id="paramsTable" styleClass="key-value-table">
+                                    <TableView fx:id="paramsTable" styleClass="key-value-table" VBox.vgrow="ALWAYS">
                                         <columns>
-                                            <TableColumn text="Key" prefWidth="150">
+                                            <TableColumn text="Key" prefWidth="180">
                                                 <cellValueFactory>
                                                     <PropertyValueFactory property="key"/>
                                                 </cellValueFactory>
@@ -172,7 +286,7 @@
                                                     <TextFieldTableCell fx:factory="forTableColumn"/>
                                                 </cellFactory>
                                             </TableColumn>
-                                            <TableColumn text="Value" prefWidth="200">
+                                            <TableColumn text="Value" prefWidth="260">
                                                 <cellValueFactory>
                                                     <PropertyValueFactory property="value"/>
                                                 </cellValueFactory>
@@ -180,7 +294,7 @@
                                                     <TextFieldTableCell fx:factory="forTableColumn"/>
                                                 </cellFactory>
                                             </TableColumn>
-                                            <TableColumn text="Description" prefWidth="150">
+                                            <TableColumn text="Description" prefWidth="200">
                                                 <cellValueFactory>
                                                     <PropertyValueFactory property="description"/>
                                                 </cellValueFactory>
@@ -189,8 +303,11 @@
                                                 </cellFactory>
                                             </TableColumn>
                                         </columns>
+                                        <columnResizePolicy>
+                                            <TableView fx:constant="CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN"/>
+                                        </columnResizePolicy>
                                     </TableView>
-                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar">
+                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddParamRow"
                                                 styleClass="add-row-button"/>
                                         <Button text="Delete Row" onAction="#handleDeleteParamRow"
@@ -199,12 +316,22 @@
                                 </VBox>
                             </Tab>
 
-                            <!-- Headers Tab -->
+                            <Tab text="Authorization">
+                                <VBox spacing="10" styleClass="auth-panel">
+                                    <ComboBox fx:id="authTypeCombo" promptText="Select Auth Type" prefWidth="240"/>
+                                    <TextField fx:id="tokenField" promptText="Enter token" visible="false"/>
+                                    <HBox spacing="10" visible="false">
+                                        <TextField fx:id="usernameField" promptText="Username" HBox.hgrow="ALWAYS"/>
+                                        <PasswordField fx:id="passwordField" promptText="Password" HBox.hgrow="ALWAYS"/>
+                                    </HBox>
+                                </VBox>
+                            </Tab>
+
                             <Tab text="Headers">
                                 <VBox>
-                                    <TableView fx:id="headersTable" styleClass="key-value-table">
+                                    <TableView fx:id="headersTable" styleClass="key-value-table" VBox.vgrow="ALWAYS">
                                         <columns>
-                                            <TableColumn text="Key" prefWidth="150">
+                                            <TableColumn text="Key" prefWidth="180">
                                                 <cellValueFactory>
                                                     <PropertyValueFactory property="key"/>
                                                 </cellValueFactory>
@@ -212,7 +339,7 @@
                                                     <TextFieldTableCell fx:factory="forTableColumn"/>
                                                 </cellFactory>
                                             </TableColumn>
-                                            <TableColumn text="Value" prefWidth="200">
+                                            <TableColumn text="Value" prefWidth="260">
                                                 <cellValueFactory>
                                                     <PropertyValueFactory property="value"/>
                                                 </cellValueFactory>
@@ -220,7 +347,7 @@
                                                     <TextFieldTableCell fx:factory="forTableColumn"/>
                                                 </cellFactory>
                                             </TableColumn>
-                                            <TableColumn text="Description" prefWidth="150">
+                                            <TableColumn text="Description" prefWidth="200">
                                                 <cellValueFactory>
                                                     <PropertyValueFactory property="description"/>
                                                 </cellValueFactory>
@@ -229,8 +356,11 @@
                                                 </cellFactory>
                                             </TableColumn>
                                         </columns>
+                                        <columnResizePolicy>
+                                            <TableView fx:constant="CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN"/>
+                                        </columnResizePolicy>
                                     </TableView>
-                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar">
+                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddHeaderRow"
                                                 styleClass="add-row-button"/>
                                         <Button text="Delete Row" onAction="#handleDeleteHeaderRow"
@@ -239,7 +369,6 @@
                                 </VBox>
                             </Tab>
 
-                            <!-- Body Tab -->
                             <Tab text="Body">
                                 <VBox>
                                     <HBox styleClass="body-type-selector">
@@ -251,12 +380,12 @@
                                         <ToggleButton fx:id="urlEncodedBodyTypeButton" text="x-www-form-urlencoded"
                                                       styleClass="body-type-btn"/>
                                     </HBox>
-                                    <StackPane>
+                                    <StackPane VBox.vgrow="ALWAYS">
                                         <TextArea fx:id="bodyTextArea" styleClass="body-textarea"
                                                   promptText="Request body content"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false">
                                             <columns>
-                                                <TableColumn text="Key" prefWidth="150">
+                                                <TableColumn text="Key" prefWidth="180">
                                                     <cellValueFactory>
                                                         <PropertyValueFactory property="key"/>
                                                     </cellValueFactory>
@@ -264,7 +393,7 @@
                                                         <TextFieldTableCell fx:factory="forTableColumn"/>
                                                     </cellFactory>
                                                 </TableColumn>
-                                                <TableColumn text="Value" prefWidth="200">
+                                                <TableColumn text="Value" prefWidth="260">
                                                     <cellValueFactory>
                                                         <PropertyValueFactory property="value"/>
                                                     </cellValueFactory>
@@ -272,7 +401,7 @@
                                                         <TextFieldTableCell fx:factory="forTableColumn"/>
                                                     </cellFactory>
                                                 </TableColumn>
-                                                <TableColumn text="Description" prefWidth="150">
+                                                <TableColumn text="Description" prefWidth="200">
                                                     <cellValueFactory>
                                                         <PropertyValueFactory property="description"/>
                                                     </cellValueFactory>
@@ -283,7 +412,7 @@
                                             </columns>
                                         </TableView>
                                     </StackPane>
-                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar">
+                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddFormDataRow"
                                                 styleClass="add-row-button"/>
                                         <Button text="Delete Row" onAction="#handleDeleteFormDataRow"
@@ -292,35 +421,18 @@
                                 </VBox>
                             </Tab>
 
-                            <!-- Auth Tab -->
-                            <Tab text="Auth">
-                                <VBox spacing="10" styleClass="auth-panel">
-                                    <ComboBox fx:id="authTypeCombo" promptText="Select Auth Type"/>
-                                    <TextField fx:id="tokenField" promptText="Enter token" visible="false"/>
-                                    <HBox spacing="10" visible="false">
-                                        <TextField fx:id="usernameField" promptText="Username" HBox.hgrow="ALWAYS"/>
-                                        <PasswordField fx:id="passwordField" promptText="Password" HBox.hgrow="ALWAYS"/>
-                                    </HBox>
-                                </VBox>
-                            </Tab>
-                            <!-- Add this Tab to your Request Tabs section -->
                             <Tab text="Scripts">
                                 <VBox spacing="10" styleClass="scripts-panel">
                                     <Label text="Pre-request Scripts" styleClass="scripts-section-label"/>
                                     <TextArea fx:id="preRequestScriptsArea"
                                               promptText="Write scripts to run before request"
-                                              styleClass="scripts-textarea"/>
-
+                                              styleClass="scripts-textarea" VBox.vgrow="ALWAYS"/>
                                     <Label text="Tests (Post-request Scripts)" styleClass="scripts-section-label"/>
                                     <TextArea fx:id="postRequestScriptsArea"
                                               promptText="Write scripts to run after response"
-                                              styleClass="scripts-textarea"/>
-
+                                              styleClass="scripts-textarea" VBox.vgrow="ALWAYS"/>
                                     <HBox spacing="10" alignment="CENTER_RIGHT">
-                                        <!--                                        <Button text="Run Pre-request Scripts" onAction="#handleRunPreRequestScripts"-->
-                                        <!--                                                styleClass="run-scripts-btn"/>-->
-                                        <Button text="Run Pre-request Scripts"
-                                                styleClass="run-scripts-btn"/>
+                                        <Button text="Run Pre-request Scripts" styleClass="run-scripts-btn"/>
                                         <Button text="Run Tests" onAction="#handleRunTests" styleClass="run-tests-btn"/>
                                     </HBox>
                                 </VBox>
@@ -329,15 +441,18 @@
                     </TabPane>
                 </VBox>
 
-                <!-- Response Viewer -->
+                <!-- Response viewer -->
                 <VBox styleClass="response-panel">
-                    <!-- Response status bar -->
                     <HBox styleClass="response-status-bar" spacing="15" alignment="CENTER_LEFT">
+                        <Label text="Response" styleClass="response-title"/>
                         <Label fx:id="statusLabel" text="Status: " styleClass="status-label"/>
                         <Label fx:id="timeLabel" text="Time: " styleClass="time-label"/>
                         <Label fx:id="sizeLabel" text="Size: " styleClass="size-label"/>
                         <Region HBox.hgrow="ALWAYS"/>
                         <Button styleClass="icon-button" onAction="#handleCopyResponse">
+                            <tooltip>
+                                <Tooltip text="Copy response"/>
+                            </tooltip>
                             <graphic>
                                 <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
                                     <Image url="@../images/copy-icon.png"/>
@@ -345,6 +460,9 @@
                             </graphic>
                         </Button>
                         <Button styleClass="icon-button" onAction="#handleSaveResponse">
+                            <tooltip>
+                                <Tooltip text="Save response"/>
+                            </tooltip>
                             <graphic>
                                 <ImageView fitWidth="16" fitHeight="16" preserveRatio="true">
                                     <Image url="@../images/save-icon.png"/>
@@ -353,47 +471,47 @@
                         </Button>
                     </HBox>
 
-                    <!-- Response Tabs -->
-                    <TabPane styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE">
+                    <TabPane styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                         <tabs>
                             <Tab text="Body">
                                 <SplitPane orientation="HORIZONTAL" dividerPositions="0.7">
-                                    <TextArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
+                                    <TextArea fx:id="responseBodyArea" styleClass="response-body" editable="false"
+                                              promptText="Click Send to get a response"/>
                                     <WebView fx:id="responsePreview" styleClass="response-preview"/>
                                 </SplitPane>
                             </Tab>
-                            <Tab text="Headers">
-                                <TableView fx:id="responseHeadersTable" styleClass="key-value-table">
+                            <Tab text="Cookies">
+                                <TableView fx:id="cookiesTable" styleClass="key-value-table">
                                     <columns>
-                                        <TableColumn text="Key" prefWidth="150">
+                                        <TableColumn text="Name" prefWidth="180">
                                             <cellValueFactory>
                                                 <PropertyValueFactory property="key"/>
                                             </cellValueFactory>
                                         </TableColumn>
-                                        <TableColumn text="Value" prefWidth="300">
+                                        <TableColumn text="Value" prefWidth="260">
                                             <cellValueFactory>
                                                 <PropertyValueFactory property="value"/>
+                                            </cellValueFactory>
+                                        </TableColumn>
+                                        <TableColumn text="Domain" prefWidth="180">
+                                            <cellValueFactory>
+                                                <PropertyValueFactory property="description"/>
                                             </cellValueFactory>
                                         </TableColumn>
                                     </columns>
                                 </TableView>
                             </Tab>
-                            <Tab text="Cookies">
-                                <TableView fx:id="cookiesTable" styleClass="key-value-table">
+                            <Tab text="Headers">
+                                <TableView fx:id="responseHeadersTable" styleClass="key-value-table">
                                     <columns>
-                                        <TableColumn text="Name" prefWidth="150">
+                                        <TableColumn text="Key" prefWidth="220">
                                             <cellValueFactory>
                                                 <PropertyValueFactory property="key"/>
                                             </cellValueFactory>
                                         </TableColumn>
-                                        <TableColumn text="Value" prefWidth="200">
+                                        <TableColumn text="Value" prefWidth="400">
                                             <cellValueFactory>
                                                 <PropertyValueFactory property="value"/>
-                                            </cellValueFactory>
-                                        </TableColumn>
-                                        <TableColumn text="Domain" prefWidth="150">
-                                            <cellValueFactory>
-                                                <PropertyValueFactory property="description"/>
                                             </cellValueFactory>
                                         </TableColumn>
                                     </columns>
@@ -404,7 +522,7 @@
                                     <TextArea fx:id="testsArea" promptText="Write test scripts here"
                                               styleClass="tests-textarea"/>
                                     <Button text="Run Tests" onAction="#handleRunTests" styleClass="run-tests-btn"/>
-                                    <ListView fx:id="testResultsList" styleClass="test-results"/>
+                                    <ListView fx:id="testResultsList" styleClass="test-results" VBox.vgrow="ALWAYS"/>
                                 </VBox>
                             </Tab>
                         </tabs>
@@ -413,6 +531,7 @@
             </SplitPane>
         </center>
 
+        <!-- ============ BOTTOM: status bar ============ -->
         <bottom>
             <HBox styleClass="status-bar" spacing="10" alignment="CENTER_LEFT">
                 <Label text="Ready" fx:id="statusMessage" styleClass="status-message"/>

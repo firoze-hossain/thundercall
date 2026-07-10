@@ -1,0 +1,52 @@
+/* ============================================================
+   Thundercall — Light Theme (Postman-like)
+   Loaded AFTER main.css by ThemeManager. Overrides ONLY the color
+   tokens; every layout/spacing rule stays in main.css.
+   ============================================================ */
+
+.root {
+    -bg-base: #f6f6f6;          /* app background */
+    -bg-panel: #ffffff;         /* panels, sidebar */
+    -bg-elevated: #f0f0f0;      /* inputs, cards, table headers */
+    -bg-hover: #e6e6e6;
+    -bg-active: #dcdcdc;
+    -border-color: #d6d6d6;
+    -border-subtle: #e8e8e8;
+    -text-primary: #212121;
+    -text-secondary: #6b6b6b;
+    -text-muted: #9e9e9e;
+    -accent: #ff6c37;
+    -accent-hover: #e85a25;
+    -accent-pressed: #d14e1c;
+    -accent-soft: rgba(255, 108, 55, 0.12);
+    -success: #0f9d58;
+    -success-soft: rgba(15, 157, 88, 0.10);
+    -warning: #b8860b;
+    -warning-soft: rgba(184, 134, 11, 0.10);
+    -danger: #d93025;
+    -danger-soft: rgba(217, 48, 37, 0.08);
+    -info: #1a73e8;
+
+    -fx-background-color: -bg-base;
+}
+
+/* A few dark-specific extras that need light values */
+.scroll-bar .thumb { -fx-background-color: #c4c4c4; }
+.scroll-bar .thumb:hover { -fx-background-color: #ababab; }
+
+.tooltip {
+    -fx-background-color: #2b2b2b;
+    -fx-text-fill: #ffffff;
+}
+
+.send-button { -fx-text-fill: white; }
+.primary-button { -fx-text-fill: white; }
+
+/* Method colors tuned for light backgrounds */
+.method-get     { -fx-text-fill: #0f9d58; }
+.method-post    { -fx-text-fill: #b8860b; }
+.method-put     { -fx-text-fill: #1a73e8; }
+.method-patch   { -fx-text-fill: #8430ce; }
+.method-delete  { -fx-text-fill: #d93025; }
+.method-head    { -fx-text-fill: #188038; }
+.method-options { -fx-text-fill: #5f6368; }

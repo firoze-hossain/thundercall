@@ -17,7 +17,7 @@ module com.roze.thundercall {
     requires java.logging;
     requires java.scripting;
     opens com.roze.thundercall.ui to javafx.graphics, javafx.fxml;
-    opens com.roze.thundercall.ui.controllers to javafx.fxml;
+    opens com.roze.thundercall.ui.controllers to javafx.fxml, javafx.base;
     opens com.roze.thundercall.ui.models to javafx.base;
     exports com.roze.thundercall.ui.models to javafx.base, com.fasterxml.jackson.databind;
 

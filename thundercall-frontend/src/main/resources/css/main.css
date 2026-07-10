@@ -607,3 +607,108 @@
 }
 .auth-link:hover { -fx-underline: true; }
 .auth-link:visited { -fx-text-fill: -accent; }
+
+/* ============================================================
+   Postman-style shell (menu bar, nav header, workspace bar,
+   icon rail) — added for the redesigned main.fxml
+   ============================================================ */
+
+/* Row 1: application menu bar */
+.app-menu-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 6 0 6;
+}
+.app-menu-bar .menu .label { -fx-text-fill: -text-primary; -fx-font-size: 12px; }
+.app-menu-bar .menu:hover, .app-menu-bar .menu:showing { -fx-background-color: -bg-hover; }
+
+/* Row 2: Home / Workspaces / API Network */
+.nav-item {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-padding: 6 12 6 12;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.nav-item:hover { -fx-background-color: -bg-hover; }
+
+.nav-item-menu {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-padding: 4 8 4 8;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+}
+.nav-item-menu:hover, .nav-item-menu:showing { -fx-background-color: -bg-hover; }
+.nav-item-menu .arrow { -fx-background-color: -text-secondary; }
+
+.gear-icon {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 15px;
+}
+.icon-button:hover .gear-icon { -fx-text-fill: -text-primary; }
+
+/* Row 3: workspace bar */
+.workspace-bar {
+    -fx-background-color: -bg-base;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.workspace-name {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 10 0 0;
+}
+.workspace-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 4 12 4 12;
+    -fx-cursor: hand;
+}
+.workspace-btn:hover, .workspace-btn:showing { -fx-background-color: -bg-hover; }
+.workspace-btn .arrow { -fx-background-color: -text-secondary; }
+
+/* Left icon rail (Collections / Environments / History) */
+.icon-rail {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: transparent -border-subtle transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.rail-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 10px;
+    -fx-background-radius: 8;
+    -fx-border-color: transparent;
+    -fx-padding: 8 2 8 2;
+    -fx-cursor: hand;
+    -fx-content-display: top;
+    -fx-graphic-text-gap: 4;
+}
+.rail-btn:hover { -fx-background-color: -bg-hover; -fx-text-fill: -text-primary; }
+.rail-btn:selected {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+}
+
+.sidebar-hint {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+    -fx-padding: 8 4 8 4;
+}
+
+.response-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 6 0 0;
+}

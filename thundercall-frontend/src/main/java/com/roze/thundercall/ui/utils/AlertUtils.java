@@ -6,6 +6,12 @@ import javafx.scene.control.ButtonType;
 
 import java.util.Optional;
 
+/**
+ * FIX: Alerts open in their own window and do not inherit the app
+ * stylesheet — they used to appear as bright default dialogs on top of the
+ * dark app. Every alert is now styled through ThemeManager so popups match
+ * the current theme (dark or light).
+ */
 public class AlertUtils {
     public static void showError(String message) {
         showAlert(Alert.AlertType.ERROR, "Error", message);
@@ -21,6 +27,7 @@ public class AlertUtils {
             alert.setTitle(title);
             alert.setContentText(message);
             alert.setHeaderText(null);
+            ThemeManager.styleDialog(alert.getDialogPane());
             alert.showAndWait();
         });
     }
@@ -34,6 +41,7 @@ public class AlertUtils {
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message);
+        ThemeManager.styleDialog(alert.getDialogPane());
         Optional<ButtonType> result = alert.showAndWait();
         return result.isPresent() && result.get() == ButtonType.OK;
     }

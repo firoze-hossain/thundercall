@@ -8,6 +8,7 @@ import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.utils.AlertUtils;
+import com.roze.thundercall.ui.utils.ThemeManager;
 import com.roze.thundercall.ui.utils.VariableResolver;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
@@ -28,6 +29,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import org.json.JSONObject;
@@ -118,10 +120,30 @@ public class MainController implements Initializable {
     private ToggleButton formDataBodyTypeButton;
     @FXML
     private ToggleButton urlEncodedBodyTypeButton;
+    // Postman-style sidebar rail (may be null with the old FXML — always null-checked)
+    @FXML
+    private VBox collectionsPane;
+    @FXML
+    private VBox environmentsPane;
+    @FXML
+    private VBox historyPane;
+    @FXML
+    private ToggleButton railCollectionsBtn;
+    @FXML
+    private ToggleButton railEnvironmentsBtn;
+    @FXML
+    private ToggleButton railHistoryBtn;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         logger.info("Initializing MainController...");
+
+        // Apply the saved theme (dark/light) once the scene exists
+        Platform.runLater(() -> {
+            if (urlField != null && urlField.getScene() != null) {
+                ThemeManager.apply(urlField.getScene());
+            }
+        });
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -631,7 +653,84 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSettings() {
-        AlertUtils.showInfo("Settings feature coming soon!");
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Settings");
+        dialog.setHeaderText("Appearance");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        RadioButton darkBtn = new RadioButton("Dark theme");
+        RadioButton lightBtn = new RadioButton("Light theme");
+        ToggleGroup themeGroup = new ToggleGroup();
+        darkBtn.setToggleGroup(themeGroup);
+        lightBtn.setToggleGroup(themeGroup);
+        if (ThemeManager.isLight()) {
+            lightBtn.setSelected(true);
+        } else {
+            darkBtn.setSelected(true);
+        }
+
+        VBox content = new VBox(10, darkBtn, lightBtn);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(button -> {
+            if (button == ButtonType.OK) {
+                ThemeManager.setLight(lightBtn.isSelected(), urlField.getScene());
+                updateStatus("Theme: " + (lightBtn.isSelected() ? "Light" : "Dark"));
+            }
+        });
+    }
+
+    @FXML
+    private void handleThemeDark() {
+        ThemeManager.setLight(false, urlField.getScene());
+        updateStatus("Theme: Dark");
+    }
+
+    @FXML
+    private void handleThemeLight() {
+        ThemeManager.setLight(true, urlField.getScene());
+        updateStatus("Theme: Light");
+    }
+
+    @FXML
+    private void handleExit() {
+        Platform.exit();
+    }
+
+    @FXML
+    private void handleAbout() {
+        AlertUtils.showInfo("Thundercall v1.0.0\nA professional API client.\nBackend: Spring Boot  |  Frontend: JavaFX");
+    }
+
+    @FXML
+    private void handleCreateWorkspace() {
+        showWorkspaceSetup();
+    }
+
+    @FXML
+    private void handleShowCollections() {
+        showSidebarPane(collectionsPane);
+    }
+
+    @FXML
+    private void handleShowEnvironments() {
+        showSidebarPane(environmentsPane);
+    }
+
+    @FXML
+    private void handleShowHistory() {
+        showSidebarPane(historyPane);
+    }
+
+    private void showSidebarPane(VBox pane) {
+        if (collectionsPane == null || environmentsPane == null || historyPane == null || pane == null) {
+            return; // old FXML without the rail
+        }
+        collectionsPane.setVisible(pane == collectionsPane);
+        environmentsPane.setVisible(pane == environmentsPane);
+        historyPane.setVisible(pane == historyPane);
     }
 
     @FXML
