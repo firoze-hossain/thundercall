@@ -448,6 +448,7 @@ public class MainController implements Initializable {
                     // server instead, and remember the workspace list.
                     List<Workspace> workspaces =
                             WorkspaceService.getUserWorkspaces().orElse(new ArrayList<>());
+                    workspaces.sort(Comparator.comparing(Workspace::getId));
                     if (workspaces.isEmpty()) {
                         Platform.runLater(this::showWorkspaceSetup);
                     } else {
@@ -459,7 +460,15 @@ public class MainController implements Initializable {
                             updateWorkspaceLabels();
                             refreshCollectionsTree();
                         });
-                        if (!WorkspaceService.checkTutorialStatus()) {
+                        // FIX: the tour reopened on EVERY login (server flag is
+                        // only set when the tour is fully finished). Show it
+                        // once per user on this machine, whatever they click.
+                        java.util.prefs.Preferences prefs =
+                                java.util.prefs.Preferences.userNodeForPackage(MainController.class);
+                        String tourKey = "tour.seen." + TokenManager.getUsername();
+                        if (!prefs.getBoolean(tourKey, false)
+                                && !WorkspaceService.checkTutorialStatus()) {
+                            prefs.putBoolean(tourKey, true);
                             Platform.runLater(this::showFeatureTour);
                         }
                     }
@@ -509,6 +518,7 @@ public class MainController implements Initializable {
         new Thread(() -> {
             List<Workspace> workspaces =
                     WorkspaceService.getUserWorkspaces().orElse(new ArrayList<>());
+            workspaces.sort(Comparator.comparing(Workspace::getId));
             Platform.runLater(() -> {
                 refreshWorkspacesMenu(workspaces);
                 refreshCollectionsTree();
@@ -785,7 +795,7 @@ public class MainController implements Initializable {
             darkBtn.setSelected(true);
         }
 
-        VBox content = new VBox(10, darkBtn, lightBtn);
+        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(10, darkBtn, lightBtn);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
@@ -2042,16 +2052,22 @@ public class MainController implements Initializable {
         } else {
             // If no collection is selected, show a dialog to choose one
             if (!collectionIdMap.isEmpty()) {
-                ChoiceDialog<TreeItem<String>> dialog = new ChoiceDialog<>(
-                        collectionsTree.getRoot().getChildren().get(0),
-                        collectionsTree.getRoot().getChildren()
+                List<TreeItem<String>> collections = collectionsTree.getRoot().getChildren();
+                // FIX: show collection NAMES, not "TreeItem [ value: ... ]"
+                ChoiceDialog<String> dialog = new ChoiceDialog<>(
+                        collections.get(0).getValue(),
+                        collections.stream().map(TreeItem::getValue).toList()
                 );
                 dialog.setTitle("Select Collection");
                 dialog.setHeaderText("Choose a collection for the new request");
                 dialog.setContentText("Collection:");
+                ThemeManager.styleDialog(dialog.getDialogPane());
 
-                Optional<TreeItem<String>> result = dialog.showAndWait();
-                result.ifPresent(this::showAddRequestDialog);
+                Optional<String> result = dialog.showAndWait();
+                result.ifPresent(name -> collections.stream()
+                        .filter(item -> name.equals(item.getValue()))
+                        .findFirst()
+                        .ifPresent(this::showAddRequestDialog));
             } else {
                 AlertUtils.showError("Please create a collection first");
             }
@@ -2063,6 +2079,7 @@ public class MainController implements Initializable {
         dialog.setTitle("New Request");
         dialog.setHeaderText("Create a new request in " + parentItem.getValue());
         dialog.setContentText("Request name:");
+        ThemeManager.styleDialog(dialog.getDialogPane());
 
         Optional<String> result = dialog.showAndWait();
         result.ifPresent(name -> {

@@ -12,6 +12,7 @@ import com.roze.thundercall.api.mapper.CollectionMapper;
 import com.roze.thundercall.api.mapper.FolderMapper;
 import com.roze.thundercall.api.mapper.RequestMapper;
 import com.roze.thundercall.api.repository.CollectionRepository;
+import com.roze.thundercall.api.repository.WorkspaceRepository;
 import com.roze.thundercall.api.repository.FolderRepository;
 import com.roze.thundercall.api.repository.RequestRepository;
 import com.roze.thundercall.api.service.CollectionService;
@@ -32,6 +33,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CollectionServiceImpl implements CollectionService {
     private final CollectionRepository collectionRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final CollectionMapper collectionMapper;
     private final WorkspaceService workspaceService;
     private final FolderRepository folderRepository;
@@ -42,7 +44,12 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional
     public CollectionResponse createCollection(CollectionRequest request, User user) {
-        Workspace workspace = workspaceService.getOrCreateDefaultWorkspace(user);
+        // FIX: create the collection in the workspace the UI selected.
+        // Falls back to the default workspace when no id is sent.
+        Workspace workspace = request.workspaceId() != null
+                ? workspaceRepository.findByIdAndOwner(request.workspaceId(), user)
+                .orElseThrow(() -> new ResourceNotFoundException("Workspace not found"))
+                : workspaceService.getOrCreateDefaultWorkspace(user);
         Collection collection = collectionMapper.toEntity(request);
         collection.setWorkspace(workspace);
         collection.setRequests(new ArrayList<>());

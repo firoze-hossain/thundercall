@@ -59,9 +59,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     @Transactional
     public Workspace getOrCreateDefaultWorkspace(User user) {
+        // Deterministic: the OLDEST workspace (lowest id) is the default,
+        // matching what the UI selects at startup.
         return workspaceRepository.findByOwner(user)
                 .stream()
-                .findFirst()
+                .min(java.util.Comparator.comparing(Workspace::getId))
                 .orElseGet(() -> createWorkspace(user, null, true));
     }
 
@@ -154,6 +156,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     public List<WorkspaceResponse> getUserWorkspaces(User user) {
         return workspaceRepository.findByOwner(user).stream()
+                .sorted(java.util.Comparator.comparing(Workspace::getId))
                 .map(workspaceMapper::toResponse)
                 .toList();
     }

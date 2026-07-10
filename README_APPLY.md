@@ -1,62 +1,58 @@
-# Round 6 — all reported bugs fixed
+# Round 7 — THE invisibility bug found (proved by your DB dump) + popup fixes
 
+## What your database revealed
+Your dump shows user "firoze" has TWO workspaces:
+  ws1 (id 1) "firoze's Workspace"  ← auto-created at registration
+  ws2 (id 2) "My Workspace"        ← created via the dialog
+Collections: "Getting started"→ws1, "Getting started"→ws2, "Hello"→ws1.
+
+Your UI was showing ws2 ("My Workspace" in the workspace bar), but the
+backend's createCollection ALWAYS used your first workspace (ws1) — it had
+no idea which workspace the UI selected. So "Hello" (and any folder/request
+inside it) landed in ws1 = INVISIBLE while you looked at ws2. Also: your
+folders table is empty and no custom request exists — creations were going
+into hidden places or being attempted on invisible collections.
+
+## The fix (both sides now agree on the workspace)
+- BACKEND CollectionRequest gains `workspaceId`; createCollection uses it
+  (verified against your ownership check), falling back to the default.
+- FRONTEND automatically sends the SELECTED workspace's id on every
+  collection creation (one central place: CollectionService).
+- Default workspace is now DETERMINISTIC on both sides: the oldest (lowest
+  id), and GET /workspaces returns them sorted — so the UI's startup pick
+  and the backend's fallback are the same workspace, always.
+
+Result: create collection → appears instantly in the sidebar. Folders and
+requests inside it too (their flow already refreshed correctly — they were
+only "missing" because their parent collection was hidden).
+
+## The other two bugs
+- "TreeItem [ value: Getting started ]" in the Select Collection dialog:
+  it displayed raw TreeItem objects. Now shows collection names, themed.
+- Tour popup on EVERY login: the server only marks the tour complete if you
+  finish all 6 steps — skipping/closing left it "incomplete" forever. The
+  tour now shows ONCE per user per machine (stored in preferences),
+  whatever you click. (You can still relaunch it later if we add a Help
+  menu item.)
+
+## Files
 | File | Destination |
 |---|---|
-| MainController.java | .../ui/controllers/ |
-| AuthController.java | .../ui/controllers/ |
-| WorkspaceSetupDialog.java | .../ui/dialogs/ |
-| WorkspaceService.java | .../ui/services/  (FRONTEND service) |
-| CredentialStore.java | .../ui/utils/  (NEW) |
-| main.fxml | src/main/resources/views/ |
-| login.fxml | src/main/resources/views/ |
-| register.fxml | src/main/resources/views/ |
-| main.css | src/main/resources/css/ |
+| CollectionRequest.java | BACKEND .../api/dto/ |
+| CollectionServiceImpl.java | BACKEND .../api/service/impl/ |
+| WorkspaceServiceImpl.java | BACKEND .../api/service/impl/ |
+| MainController.java | FRONTEND .../ui/controllers/ |
+| CollectionRequest_frontend.java | FRONTEND .../ui/models/CollectionRequest.java (rename!) |
+| CollectionService.java | FRONTEND .../ui/services/ |
 
-## Console exception — FIXED
-"Unable to coerce response-preview to interface java.util.Collection":
-WebView is constructed through a Builder by FXMLLoader, and builder classes
-cannot take styleClass as an attribute. Removed the attribute from main.fxml.
+## Build & test (backend AND frontend this round)
+1. Backend: 3 files → mvn clean package → restart.
+2. Frontend: 3 files (rename CollectionRequest_frontend.java) → build → run.
+3. Test: login → workspace bar shows "firoze's Workspace" (oldest) and you
+   should now SEE "Hello"! → create a collection → visible immediately →
+   switch to "My Workspace" via Workspaces ▾ → create collection there →
+   visible → sidebar + button with nothing selected → dialog shows NAMES →
+   logout/login twice → tour appears at most once.
 
-## Squeezed bar showing "… …▾ …" (image 2) — FIXED
-main.css had `.environment-combo { -fx-pref-width: 10000; }` (from the old
-sidebar layout). In the new workspace bar it made the environment selector
-swallow the whole row, crushing "My Workspace", New and Import into "…".
-Rule removed; the combo uses its normal 200px width.
-
-## Workspace popup on EVERY login — FIXED
-WorkspaceManager.hasWorkspace() was an in-memory flag, always false at app
-start, so the setup dialog opened each login. Now the app asks the server
-(GET /workspaces): if you have workspaces, the first becomes current, the
-Workspaces ▾ menu is filled with the REAL list, and no popup appears. The
-popup only shows for a genuinely new account with zero workspaces.
-
-## New workspace not selected + duplicate "Getting started" — FIXED
-- Creating a workspace now SELECTS it: the workspace-bar name updates, the
-  Workspaces ▾ menu shows a ✓ next to it, and the sidebar reloads.
-- The collections tree now shows ONLY the current workspace's collections
-  (Postman behaviour) — the duplicate "Getting started" entries were
-  collections from your other workspaces all mixed together.
-- Switch workspaces any time from Workspaces ▾.
-- The "Create sample requests" checkbox in the dialog is now honored
-  (it was silently ignored — every workspace got sample data).
-
-## Folder under folder — honest behaviour
-Your backend's Folder has no parent-folder field, so nested folders cannot
-exist in the data model (that's why nothing appeared). Now: using "Add
-folder" from a folder creates it in the enclosing collection and the tree
-refreshes immediately. True nested folders need a backend change (parent_id
-column + recursion) — say the word and I'll build it next round.
-
-## Remember me — NEW
-Login page has a "Remember me" checkbox. When checked, your username and
-password are saved (Base64-obfuscated in OS user preferences) and pre-filled
-next launch — one click to sign in. Unchecking clears them. Note in code:
-for public distribution this should move to the OS keychain.
-
-## Build & test
-1. Frontend only this round: copy files → mvn clean package → run.
-2. Test: login (no popup!) → Workspaces ▾ shows your real workspaces with ✓ →
-   create workspace → it becomes selected, sidebar shows only its collections
-   → uncheck "Create sample requests" → no extra "Getting started" →
-   folder "Add folder" works from any tree item → logout, login with
-   Remember me → fields pre-filled → console: no coerce exception.
+Folder expanding like Postman (nested folders) needs the backend parent_id
+migration — bugs are done, so say "do nested folders" and that's next.

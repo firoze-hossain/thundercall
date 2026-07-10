@@ -15,6 +15,12 @@ public class CollectionService {
     private static final String BASE_URL = "/collections";
 
     public static Optional<CollectionResponse> createCollection(CollectionRequest request) {
+        // FIX: send the SELECTED workspace so the new collection appears in
+        // the sidebar immediately (backend used to pick the first workspace)
+        if (request.getWorkspaceId() == null
+                && WorkspaceManager.getCurrentWorkspace() != null) {
+            request.setWorkspaceId(WorkspaceManager.getCurrentWorkspace().getId());
+        }
         try {
             BaseResponse<CollectionResponse> response = ApiClient.post(BASE_URL, request, new TypeReference<BaseResponse<CollectionResponse>>() {
             });

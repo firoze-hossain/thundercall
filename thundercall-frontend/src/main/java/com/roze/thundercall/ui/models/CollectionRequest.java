@@ -12,4 +12,5 @@ import lombok.NoArgsConstructor;
 public class CollectionRequest {
     private String name;
     private String description;
+    private Long workspaceId;
 }
