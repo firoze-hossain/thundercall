@@ -4,7 +4,7 @@
 <?import javafx.scene.layout.*?>
 <StackPane xmlns="http://javafx.com/javafx/21"
            xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.roze.thundercall.controllers.FeatureTourController"
+           fx:controller="com.roze.thundercall.ui.controllers.FeatureTourController"
            style="-fx-background-color: rgba(0,0,0,0.7);"
            maxWidth="Infinity" maxHeight="Infinity">
 

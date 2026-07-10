@@ -111,7 +111,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>com.roze.thundercall.Main</mainClass>
+                    <mainClass>com.roze.thundercall.ui.Main</mainClass>
                 </configuration>
             </plugin>
         </plugins>

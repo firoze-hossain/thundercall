@@ -10,7 +10,7 @@
 <?import javafx.scene.web.WebView?>
 <StackPane xmlns="http://javafx.com/javafx/21"
            xmlns:fx="http://javafx.com/fxml/1"
-           fx:controller="com.roze.thundercall.controllers.MainController"
+           fx:controller="com.roze.thundercall.ui.controllers.MainController"
            stylesheets="@../css/main.css">
     <BorderPane>
         <!-- Top Navigation Bar -->

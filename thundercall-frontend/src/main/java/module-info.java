@@ -16,12 +16,12 @@ module com.roze.thundercall {
     requires org.json;
     requires java.logging;
     requires java.scripting;
-    opens com.roze.thundercall to javafx.graphics, javafx.fxml;
-    opens com.roze.thundercall.controllers to javafx.fxml;
-    opens com.roze.thundercall.models to javafx.base;
-    exports com.roze.thundercall.models to javafx.base, com.fasterxml.jackson.databind;
+    opens com.roze.thundercall.ui to javafx.graphics, javafx.fxml;
+    opens com.roze.thundercall.ui.controllers to javafx.fxml;
+    opens com.roze.thundercall.ui.models to javafx.base;
+    exports com.roze.thundercall.ui.models to javafx.base, com.fasterxml.jackson.databind;
 
-    exports com.roze.thundercall;
-    exports com.roze.thundercall.enums;
-    opens com.roze.thundercall.enums to javafx.fxml, javafx.graphics;
+    exports com.roze.thundercall.ui;
+    exports com.roze.thundercall.ui.enums;
+    opens com.roze.thundercall.ui.enums to javafx.fxml, javafx.graphics;
 }
