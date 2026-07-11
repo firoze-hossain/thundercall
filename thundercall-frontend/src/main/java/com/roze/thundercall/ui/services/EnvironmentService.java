@@ -90,15 +90,13 @@ public class EnvironmentService {
             if (currentEnv.isPresent()) {
                 EnvironmentResponse env = currentEnv.get();
 
-                // Merge the new variables with existing ones
-                Map<String, String> mergedVariables = new HashMap<>(env.getVariables());
-                mergedVariables.putAll(variables);
-
-                // Update the environment
+                // FIX: REPLACE the variables with exactly the given map.
+                // The old merge (putAll) meant deleted variables could never
+                // actually be removed from the server.
                 EnvironmentRequest request = new EnvironmentRequest(
                         env.getName(),
                         env.getDescription(),
-                        mergedVariables,
+                        variables,
                         env.getIsActive()
                 );
 

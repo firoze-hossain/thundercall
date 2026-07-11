@@ -140,6 +140,8 @@ public class RequestServiceImpl implements RequestService {
         request.setUrl(apiRequest.url());
         request.setHeaders(apiRequest.headers());
         request.setBody(apiRequest.body());
+        request.setPreRequestScript(apiRequest.preRequestScript());
+        request.setTestsScript(apiRequest.testsScript());
         Request saved = requestRepository.save(request);
         return requestMapper.toResponse(saved);
     }

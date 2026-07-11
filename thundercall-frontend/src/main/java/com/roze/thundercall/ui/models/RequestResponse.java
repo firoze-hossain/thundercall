@@ -20,6 +20,8 @@ public class RequestResponse {
     private String url;
     private String headers;
     private String body;
+    private String preRequestScript;
+    private String testsScript;
     private Long collectionId;
     private String collectionName;
     private Long folderId;

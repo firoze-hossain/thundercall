@@ -361,6 +361,11 @@ public class MainController implements Initializable {
         Platform.runLater(() -> {
             TreeItem<String> root = new TreeItem<>("Collections");
             root.setExpanded(true);
+            // ISSUE 1 FIX: remember which collections/folders were expanded,
+            // restore after rebuild — no more everything-expands-on-reload
+            Set<String> expandedKeys = new HashSet<>();
+            captureExpandedKeys(fullCollectionsRoot, expandedKeys);
+
             collectionIdMap.clear();
             folderIdMap.clear();
             requestIdMap.clear();
@@ -377,6 +382,7 @@ public class MainController implements Initializable {
                     continue;
                 }
                 TreeItem<String> collectionItem = new TreeItem<>(collectionResponse.getName());
+                collectionItem.setExpanded(expandedKeys.contains("c:" + collectionResponse.getId()));
                 collectionIdMap.put(collectionItem, collectionResponse.getId());
 
                 // Add folders if they exist
@@ -399,7 +405,7 @@ public class MainController implements Initializable {
                         } else {
                             collectionItem.getChildren().add(folderItem);
                         }
-                        folderItem.setExpanded(true);
+                        folderItem.setExpanded(expandedKeys.contains("f:" + folderResponse.getId()));
                     }
                 }
 
@@ -431,11 +437,6 @@ public class MainController implements Initializable {
             // Postman-style cells: colored method badges, folder/collection
             // icons, hover + / ⋯ buttons
             collectionsTree.setCellFactory(tv -> createPostmanTreeCell());
-
-            // Expand all collections by default for better UX
-            for (TreeItem<String> item : root.getChildren()) {
-                item.setExpanded(true);
-            }
 
             // Re-apply any active sidebar search
             if (collectionsSearchField != null && collectionsSearchField.getText() != null
@@ -844,6 +845,17 @@ public class MainController implements Initializable {
 
             // Load body
             bodyTextArea.setText(requestResponse.getBody());
+            // Scripts are saved WITH the request (like Postman) — restore them
+            if (preRequestScriptsArea != null) {
+                preRequestScriptsArea.setText(
+                        requestResponse.getPreRequestScript() != null
+                                ? requestResponse.getPreRequestScript() : "");
+            }
+            if (postRequestScriptsArea != null) {
+                postRequestScriptsArea.setText(
+                        requestResponse.getTestsScript() != null
+                                ? requestResponse.getTestsScript() : "");
+            }
             if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
                     && rawBodyTypeButton != null) {
                 rawBodyTypeButton.setSelected(true);
@@ -955,6 +967,12 @@ public class MainController implements Initializable {
         Map<String, String> current = new LinkedHashMap<>(currentEnvironmentVariables());
         ScriptRunner.Result result = ScriptRunner.run(script, responseBody, statusCode, current);
         result.log.forEach(line -> System.out.println("[" + label + "] " + line));
+        // Show what the script did (or why lines were skipped) in the Tests tab
+        if (testResultsList != null && !result.log.isEmpty()) {
+            List<String> uiLog = new ArrayList<>();
+            result.log.forEach(line -> uiLog.add("[" + label + "] " + line));
+            Platform.runLater(() -> testResultsList.getItems().addAll(0, uiLog));
+        }
         if (result.setVariables.isEmpty() && result.unsetVariables.isEmpty()) {
             return;
         }
@@ -1069,6 +1087,26 @@ public class MainController implements Initializable {
         });
     }
 
+    /** Records "c:<id>" / "f:<id>" keys for every expanded node. */
+    private void captureExpandedKeys(TreeItem<String> node, Set<String> out) {
+        if (node == null) {
+            return;
+        }
+        for (TreeItem<String> child : node.getChildren()) {
+            if (child.isExpanded()) {
+                Long collectionId = collectionIdMap.get(child);
+                if (collectionId != null) {
+                    out.add("c:" + collectionId);
+                }
+                Long folderId = folderIdMap.get(child);
+                if (folderId != null) {
+                    out.add("f:" + folderId);
+                }
+            }
+            captureExpandedKeys(child, out);
+        }
+    }
+
     // ==================== Postman-style request tabs ====================
 
     /** Snapshot of the request editor for one tab. */
@@ -1078,6 +1116,8 @@ public class MainController implements Initializable {
         String method = "GET";
         String url = "";
         String body = "";
+        String preScript = "";
+        String testsScript = "";
         List<KeyValuePair> params = new ArrayList<>();
         List<KeyValuePair> headers = new ArrayList<>();
     }
@@ -1141,6 +1181,8 @@ public class MainController implements Initializable {
         state.method = methodCombo.getValue();
         state.url = urlField.getText();
         state.body = bodyTextArea.getText();
+        state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
+        state.testsScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : "";
         state.params = new ArrayList<>(paramsData);
         state.headers = new ArrayList<>(headersData);
     }
@@ -1153,6 +1195,12 @@ public class MainController implements Initializable {
         methodCombo.setValue(state.method == null ? "GET" : state.method);
         urlField.setText(state.url == null ? "" : state.url);
         bodyTextArea.setText(state.body == null ? "" : state.body);
+        if (preRequestScriptsArea != null) {
+            preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
+        }
+        if (postRequestScriptsArea != null) {
+            postRequestScriptsArea.setText(state.testsScript == null ? "" : state.testsScript);
+        }
         paramsData.setAll(state.params);
         headersData.setAll(state.headers);
     }
@@ -1658,6 +1706,10 @@ public class MainController implements Initializable {
                     apiRequest.setUrl(urlField.getText());
                     apiRequest.setHeaders(new JSONObject(buildHeaders()).toString());
                     apiRequest.setBody(buildRequestBody());
+                    apiRequest.setPreRequestScript(
+                            preRequestScriptsArea != null ? preRequestScriptsArea.getText() : null);
+                    apiRequest.setTestsScript(
+                            postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null);
                     Optional<RequestResponse> updated = RequestService.updateRequest(requestId, apiRequest);
                     Platform.runLater(() -> {
                         if (updated.isPresent()) {
@@ -1701,6 +1753,10 @@ public class MainController implements Initializable {
                 apiRequest.setUrl(urlField.getText());
                 apiRequest.setHeaders(new JSONObject(buildHeaders()).toString());
                 apiRequest.setBody(buildRequestBody());
+                apiRequest.setPreRequestScript(
+                        preRequestScriptsArea != null ? preRequestScriptsArea.getText() : null);
+                apiRequest.setTestsScript(
+                        postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null);
                 apiRequest.setCollectionId(collectionId);
                 apiRequest.setFolderId(folderId);
 
@@ -1723,47 +1779,34 @@ public class MainController implements Initializable {
     }
 
     private Long getCollectionIdFromTreeItem(TreeItem<String> item) {
-        // If item is a collection, return its ID
-        Long collectionId = collectionIdMap.get(item);
-        if (collectionId != null) {
-            return collectionId;
-        }
-
-        // If item is a folder, get its parent collection
-        Long folderId = folderIdMap.get(item);
-        if (folderId != null && item.getParent() != null) {
-            return collectionIdMap.get(item.getParent());
-        }
-
-        // If item is a request, get its parent collection
-        Long requestId = requestIdMap.get(item);
-        if (requestId != null && item.getParent() != null) {
-            TreeItem<String> parent = item.getParent();
-            if (folderIdMap.containsKey(parent)) {
-                // Request is in a folder, get the folder's parent collection
-                return collectionIdMap.get(parent.getParent());
-            } else {
-                // Request is directly in a collection
-                return collectionIdMap.get(parent);
+        // FIX: walk ALL ancestors. The old code only looked one level up, so
+        // items inside nested folders (folder-in-folder) reported
+        // "please select a collection" for Add folder / Add request.
+        TreeItem<String> current = item;
+        while (current != null) {
+            Long collectionId = collectionIdMap.get(current);
+            if (collectionId != null) {
+                return collectionId;
             }
+            current = current.getParent();
         }
-
         return null;
     }
 
     private Long getFolderIdFromTreeItem(TreeItem<String> item) {
-        // If item is a folder, return its ID
-        Long folderId = folderIdMap.get(item);
-        if (folderId != null) {
-            return folderId;
+        // Nearest enclosing folder: the item itself, or the first folder
+        // ancestor — works at any nesting depth.
+        TreeItem<String> current = item;
+        while (current != null) {
+            Long folderId = folderIdMap.get(current);
+            if (folderId != null) {
+                return folderId;
+            }
+            if (collectionIdMap.containsKey(current)) {
+                return null; // reached the collection: no folder in between
+            }
+            current = current.getParent();
         }
-
-        // If item is a request and its parent is a folder, return the folder ID
-        Long requestId = requestIdMap.get(item);
-        if (requestId != null && item.getParent() != null) {
-            return folderIdMap.get(item.getParent());
-        }
-
         return null;
     }
 

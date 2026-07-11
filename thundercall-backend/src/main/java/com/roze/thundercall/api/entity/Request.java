@@ -35,6 +35,10 @@ public class Request {
     private String headers;
     @Column(columnDefinition = "TEXT")
     private String body;
+    @Column(name = "pre_request_script", columnDefinition = "TEXT")
+    private String preRequestScript;
+    @Column(name = "tests_script", columnDefinition = "TEXT")
+    private String testsScript;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collection_id", nullable = false)
     private Collection collection;

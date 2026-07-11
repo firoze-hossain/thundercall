@@ -12,6 +12,8 @@ public record ApiRequest(
         String headers,
         String body,
         Long collectionId,
-        Long folderId
+        Long folderId,
+        String preRequestScript,
+        String testsScript
 ) {
 }

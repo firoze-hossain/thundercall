@@ -19,4 +19,6 @@ public class ApiRequest {
     private String body;
     private Long collectionId;
     private Long folderId;
+    private String preRequestScript;
+    private String testsScript;
 }
