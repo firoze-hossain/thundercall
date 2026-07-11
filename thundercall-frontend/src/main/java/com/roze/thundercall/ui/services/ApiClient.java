@@ -157,7 +157,13 @@ public class ApiClient {
         int responseCode = connection.getResponseCode();
         if (responseCode == 200 || responseCode == 204) {
             if (responseCode == 204) {
-                return null;
+                // FIX: the server deleted successfully but returned 204 with
+                // no body — returning null here made every delete report
+                // "failed to delete" even though it worked. 204 IS success.
+                BaseResponse<T> ok = new BaseResponse<>();
+                ok.setSuccess(true);
+                ok.setMessage("No content");
+                return ok;
             }
             try (InputStream is = connection.getInputStream()) {
                 String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);

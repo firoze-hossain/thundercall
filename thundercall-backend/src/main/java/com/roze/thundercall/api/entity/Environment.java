@@ -31,7 +31,7 @@ public class Environment {
     @ElementCollection
     @CollectionTable(name = "environment_variables", joinColumns = @JoinColumn(name = "environment_id"))
     @MapKeyColumn(name = "variable_key")
-    @Column(name = "variable_value")
+    @Column(name = "variable_value",columnDefinition = "TEXT")
     @Builder.Default
     private Map<String, String> variables = new HashMap<>();
 

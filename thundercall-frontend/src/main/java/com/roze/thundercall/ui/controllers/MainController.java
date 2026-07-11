@@ -1954,9 +1954,21 @@ public class MainController implements Initializable {
                 updateStatus("Request completed");
 
                 // Post-response scripts: pm.environment.set / pm.response.json()
-                runScriptsAndApply(
-                        postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null,
-                        apiResponse.getResponse(), apiResponse.getStatusCode(), "Script");
+                String postScript = postRequestScriptsArea != null
+                        ? postRequestScriptsArea.getText() : null;
+                runScriptsAndApply(postScript, apiResponse.getResponse(),
+                        apiResponse.getStatusCode(), "Script");
+
+                // Convenience: a response-reading script placed in the
+                // PRE-request box (very common) still works — it is run
+                // again here, after the response, so tokens get captured.
+                String preScript = preRequestScriptsArea != null
+                        ? preRequestScriptsArea.getText() : null;
+                if (preScript != null && preScript.contains("pm.response")
+                        && (postScript == null || !postScript.contains("pm.response"))) {
+                    runScriptsAndApply(preScript, apiResponse.getResponse(),
+                            apiResponse.getStatusCode(), "Script (from Pre-request box)");
+                }
             } else {
                 AlertUtils.showError("Request failed with no response");
                 updateStatus("Request failed");
