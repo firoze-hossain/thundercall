@@ -974,6 +974,7 @@ public class MainController implements Initializable {
             Platform.runLater(() -> testResultsList.getItems().addAll(0, uiLog));
         }
         if (result.setVariables.isEmpty() && result.unsetVariables.isEmpty()) {
+            updateStatus(label + ": no variables set — open the response Tests tab to see why");
             return;
         }
         String envName = environmentCombo.getValue();
@@ -1898,6 +1899,18 @@ public class MainController implements Initializable {
             return;
         }
 
+        // Validate the RESOLVED url (the template was allowed through)
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            isRequestInProgress = false;
+            if (sendButton != null) {
+                sendButton.setDisable(false);
+            }
+            AlertUtils.showError("Resolved URL must start with http:// or https:// — got: "
+                    + (url.length() > 60 ? url.substring(0, 57) + "..." : url));
+            updateStatus("Invalid URL after variable resolution");
+            return;
+        }
+
         // Use Task for proper JavaFX threading
         Task<Optional<ApiResponse>> requestTask = new Task<Optional<ApiResponse>>() {
             @Override
@@ -2211,8 +2224,14 @@ public class MainController implements Initializable {
             AlertUtils.showError("Please enter a URL");
             return false;
         }
+        // FIX: {{BASE_URL}}/auth/login was rejected before the variable was
+        // even resolved. Template URLs pass here; the RESOLVED url is
+        // validated in handleSendRequest after substitution.
+        if (url.startsWith("{{")) {
+            return true;
+        }
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            AlertUtils.showError("URL must start with http:// or https://");
+            AlertUtils.showError("URL must start with http:// or https:// (or a {{variable}})");
             return false;
         }
         return true;
@@ -2392,9 +2411,32 @@ public class MainController implements Initializable {
                 } else if (folderId != null) {
                     deleteFolder(folderId);
                 } else {
-                    // For requests, just remove from UI
-                    selectedItem.getParent().getChildren().remove(selectedItem);
-                    updateStatus("Item deleted");
+                    // FIX: requests were only removed from the UI — they came
+                    // back on every refresh. Delete on the server for real.
+                    Long requestId = requestIdMap.get(selectedItem);
+                    if (requestId != null) {
+                        String requestName = selectedItem.getValue();
+                        new Thread(() -> {
+                            boolean deleted = RequestService.deleteRequest(requestId);
+                            Platform.runLater(() -> {
+                                if (deleted) {
+                                    // Close its tab if open
+                                    Tab openTab = findTabByRequestId(requestId);
+                                    if (openTab != null && requestTabPane != null) {
+                                        tabStates.remove(openTab);
+                                        requestTabPane.getTabs().remove(openTab);
+                                        if (requestTabPane.getTabs().isEmpty()) {
+                                            openRequestTab("Untitled Request", null);
+                                        }
+                                    }
+                                    refreshCollectionsTree();
+                                    updateStatus("Request deleted: " + requestName);
+                                } else {
+                                    AlertUtils.showError("Failed to delete request");
+                                }
+                            });
+                        }).start();
+                    }
                 }
             }
         } else {

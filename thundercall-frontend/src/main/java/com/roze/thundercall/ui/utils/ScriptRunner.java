@@ -94,7 +94,8 @@ public final class ScriptRunner {
                     Object value = evaluate(set.group(2).trim(), aliases, responseJson,
                             statusCode, environment);
                     if (value == null) {
-                        result.log.add("skipped (value not found): " + line);
+                        result.log.add("skipped (value not found): " + line
+                                + availableKeysHint(set.group(2).trim(), aliases, responseJson));
                     } else {
                         result.setVariables.put(key, String.valueOf(value));
                         result.log.add("set " + key + " = " + abbreviate(String.valueOf(value)));
@@ -107,6 +108,56 @@ public final class ScriptRunner {
             }
         }
         return result;
+    }
+
+    /**
+     * When a path fails ("responseData.token" but the API calls it
+     * "accessToken"), tell the user what keys DO exist at the deepest
+     * resolvable point — the single most useful script diagnostic.
+     */
+    private static String availableKeysHint(String expr, Map<String, Object> aliases,
+                                            Object responseJson) {
+        Object base = null;
+        String path = null;
+        Matcher resp = RESPONSE_JSON.matcher(expr);
+        if (resp.matches()) {
+            base = responseJson;
+            path = resp.group(1);
+        } else {
+            int dot = expr.indexOf('.');
+            String head = dot < 0 ? expr : expr.substring(0, dot);
+            if (aliases.containsKey(head)) {
+                base = aliases.get(head);
+                path = dot < 0 ? "" : expr.substring(dot);
+            }
+        }
+        if (base == null) {
+            return "";
+        }
+        Object current = base;
+        StringBuilder walked = new StringBuilder();
+        if (path != null) {
+            for (String part : path.split("\\.")) {
+                if (part.isEmpty()) {
+                    continue;
+                }
+                Object next = resolvePath(current, "." + part);
+                if (next == null) {
+                    break;
+                }
+                current = next;
+                walked.append('.').append(part);
+            }
+        }
+        if (current instanceof JSONObject) {
+            return "  →  available keys" + (walked.length() > 0 ? " at '" + walked + "'" : "")
+                    + ": " + ((JSONObject) current).keySet();
+        }
+        if (current instanceof JSONArray) {
+            return "  →  found an array (length " + ((JSONArray) current).length()
+                    + ") — use [0] etc.";
+        }
+        return "";
     }
 
     private static Object evaluate(String expr, Map<String, Object> aliases, Object responseJson,

@@ -28,6 +28,19 @@ public class RequestService {
     }
 
 
+    /** Deletes a saved request on the server. */
+    public static boolean deleteRequest(Long id) {
+        try {
+            BaseResponse<Void> response = ApiClient.delete(BASE_URL + "/" + id,
+                    new TypeReference<BaseResponse<Void>>() {
+                    });
+            return response != null && response.isSuccess();
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to delete request: " + e.getMessage()));
+            return false;
+        }
+    }
+
     /** Saves the current editor state back into an EXISTING request (Ctrl+S). */
     public static Optional<RequestResponse> updateRequest(Long id, ApiRequest apiRequest) {
         try {

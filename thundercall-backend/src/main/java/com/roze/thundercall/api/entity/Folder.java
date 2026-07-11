@@ -36,6 +36,14 @@ public class Folder {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Folder parentFolder;
+
+    // FIX: without this cascade, deleting a folder that contains nested
+    // folders (whose requests still reference them) violated the foreign
+    // key and the delete failed. Hibernate now removes the whole subtree:
+    // child folders and their requests included.
+    @OneToMany(mappedBy = "parentFolder", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<Folder> childFolders = new ArrayList<>();
     
     @OneToMany(mappedBy = "folder", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
