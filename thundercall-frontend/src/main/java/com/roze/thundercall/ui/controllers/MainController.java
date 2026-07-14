@@ -36,6 +36,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.XML;
 
@@ -2778,10 +2779,313 @@ public class MainController implements Initializable {
         }
         if (file.getName().toLowerCase(Locale.ROOT).endsWith(".csv")) {
             importRequestsFromCsv(file);
+        } else if (file.getName().toLowerCase(Locale.ROOT).endsWith(".json")) {
+            importPostmanCollection(file);
         } else {
-            AlertUtils.showInfo("Postman collection (.json) import is coming soon — "
-                    + "CSV import (Folder, Name, Method, URL, Headers, Body columns) is ready today.");
+            AlertUtils.showInfo("Pick a Postman collection (.json) or a requests spreadsheet (.csv)");
         }
+    }
+
+    /**
+     * Imports a Postman Collection v2.1 export: creates a NEW collection
+     * named after the file's info.name (auto-suffixed on a name clash),
+     * recreates the folder tree (item groups) at any depth, creates every
+     * request with its method/URL/headers/body, carries over pre-request
+     * and test scripts, maps Bearer/Basic auth (collection-level auth is
+     * used as a fallback for requests that don't set their own), and — if
+     * the file defines collection variables — creates a matching
+     * Environment so {{variables}} used in the collection resolve
+     * immediately.
+     */
+    private void importPostmanCollection(File file) {
+        new Thread(() -> {
+            try {
+                String text = java.nio.file.Files.readString(file.toPath());
+                JSONObject root = new JSONObject(text);
+                if (!root.has("item")) {
+                    Platform.runLater(() -> AlertUtils.showError(
+                            "This doesn't look like a Postman collection export (no \"item\" array found)"));
+                    return;
+                }
+                String baseName = root.has("info") && root.getJSONObject("info").has("name")
+                        ? root.getJSONObject("info").getString("name")
+                        : file.getName().replaceAll("(?i)\\.json$", "");
+
+                // Avoid silently merging into a same-named collection —
+                // always import as a fresh collection, de-duplicating the name.
+                Set<String> existingNames = new HashSet<>();
+                Optional<List<CollectionResponse>> existingCollections = CollectionService.getUserCollections();
+                Long currentWorkspaceId = WorkspaceManager.getCurrentWorkspace() != null
+                        ? WorkspaceManager.getCurrentWorkspace().getId() : null;
+                if (existingCollections.isPresent()) {
+                    for (CollectionResponse c : existingCollections.get()) {
+                        if (currentWorkspaceId != null
+                                && String.valueOf(currentWorkspaceId).equals(c.getWorkspaceId())) {
+                            existingNames.add(c.getName());
+                        }
+                    }
+                }
+                String collectionName = baseName;
+                int suffix = 2;
+                while (existingNames.contains(collectionName)) {
+                    collectionName = baseName + " (" + suffix + ")";
+                    suffix++;
+                }
+
+                CollectionRequest collectionRequest = new CollectionRequest();
+                collectionRequest.setName(collectionName);
+                collectionRequest.setDescription("Imported from " + file.getName());
+                Optional<CollectionResponse> createdCollection = CollectionService.createCollection(collectionRequest);
+                if (createdCollection.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to create the collection"));
+                    return;
+                }
+                Long collectionId = createdCollection.get().getId();
+
+                // Collection-level auth (used when a request specifies none)
+                String[] fallbackAuth = extractAuth(root.optJSONObject("auth"));
+
+                int[] counters = {0, 0, 0}; // requests, folders, skipped(file uploads etc.)
+                importPostmanItems(root.getJSONArray("item"), collectionId, null, fallbackAuth, counters);
+
+                // Collection variables → an Environment of the same name, so
+                // {{variables}} used throughout the import resolve right away
+                int variableCount = 0;
+                if (root.has("variable")) {
+                    JSONArray vars = root.getJSONArray("variable");
+                    Map<String, String> variables = new LinkedHashMap<>();
+                    for (int i = 0; i < vars.length(); i++) {
+                        JSONObject v = vars.getJSONObject(i);
+                        String key = v.optString("key", "");
+                        if (!key.isEmpty()) {
+                            variables.put(key, v.optString("value", ""));
+                        }
+                    }
+                    if (!variables.isEmpty()) {
+                        Optional<EnvironmentResponse> env = EnvironmentService.createEnvironment(
+                                collectionName, "Imported collection variables", variables);
+                        if (env.isPresent()) {
+                            variableCount = variables.size();
+                        }
+                    }
+                }
+
+                int finalRequests = counters[0];
+                int finalFolders = counters[1];
+                int finalSkipped = counters[2];
+                int finalVariables = variableCount;
+                String finalCollectionName = collectionName;
+                Platform.runLater(() -> {
+                    refreshCollectionsTree();
+                    loadEnvironments();
+                    StringBuilder msg = new StringBuilder("Imported \"" + finalCollectionName + "\": "
+                            + finalRequests + " request(s)");
+                    if (finalFolders > 0) {
+                        msg.append(", ").append(finalFolders).append(" folder(s)");
+                    }
+                    if (finalVariables > 0) {
+                        msg.append(", ").append(finalVariables).append(" variable(s) into a new environment");
+                    }
+                    if (finalSkipped > 0) {
+                        msg.append(". ").append(finalSkipped).append(" item(s) skipped (e.g. file uploads)");
+                    }
+                    AlertUtils.showSuccess(msg.toString());
+                    updateStatus("Postman import complete: " + finalCollectionName);
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> AlertUtils.showError("Import failed: " + e.getMessage()));
+            }
+        }).start();
+    }
+
+    /** Recursively walks a Postman "item" array: item groups become nested
+     * folders, leaf items become requests. counters = {requests, folders, skipped}. */
+    private void importPostmanItems(JSONArray items, Long collectionId, Long parentFolderId,
+                                    String[] fallbackAuth, int[] counters) {
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            String name = item.optString("name", "Untitled");
+            if (item.has("item")) {
+                // Item group (folder) — Postman nests these to any depth
+                Optional<FolderResponse> folder = FolderService.createFolder(name, "", collectionId, parentFolderId);
+                if (folder.isPresent()) {
+                    counters[1]++;
+                    importPostmanItems(item.getJSONArray("item"), collectionId, folder.get().getId(),
+                            fallbackAuth, counters);
+                }
+                continue;
+            }
+            if (!item.has("request")) {
+                counters[2]++;
+                continue;
+            }
+            JSONObject request = item.getJSONObject("request");
+
+            String methodStr = request.optString("method", "GET").toUpperCase(Locale.ROOT);
+            HttpMethod method;
+            try {
+                method = HttpMethod.valueOf(methodStr);
+            } catch (IllegalArgumentException e) {
+                method = HttpMethod.GET;
+            }
+
+            String url = resolvePostmanUrl(request.opt("url"));
+
+            JSONObject headersJson = new JSONObject();
+            if (request.has("header")) {
+                JSONArray headerArr = request.getJSONArray("header");
+                for (int h = 0; h < headerArr.length(); h++) {
+                    JSONObject header = headerArr.getJSONObject(h);
+                    if (header.optBoolean("disabled", false)) {
+                        continue;
+                    }
+                    headersJson.put(header.optString("key", ""), header.optString("value", ""));
+                }
+            }
+
+            String body = "";
+            boolean hasFileUpload = false;
+            if (request.has("body")) {
+                JSONObject bodyObj = request.getJSONObject("body");
+                String mode = bodyObj.optString("mode", "");
+                if ("raw".equals(mode)) {
+                    body = bodyObj.optString("raw", "");
+                } else if ("urlencoded".equals(mode) || "formdata".equals(mode)) {
+                    StringBuilder sb = new StringBuilder();
+                    JSONArray entries = bodyObj.optJSONArray(mode);
+                    if (entries != null) {
+                        for (int e = 0; e < entries.length(); e++) {
+                            JSONObject entry = entries.getJSONObject(e);
+                            if (entry.optBoolean("disabled", false)) {
+                                continue;
+                            }
+                            if ("file".equals(entry.optString("type", ""))) {
+                                hasFileUpload = true;
+                                continue;
+                            }
+                            if (sb.length() > 0) {
+                                sb.append('&');
+                            }
+                            sb.append(entry.optString("key", "")).append('=').append(entry.optString("value", ""));
+                        }
+                    }
+                    body = sb.toString();
+                    if (!headersJson.has("Content-Type") && "urlencoded".equals(mode)) {
+                        headersJson.put("Content-Type", "application/x-www-form-urlencoded");
+                    }
+                }
+            }
+            if (hasFileUpload) {
+                counters[2]++;
+            }
+
+            // Pre-request / test scripts live in the Postman "event" array
+            String preScript = "";
+            String testsScript = "";
+            if (item.has("event")) {
+                JSONArray events = item.getJSONArray("event");
+                for (int e = 0; e < events.length(); e++) {
+                    JSONObject event = events.getJSONObject(e);
+                    String listen = event.optString("listen", "");
+                    JSONObject script = event.optJSONObject("script");
+                    if (script == null) {
+                        continue;
+                    }
+                    String code = joinExec(script.optJSONArray("exec"));
+                    if ("prerequest".equals(listen)) {
+                        preScript = code;
+                    } else if ("test".equals(listen)) {
+                        testsScript = code;
+                    }
+                }
+            }
+
+            String[] auth = extractAuth(request.optJSONObject("auth"));
+            if (auth == null) {
+                auth = fallbackAuth; // inherit collection-level auth
+            }
+
+            ApiRequest apiRequest = new ApiRequest();
+            apiRequest.setName(name);
+            apiRequest.setMethod(method);
+            apiRequest.setUrl(url);
+            apiRequest.setHeaders(headersJson.toString());
+            apiRequest.setBody(body);
+            apiRequest.setPreRequestScript(preScript);
+            apiRequest.setTestsScript(testsScript);
+            if (auth != null) {
+                apiRequest.setAuthType(auth[0]);
+                apiRequest.setAuthToken(auth[1]);
+                apiRequest.setAuthUsername(auth[2]);
+                apiRequest.setAuthPassword(auth[3]);
+            }
+            apiRequest.setCollectionId(collectionId);
+            apiRequest.setFolderId(parentFolderId);
+
+            if (RequestService.saveRequest(apiRequest).isPresent()) {
+                counters[0]++;
+            }
+        }
+    }
+
+    /** Postman's url field is either a plain string or a {"raw": "..."} object. */
+    private String resolvePostmanUrl(Object urlValue) {
+        if (urlValue instanceof String) {
+            return (String) urlValue;
+        }
+        if (urlValue instanceof JSONObject) {
+            JSONObject urlObj = (JSONObject) urlValue;
+            if (urlObj.has("raw")) {
+                return urlObj.getString("raw");
+            }
+        }
+        return "";
+    }
+
+    private String joinExec(JSONArray exec) {
+        if (exec == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < exec.length(); i++) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(exec.getString(i));
+        }
+        return sb.toString();
+    }
+
+    /** Maps a Postman auth block to {authType, token, username, password}.
+     * Returns null when there's no usable auth here (e.g. type "noauth"). */
+    private String[] extractAuth(JSONObject authObj) {
+        if (authObj == null) {
+            return null;
+        }
+        String type = authObj.optString("type", "noauth");
+        if ("bearer".equals(type)) {
+            String token = findAuthValue(authObj.optJSONArray("bearer"), "token");
+            return new String[]{"Bearer Token", token, "", ""};
+        }
+        if ("basic".equals(type)) {
+            String username = findAuthValue(authObj.optJSONArray("basic"), "username");
+            String password = findAuthValue(authObj.optJSONArray("basic"), "password");
+            return new String[]{"Basic Auth", "", username, password};
+        }
+        return null; // noauth, apikey, oauth2 etc. — not modeled yet
+    }
+
+    private String findAuthValue(JSONArray entries, String key) {
+        if (entries == null) {
+            return "";
+        }
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject entry = entries.getJSONObject(i);
+            if (key.equals(entry.optString("key", ""))) {
+                return entry.optString("value", "");
+            }
+        }
+        return "";
     }
 
     /**
