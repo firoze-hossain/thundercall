@@ -260,12 +260,16 @@ public class MainController implements Initializable {
         MenuItem copyLinkItem = new MenuItem("Copy link");
         MenuItem renameItem = new MenuItem("Rename");
         MenuItem duplicateItem = new MenuItem("Duplicate");
+        MenuItem exportJsonItem = new MenuItem("Export as JSON (Postman)");
+        MenuItem exportCsvItem = new MenuItem("Export as CSV");
         MenuItem deleteItem = new MenuItem("Delete");
 
         addRequestItem.setOnAction(event -> handleAddRequestToCollection());
         addFolderItem.setOnAction(event -> handleNewFolder());
         renameItem.setOnAction(event -> handleRenameItem());
         duplicateItem.setOnAction(event -> handleDuplicateItem());
+        exportJsonItem.setOnAction(event -> handleExportSelectedAsJson());
+        exportCsvItem.setOnAction(event -> handleExportSelectedAsCsv());
         deleteItem.setOnAction(event -> handleDeleteItem());
 
         // Not implemented yet — shown to match Postman, disabled to stay honest
@@ -290,8 +294,20 @@ public class MainController implements Initializable {
                 renameItem,
                 duplicateItem,
                 new SeparatorMenuItem(),
+                exportJsonItem,
+                exportCsvItem,
+                new SeparatorMenuItem(),
                 deleteItem
         );
+
+        // Export only makes sense on a COLLECTION itself — hide it for
+        // folders and requests rather than showing an option that errors.
+        treeContextMenu.setOnShowing(event -> {
+            TreeItem<String> selected = collectionsTree.getSelectionModel().getSelectedItem();
+            boolean isCollection = selected != null && collectionIdMap.containsKey(selected);
+            exportJsonItem.setVisible(isCollection);
+            exportCsvItem.setVisible(isCollection);
+        });
 
         // Set context menu on TreeView
         collectionsTree.setContextMenu(treeContextMenu);
@@ -3243,19 +3259,274 @@ public class MainController implements Initializable {
         return headers;
     }
 
+  //  @FXML
+    /** Legacy generic entry point some older menu items may still call —
+     * kept working via extension auto-detection, but the toolbar now
+     * exposes explicit "Import from JSON" / "Import from CSV" instead. */
     @FXML
     private void handleExportCollections() {
+        handleExportSelectedAsJson();
+    }
+
+    @FXML
+    private void handleImportPostmanJson() {
         FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Export Collections");
+        fileChooser.setTitle("Import Postman Collection");
         fileChooser.getExtensionFilters().addAll(
                 new FileChooser.ExtensionFilter("JSON Files", "*.json"),
-                new FileChooser.ExtensionFilter("All Files", "*.*")
-        );
-
-        File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
+                new FileChooser.ExtensionFilter("All Files", "*.*"));
+        File file = fileChooser.showOpenDialog(Main.getPrimaryStage());
         if (file != null) {
-            AlertUtils.showInfo("Export functionality coming soon!");
+            importPostmanCollection(file);
         }
+    }
+
+    @FXML
+    private void handleImportCsvSpreadsheet() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Import CSV Spreadsheet");
+        fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("CSV Files", "*.csv"),
+                new FileChooser.ExtensionFilter("All Files", "*.*"));
+        File file = fileChooser.showOpenDialog(Main.getPrimaryStage());
+        if (file != null) {
+            importRequestsFromCsv(file);
+        }
+    }
+
+    /** Finds the collection to export: the exact collection selected in the
+     * sidebar (right-click target, or the current tree selection). */
+    private Long resolveSelectedCollectionForExport(TreeItem<String> rightClickedItem) {
+        TreeItem<String> item = rightClickedItem != null
+                ? rightClickedItem : collectionsTree.getSelectionModel().getSelectedItem();
+        if (item == null) {
+            return null;
+        }
+        return collectionIdMap.get(item); // only a COLLECTION node itself, not a folder/request
+    }
+
+    @FXML
+    private void handleExportSelectedAsJson() {
+        exportCollection(resolveSelectedCollectionForExport(null), "json");
+    }
+
+    @FXML
+    private void handleExportSelectedAsCsv() {
+        exportCollection(resolveSelectedCollectionForExport(null), "csv");
+    }
+
+    private void exportCollection(Long collectionId, String format) {
+        if (collectionId == null) {
+            AlertUtils.showError("Select a collection in the sidebar first, then export again");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                Optional<CollectionResponse> detailed = CollectionService.getCollectionWithDetails(collectionId);
+                if (detailed.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to load the collection to export"));
+                    return;
+                }
+                CollectionResponse collection = detailed.get();
+                String content = "json".equals(format)
+                        ? buildPostmanJson(collection)
+                        : buildCsv(collection);
+                String suggestedName = collection.getName().replaceAll("[^a-zA-Z0-9-_ ]", "").trim()
+                        .replace(' ', '_') + "." + format;
+
+                Platform.runLater(() -> {
+                    FileChooser fileChooser = new FileChooser();
+                    fileChooser.setTitle("Export \"" + collection.getName() + "\"");
+                    fileChooser.setInitialFileName(suggestedName);
+                    if ("json".equals(format)) {
+                        fileChooser.getExtensionFilters().add(
+                                new FileChooser.ExtensionFilter("JSON Files", "*.json"));
+                    } else {
+                        fileChooser.getExtensionFilters().add(
+                                new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
+                    }
+                    File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
+                    if (file == null) {
+                        return;
+                    }
+                    try {
+                        java.nio.file.Files.writeString(file.toPath(), content);
+                        AlertUtils.showSuccess("Exported \"" + collection.getName() + "\" to " + file.getName());
+                        updateStatus("Export complete: " + file.getName());
+                    } catch (Exception e) {
+                        AlertUtils.showError("Failed to write file: " + e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> AlertUtils.showError("Export failed: " + e.getMessage()));
+            }
+        }).start();
+    }
+
+    /** Builds a Postman Collection v2.1 JSON document — the mirror image of
+     * importPostmanCollection, so exporting and re-importing round-trips. */
+    private String buildPostmanJson(CollectionResponse collection) {
+        JSONObject root = new JSONObject();
+        JSONObject info = new JSONObject();
+        info.put("name", collection.getName());
+        info.put("_postman_id", java.util.UUID.randomUUID().toString());
+        info.put("schema", "https://schema.getpostman.com/json/collection/v2.1.0/collection.json");
+        root.put("info", info);
+
+        Map<Long, FolderResponse> foldersById = new HashMap<>();
+        Map<Long, JSONArray> childrenByFolderId = new HashMap<>();
+        JSONArray topLevel = new JSONArray();
+        if (collection.getFolderResponses() != null) {
+            for (FolderResponse f : collection.getFolderResponses()) {
+                foldersById.put(f.getId(), f);
+                childrenByFolderId.put(f.getId(), new JSONArray());
+            }
+        }
+        Map<Long, JSONObject> folderJsonById = new HashMap<>();
+        if (collection.getFolderResponses() != null) {
+            for (FolderResponse f : collection.getFolderResponses()) {
+                JSONObject folderJson = new JSONObject();
+                folderJson.put("name", f.getName());
+                folderJson.put("item", childrenByFolderId.get(f.getId()));
+                folderJsonById.put(f.getId(), folderJson);
+            }
+            for (FolderResponse f : collection.getFolderResponses()) {
+                JSONObject folderJson = folderJsonById.get(f.getId());
+                if (f.getParentFolderId() != null && childrenByFolderId.containsKey(f.getParentFolderId())) {
+                    childrenByFolderId.get(f.getParentFolderId()).put(folderJson);
+                } else {
+                    topLevel.put(folderJson);
+                }
+            }
+        }
+        if (collection.getRequestResponses() != null) {
+            for (RequestResponse r : collection.getRequestResponses()) {
+                JSONObject itemJson = requestToPostmanItem(r);
+                if (r.getFolderId() != null && childrenByFolderId.containsKey(r.getFolderId())) {
+                    childrenByFolderId.get(r.getFolderId()).put(itemJson);
+                } else {
+                    topLevel.put(itemJson);
+                }
+            }
+        }
+        root.put("item", topLevel);
+
+        // Best-effort symmetry with import: if an environment shares this
+        // collection's name, export its variables as collection variables.
+        Optional<List<EnvironmentResponse>> environments = EnvironmentService.getUserEnvironments();
+        if (environments.isPresent()) {
+            for (EnvironmentResponse env : environments.get()) {
+                if (env.getName().equals(collection.getName()) && env.getVariables() != null
+                        && !env.getVariables().isEmpty()) {
+                    JSONArray vars = new JSONArray();
+                    env.getVariables().forEach((k, v) -> {
+                        JSONObject var = new JSONObject();
+                        var.put("key", k);
+                        var.put("value", v);
+                        vars.put(var);
+                    });
+                    root.put("variable", vars);
+                    break;
+                }
+            }
+        }
+        return root.toString(2);
+    }
+
+    private JSONObject requestToPostmanItem(RequestResponse r) {
+        JSONObject item = new JSONObject();
+        item.put("name", r.getName());
+
+        JSONObject request = new JSONObject();
+        request.put("method", r.getMethod() != null ? r.getMethod().name() : "GET");
+
+        JSONArray headerArr = new JSONArray();
+        if (r.getHeaders() != null && !r.getHeaders().isBlank()) {
+            try {
+                JSONObject headersJson = new JSONObject(r.getHeaders());
+                for (String key : headersJson.keySet()) {
+                    JSONObject h = new JSONObject();
+                    h.put("key", key);
+                    h.put("value", headersJson.getString(key));
+                    headerArr.put(h);
+                }
+            } catch (Exception ignored) {
+                // leave headers empty rather than exporting garbage
+            }
+        }
+        request.put("header", headerArr);
+
+        JSONObject urlObj = new JSONObject();
+        urlObj.put("raw", r.getUrl() != null ? r.getUrl() : "");
+        request.put("url", urlObj);
+
+        if (r.getBody() != null && !r.getBody().isBlank()) {
+            JSONObject body = new JSONObject();
+            body.put("mode", "raw");
+            body.put("raw", r.getBody());
+            request.put("body", body);
+        }
+        item.put("request", request);
+
+        JSONArray events = new JSONArray();
+        if (r.getPreRequestScript() != null && !r.getPreRequestScript().isBlank()) {
+            events.put(postmanEvent("prerequest", r.getPreRequestScript()));
+        }
+        if (r.getTestsScript() != null && !r.getTestsScript().isBlank()) {
+            events.put(postmanEvent("test", r.getTestsScript()));
+        }
+        if (events.length() > 0) {
+            item.put("event", events);
+        }
+        return item;
+    }
+
+    private JSONObject postmanEvent(String listen, String scriptText) {
+        JSONObject event = new JSONObject();
+        event.put("listen", listen);
+        JSONObject script = new JSONObject();
+        script.put("type", "text/javascript");
+        script.put("exec", new JSONArray(scriptText.split("\\r?\\n")));
+        event.put("script", script);
+        return event;
+    }
+
+    /** Builds the same CSV shape importRequestsFromCsv reads — Folder
+     * (nested paths with "/"), Name, Method, URL, Headers, Body, scripts. */
+    private String buildCsv(CollectionResponse collection) {
+        Map<Long, FolderResponse> foldersById = new HashMap<>();
+        if (collection.getFolderResponses() != null) {
+            for (FolderResponse f : collection.getFolderResponses()) {
+                foldersById.put(f.getId(), f);
+            }
+        }
+        StringBuilder csv = new StringBuilder("Folder,Name,Method,URL,Headers,Body,PreRequestScript,TestsScript\n");
+        if (collection.getRequestResponses() != null) {
+            for (RequestResponse r : collection.getRequestResponses()) {
+                String folderPathStr = r.getFolderId() != null && foldersById.containsKey(r.getFolderId())
+                        ? folderPath(foldersById.get(r.getFolderId()), foldersById) : "";
+                csv.append(csvEscape(folderPathStr)).append(',')
+                        .append(csvEscape(r.getName())).append(',')
+                        .append(csvEscape(r.getMethod() != null ? r.getMethod().name() : "GET")).append(',')
+                        .append(csvEscape(r.getUrl())).append(',')
+                        .append(csvEscape(r.getHeaders())).append(',')
+                        .append(csvEscape(r.getBody())).append(',')
+                        .append(csvEscape(r.getPreRequestScript())).append(',')
+                        .append(csvEscape(r.getTestsScript())).append('\n');
+            }
+        }
+        return csv.toString();
+    }
+
+    private String csvEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        boolean needsQuoting = value.contains(",") || value.contains("\"") || value.contains("\n");
+        if (!needsQuoting) {
+            return value;
+        }
+        return "\"" + value.replace("\"", "\"\"") + "\"";
     }
 
     // Plus button handler

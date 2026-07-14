@@ -30,6 +30,14 @@ public class Collection {
     private Workspace workspace;
     @OneToMany(mappedBy = "collection",cascade = CascadeType.ALL,orphanRemoval = true)
     private List<Request>requests=new ArrayList<>();
+    // FIX: deleting a collection with folders in it failed with a foreign
+    // key violation — Collection cascaded its requests but had NO mapping
+    // at all for its folders, so Hibernate had no way to know they needed
+    // deleting first. Folder's own self-referencing cascade (added
+    // earlier) then takes care of nested sub-folders automatically.
+    @OneToMany(mappedBy = "collection",cascade = CascadeType.ALL,orphanRemoval = true)
+    @Builder.Default
+    private List<Folder> folders = new ArrayList<>();
     @Column(nullable = false)
     @CreationTimestamp
     private LocalDateTime createdAt;

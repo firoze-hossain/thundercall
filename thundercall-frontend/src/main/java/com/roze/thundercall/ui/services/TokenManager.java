@@ -26,12 +26,22 @@ public class TokenManager {
         prefs.put(REFRESH_TOKEN_KEY, response.getRefreshToken());
         prefs.put(USERNAME_KEY, response.getUsername());
         prefs.put(EMAIL_KEY, response.getEmail());
-
-
+        // FIX: the refresh token was persisted to disk but never handed to
+        // ApiClient — so ApiClient had no way to silently renew an expired
+        // access token. This is what makes automatic refresh possible.
+        ApiClient.setRefreshToken(response.getRefreshToken());
     }
 
     public static boolean isLoggedIn() {
-        return TOKEN_KEY != null && !TOKEN_KEY.isEmpty();
+        // FIX: this compared the STRING CONSTANT "auth_token" against itself
+        // (always true) instead of checking whether a token actually
+        // exists — so the app could never correctly detect "logged out".
+        String currentToken = ApiClient.getToken();
+        return currentToken != null && !currentToken.isEmpty();
+    }
+
+    public static String getRefreshToken() {
+        return prefs.get(REFRESH_TOKEN_KEY, null);
     }
 
     public static String getUsername() {
@@ -43,5 +53,6 @@ public class TokenManager {
         prefs.remove(REFRESH_TOKEN_KEY);
         prefs.remove(USERNAME_KEY);
         ApiClient.setToken(null);
+        ApiClient.setRefreshToken(null);
     }
 }

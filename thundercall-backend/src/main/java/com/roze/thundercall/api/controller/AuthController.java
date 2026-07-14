@@ -35,8 +35,8 @@ public class AuthController extends BaseController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<BaseResponse<Void>> logout(@RequestHeader("Authorization") String token) {
-        authService.logout(token.substring(7));
+    public ResponseEntity<BaseResponse<Void>> logout(@RequestParam String refreshToken) {
+        authService.logout(refreshToken);
         return noContent("Logout successfully");
     }
 }

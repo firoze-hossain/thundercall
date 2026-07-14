@@ -19,6 +19,13 @@ public class Main extends Application {
     public void start(Stage stage) {
         primaryStage = stage;
         hostServices = getHostServices();
+        // If a background call ever discovers the session has fully
+        // expired (refresh token expired too), return to the login screen
+        // with a clear explanation instead of leaving the app stuck.
+        com.roze.thundercall.ui.services.ApiClient.setOnSessionExpired(() -> {
+            AlertUtils.showInfo("Your session has expired — please log in again.");
+            showLoginView();
+        });
         showLoginView();
     }
 
