@@ -13,7 +13,22 @@ import java.util.Optional;
  * the current theme (dark or light).
  */
 public class AlertUtils {
+    /** When true, showError/showInfo log to console instead of popping a
+     * modal dialog — used during bulk imports so one bad item doesn't
+     * force the person to click through a dialog for every failure. */
+    private static volatile boolean quiet = false;
+
+    /** Bulk operations (import, collection runner, etc.) turn this on for
+     * their duration and back off in a finally block. */
+    public static void setQuiet(boolean value) {
+        quiet = value;
+    }
+
     public static void showError(String message) {
+        if (quiet) {
+            System.out.println("[Suppressed error during bulk operation] " + message);
+            return;
+        }
         showAlert(Alert.AlertType.ERROR, "Error", message);
     }
 

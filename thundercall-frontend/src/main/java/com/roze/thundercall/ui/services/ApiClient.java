@@ -71,16 +71,16 @@ public class ApiClient {
     }
 
     public static <T> T post(String endpoint, Object data, TypeReference<T> responseType) throws IOException {
-        return post(endpoint, data, responseType, true);
+        return post(endpoint, data, responseType, 2);
     }
 
-    private static <T> T post(String endpoint, Object data, TypeReference<T> responseType, boolean allowRetry) throws IOException {
+    private static <T> T post(String endpoint, Object data, TypeReference<T> responseType, int retriesLeft) throws IOException {
         HttpURLConnection connection = createConnection(endpoint, "POST");
         writeJsonBody(connection, data);
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && allowRetry && attemptTokenRefresh()) {
-            return post(endpoint, data, responseType, false);
+        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+            return post(endpoint, data, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
             if (responseCode == 204) {
@@ -97,15 +97,15 @@ public class ApiClient {
     }
 
     public static <T> BaseResponse<T> get(String endpoint, TypeReference<BaseResponse<T>> responseType) throws IOException {
-        return get(endpoint, responseType, true);
+        return get(endpoint, responseType, 2);
     }
 
-    private static <T> BaseResponse<T> get(String endpoint, TypeReference<BaseResponse<T>> responseType, boolean allowRetry) throws IOException {
+    private static <T> BaseResponse<T> get(String endpoint, TypeReference<BaseResponse<T>> responseType, int retriesLeft) throws IOException {
         HttpURLConnection connection = createConnection(endpoint, "GET");
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && allowRetry && attemptTokenRefresh()) {
-            return get(endpoint, responseType, false);
+        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+            return get(endpoint, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201) {
             try (InputStream is = connection.getInputStream()) {
@@ -118,16 +118,16 @@ public class ApiClient {
     }
 
     public static <T> T put(String endpoint, Object data, TypeReference<T> responseType) throws IOException {
-        return put(endpoint, data, responseType, true);
+        return put(endpoint, data, responseType, 2);
     }
 
-    private static <T> T put(String endpoint, Object data, TypeReference<T> responseType, boolean allowRetry) throws IOException {
+    private static <T> T put(String endpoint, Object data, TypeReference<T> responseType, int retriesLeft) throws IOException {
         HttpURLConnection connection = createConnection(endpoint, "PUT");
         writeJsonBody(connection, data);
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && allowRetry && attemptTokenRefresh()) {
-            return put(endpoint, data, responseType, false);
+        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+            return put(endpoint, data, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
             if (responseCode == 204) {
@@ -144,16 +144,16 @@ public class ApiClient {
     }
 
     public static <T> T patch(String endpoint, Object data, TypeReference<T> responseType) throws IOException {
-        return patch(endpoint, data, responseType, true);
+        return patch(endpoint, data, responseType, 2);
     }
 
-    private static <T> T patch(String endpoint, Object data, TypeReference<T> responseType, boolean allowRetry) throws IOException {
+    private static <T> T patch(String endpoint, Object data, TypeReference<T> responseType, int retriesLeft) throws IOException {
         HttpURLConnection connection = createConnection(endpoint, "PATCH");
         writeJsonBody(connection, data);
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && allowRetry && attemptTokenRefresh()) {
-            return patch(endpoint, data, responseType, false);
+        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+            return patch(endpoint, data, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
             if (responseCode == 204) {
@@ -170,15 +170,15 @@ public class ApiClient {
     }
 
     public static <T> BaseResponse<T> delete(String endpoint, TypeReference<BaseResponse<T>> responseType) throws IOException {
-        return delete(endpoint, responseType, true);
+        return delete(endpoint, responseType, 2);
     }
 
-    private static <T> BaseResponse<T> delete(String endpoint, TypeReference<BaseResponse<T>> responseType, boolean allowRetry) throws IOException {
+    private static <T> BaseResponse<T> delete(String endpoint, TypeReference<BaseResponse<T>> responseType, int retriesLeft) throws IOException {
         HttpURLConnection connection = createConnection(endpoint, "DELETE");
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && allowRetry && attemptTokenRefresh()) {
-            return delete(endpoint, responseType, false);
+        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+            return delete(endpoint, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 204) {
             if (responseCode == 204) {
@@ -214,6 +214,8 @@ public class ApiClient {
      */
     private static synchronized boolean attemptTokenRefresh() {
         if (refreshToken == null || refreshToken.isEmpty()) {
+            System.out.println("[ApiClient] Refresh skipped: no refresh token in memory "
+                    + "(likely already logged out, or a session that started before this build)");
             handleSessionExpired();
             return false;
         }
@@ -236,12 +238,16 @@ public class ApiClient {
                         // Persists the new access + refresh token pair and
                         // updates this class's in-memory token too.
                         TokenManager.storeTokens(wrapper.getData());
+                        System.out.println("[ApiClient] Token refreshed successfully");
                         return true;
                     }
+                    System.out.println("[ApiClient] Refresh returned 200 but no token in the response: " + body);
                 }
+            } else {
+                System.out.println("[ApiClient] Refresh call returned HTTP " + code + ": " + readError(connection));
             }
         } catch (Exception e) {
-            System.out.println("Token refresh failed: " + e.getMessage());
+            System.out.println("[ApiClient] Refresh call threw an exception: " + e);
         }
         handleSessionExpired();
         return false;

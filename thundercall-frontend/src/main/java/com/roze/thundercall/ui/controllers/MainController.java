@@ -2815,6 +2815,10 @@ public class MainController implements Initializable {
      */
     private void importPostmanCollection(File file) {
         new Thread(() -> {
+            // Bulk operation: individual folder/request failures are
+            // counted and reported in ONE final summary instead of a
+            // separate modal dialog per failure.
+            AlertUtils.setQuiet(true);
             try {
                 String text = java.nio.file.Files.readString(file.toPath());
                 JSONObject root = new JSONObject(text);
@@ -2861,7 +2865,7 @@ public class MainController implements Initializable {
                 // Collection-level auth (used when a request specifies none)
                 String[] fallbackAuth = extractAuth(root.optJSONObject("auth"));
 
-                int[] counters = {0, 0, 0}; // requests, folders, skipped(file uploads etc.)
+                int[] counters = {0, 0, 0, 0}; // requests, folders, skipped(file uploads etc.), FAILED
                 importPostmanItems(root.getJSONArray("item"), collectionId, null, fallbackAuth, counters);
 
                 // Collection variables → an Environment of the same name, so
@@ -2889,11 +2893,25 @@ public class MainController implements Initializable {
                 int finalRequests = counters[0];
                 int finalFolders = counters[1];
                 int finalSkipped = counters[2];
+                int finalFailed = counters[3];
                 int finalVariables = variableCount;
                 String finalCollectionName = collectionName;
+                boolean sessionExpiredMidImport = ApiClient.getToken() == null;
                 Platform.runLater(() -> {
                     refreshCollectionsTree();
                     loadEnvironments();
+                    if (sessionExpiredMidImport) {
+                        // FIX: don't claim success when the import was cut
+                        // short — say exactly what happened and what to do.
+                        AlertUtils.showError("Your session expired partway through this import.\n\n"
+                                + "Completed before that happened: " + finalRequests + " request(s), "
+                                + finalFolders + " folder(s).\n\n"
+                                + "Please log in again, then DELETE \"" + finalCollectionName
+                                + "\" and re-run the import from scratch — this importer isn't safe to "
+                                + "resume partway (re-running would create a second, duplicate collection).");
+                        updateStatus("Import stopped: session expired");
+                        return;
+                    }
                     StringBuilder msg = new StringBuilder("Imported \"" + finalCollectionName + "\": "
                             + finalRequests + " request(s)");
                     if (finalFolders > 0) {
@@ -2905,20 +2923,40 @@ public class MainController implements Initializable {
                     if (finalSkipped > 0) {
                         msg.append(". ").append(finalSkipped).append(" item(s) skipped (e.g. file uploads)");
                     }
+                    if (finalFailed > 0) {
+                        // FIX: these used to vanish silently (the count was
+                        // just lower than the file's true total) while ALSO
+                        // popping their own separate error dialog — now
+                        // they're counted honestly in this one summary, and
+                        // the per-item dialog is suppressed (see console).
+                        msg.append(". ").append(finalFailed)
+                                .append(" item(s) FAILED (transient server/network error — check the console "
+                                        + "log, then re-add those manually if needed)");
+                    }
                     AlertUtils.showSuccess(msg.toString());
                     updateStatus("Postman import complete: " + finalCollectionName);
                 });
             } catch (Exception e) {
                 Platform.runLater(() -> AlertUtils.showError("Import failed: " + e.getMessage()));
+            } finally {
+                AlertUtils.setQuiet(false);
             }
         }).start();
     }
 
     /** Recursively walks a Postman "item" array: item groups become nested
-     * folders, leaf items become requests. counters = {requests, folders, skipped}. */
+     * folders, leaf items become requests. counters = {requests, folders, skipped, failed}. */
     private void importPostmanItems(JSONArray items, Long collectionId, Long parentFolderId,
                                     String[] fallbackAuth, int[] counters) {
         for (int i = 0; i < items.length(); i++) {
+            // FIX: if the session dies partway through a long import, every
+            // remaining call used to fail the SAME way and each one popped
+            // its own modal "session expired" dialog — potentially dozens
+            // in a row for a big file. Stop cleanly on the first one instead.
+            if (ApiClient.getToken() == null) {
+                counters[2] += (items.length() - i);
+                return;
+            }
             JSONObject item = items.getJSONObject(i);
             String name = item.optString("name", "Untitled");
             if (item.has("item")) {
@@ -2928,6 +2966,13 @@ public class MainController implements Initializable {
                     counters[1]++;
                     importPostmanItems(item.getJSONArray("item"), collectionId, folder.get().getId(),
                             fallbackAuth, counters);
+                } else {
+                    // FIX: used to vanish with no count at all (and its own
+                    // separate popup). Now it's counted, and anything that
+                    // WOULD have been nested inside it is honestly counted
+                    // as failed too, since it has nowhere to go.
+                    counters[3]++;
+                    counters[3] += countPostmanLeaves(item.optJSONArray("item"));
                 }
                 continue;
             }
@@ -3040,8 +3085,28 @@ public class MainController implements Initializable {
 
             if (RequestService.saveRequest(apiRequest).isPresent()) {
                 counters[0]++;
+            } else {
+                counters[3]++;
             }
         }
+    }
+
+    /** Counts requests nested (at any depth) inside a Postman "item" array —
+     * used to report an honest failure count when a parent folder fails. */
+    private int countPostmanLeaves(JSONArray items) {
+        if (items == null) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            if (item.has("item")) {
+                count += countPostmanLeaves(item.getJSONArray("item"));
+            } else if (item.has("request")) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** Postman's url field is either a plain string or a {"raw": "..."} object. */
@@ -3116,6 +3181,7 @@ public class MainController implements Initializable {
         Long preselectedCollectionId = selectedItem != null ? getCollectionIdFromTreeItem(selectedItem) : null;
 
         Runnable doImport = () -> new Thread(() -> {
+            AlertUtils.setQuiet(true);
             try {
                 Long collectionId = preselectedCollectionId;
                 if (collectionId == null) {
@@ -3146,9 +3212,18 @@ public class MainController implements Initializable {
 
                 int requestCount = 0;
                 int folderCount = 0;
+                int failedCount = 0;
+                boolean sessionExpiredMidImport = false;
                 for (Map<String, String> row : rows) {
+                    // Same fix as the JSON importer: stop cleanly the moment
+                    // the session dies instead of one dialog per remaining row.
+                    if (ApiClient.getToken() == null) {
+                        sessionExpiredMidImport = true;
+                        break;
+                    }
                     String folderPath = row.getOrDefault("Folder", "").trim();
                     Long folderId = null;
+                    boolean folderFailed = false;
                     if (!folderPath.isEmpty()) {
                         String builtPath = "";
                         for (String segment : folderPath.split("/")) {
@@ -3165,12 +3240,21 @@ public class MainController implements Initializable {
                             Optional<FolderResponse> created =
                                     FolderService.createFolder(segment, "", collectionId, folderId);
                             if (created.isEmpty()) {
-                                throw new RuntimeException("Failed to create folder: " + builtPath);
+                                // FIX: this used to throw and abort the ENTIRE
+                                // import on one bad folder. Now it's counted
+                                // as a failure and the import keeps going —
+                                // consistent with the JSON importer.
+                                folderFailed = true;
+                                break;
                             }
                             folderId = created.get().getId();
                             pathToFolderId.put(builtPath, folderId);
                             folderCount++;
                         }
+                    }
+                    if (folderFailed) {
+                        failedCount++;
+                        continue;
                     }
 
                     String name = row.getOrDefault("Name", "Imported request").trim();
@@ -3198,19 +3282,46 @@ public class MainController implements Initializable {
 
                     if (RequestService.saveRequest(apiRequest).isPresent()) {
                         requestCount++;
+                    } else {
+                        failedCount++;
                     }
                 }
 
                 int finalRequestCount = requestCount;
                 int finalFolderCount = folderCount;
+                int finalFailedCount = failedCount;
+                boolean finalSessionExpired = sessionExpiredMidImport;
                 Platform.runLater(() -> {
                     refreshCollectionsTree();
-                    AlertUtils.showSuccess("Imported " + finalRequestCount + " request(s)"
-                            + (finalFolderCount > 0 ? " into " + finalFolderCount + " new folder(s)" : ""));
+                    if (finalSessionExpired) {
+                        AlertUtils.showError("Your session expired partway through this import.\n\n"
+                                + "Completed before that happened: " + finalRequestCount + " request(s), "
+                                + finalFolderCount + " new folder(s).\n\n"
+                                + "Please log in again, then re-run the import — folders already created "
+                                + "will be reused safely, but requests that already succeeded will be "
+                                + "duplicated, so it's worth deleting those first.");
+                        updateStatus("CSV import stopped: session expired");
+                        return;
+                    }
+                    StringBuilder msg = new StringBuilder("Imported " + finalRequestCount + " request(s)");
+                    if (finalFolderCount > 0) {
+                        msg.append(" into ").append(finalFolderCount).append(" new folder(s)");
+                    }
+                    if (finalFailedCount > 0) {
+                        // FIX: these used to either vanish silently or (for
+                        // folders) abort the WHOLE import — now they're
+                        // counted honestly and everything else still ran.
+                        msg.append(". ").append(finalFailedCount)
+                                .append(" row(s) FAILED (transient server/network error — check the console "
+                                        + "log, then re-add those manually if needed)");
+                    }
+                    AlertUtils.showSuccess(msg.toString());
                     updateStatus("CSV import complete: " + finalRequestCount + " request(s)");
                 });
             } catch (Exception e) {
                 Platform.runLater(() -> AlertUtils.showError("CSV import failed: " + e.getMessage()));
+            } finally {
+                AlertUtils.setQuiet(false);
             }
         }).start();
 
@@ -3259,7 +3370,7 @@ public class MainController implements Initializable {
         return headers;
     }
 
-  //  @FXML
+    //  @FXML
     /** Legacy generic entry point some older menu items may still call —
      * kept working via extension auto-detection, but the toolbar now
      * exposes explicit "Import from JSON" / "Import from CSV" instead. */
