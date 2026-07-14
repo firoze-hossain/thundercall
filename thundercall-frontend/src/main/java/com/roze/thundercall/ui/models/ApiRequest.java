@@ -21,4 +21,8 @@ public class ApiRequest {
     private Long folderId;
     private String preRequestScript;
     private String testsScript;
+    private String authType;
+    private String authToken;
+    private String authUsername;
+    private String authPassword;
 }

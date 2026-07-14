@@ -15,4 +15,8 @@ public class ApiResponse {
     private String responseHeaders;
     private long duration;
     private boolean success;
+    private boolean binary;
+    private String contentType;
+    private String fileName;
+    private long sizeBytes;
 }

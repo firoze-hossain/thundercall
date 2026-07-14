@@ -25,6 +25,10 @@ public class RequestMapper {
                 .body(apiRequest.body())
                 .preRequestScript(apiRequest.preRequestScript())
                 .testsScript(apiRequest.testsScript())
+                .authType(apiRequest.authType())
+                .authToken(apiRequest.authToken())
+                .authUsername(apiRequest.authUsername())
+                .authPassword(apiRequest.authPassword())
                 .build();
         // Set folder if folderId is provided
         if (apiRequest.folderId() != null) {
@@ -45,6 +49,10 @@ public class RequestMapper {
                 .body(request.getBody())
                 .preRequestScript(request.getPreRequestScript())
                 .testsScript(request.getTestsScript())
+                .authType(request.getAuthType())
+                .authToken(request.getAuthToken())
+                .authUsername(request.getAuthUsername())
+                .authPassword(request.getAuthPassword())
                 .collectionId(request.getCollection().getId())
                 .collectionName(request.getCollection().getName())
                 .folderId(request.getFolder() != null ? request.getFolder().getId() : null)

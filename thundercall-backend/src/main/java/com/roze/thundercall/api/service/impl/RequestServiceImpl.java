@@ -25,15 +25,23 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Includes the earlier fixes (JSON header parsing instead of the broken
- * regex; friendly connection errors) plus the NEW updateRequest used by
- * Ctrl+S / the Save button to save edits back into an existing request.
+ * Includes the earlier fixes (JSON header parsing, friendly connection
+ * errors, updateRequest for Ctrl+S) plus BINARY RESPONSE SUPPORT: the
+ * response is now fetched as raw bytes and classified as text or binary
+ * from its Content-Type, so a generated PDF/Excel file downloads
+ * byte-for-byte instead of being corrupted by forced String decoding.
  */
 @Service
 @RequiredArgsConstructor
@@ -47,6 +55,9 @@ public class RequestServiceImpl implements RequestService {
     private final FolderRepository folderRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private static final Pattern FILENAME_PATTERN =
+            Pattern.compile("filename\\*?=\"?([^\";]+)\"?", Pattern.CASE_INSENSITIVE);
+
     @Override
     @Transactional
     public ApiResponse executeRequest(ApiRequest apiRequest, User user) {
@@ -55,42 +66,55 @@ public class RequestServiceImpl implements RequestService {
             HttpHeaders headers = prepareHeaders(apiRequest.headers(), apiRequest.body());
             HttpEntity<String> entity = new HttpEntity<>(emptyToNull(apiRequest.body()), headers);
 
-            ResponseEntity<String> response = restTemplate.exchange(
+            // Fetch as raw bytes — safe for text AND binary payloads alike.
+            ResponseEntity<byte[]> response = restTemplate.exchange(
                     apiRequest.url(),
                     toSpringMethod(apiRequest.method()),
                     entity,
-                    String.class);
+                    byte[].class);
 
             long duration = Duration.between(startTime, Instant.now()).toMillis();
             boolean success = !response.getStatusCode().isError();
-            saveRequestHistory(apiRequest, response, duration, user, success);
+            byte[] body = response.getBody() != null ? response.getBody() : new byte[0];
+            String contentType = response.getHeaders().getContentType() != null
+                    ? response.getHeaders().getContentType().toString() : null;
+            boolean binary = isBinary(contentType);
 
-            return ApiResponse.builder()
+            ApiResponse apiResponse = ApiResponse.builder()
                     .statusCode(response.getStatusCode().value())
-                    .response(response.getBody() != null ? response.getBody() : "")
+                    .response(binary ? Base64.getEncoder().encodeToString(body) : decodeText(body, contentType))
                     .responseHeaders(convertHeadersToString(response.getHeaders()))
                     .duration(duration)
                     .success(success)
+                    .binary(binary)
+                    .contentType(contentType)
+                    .fileName(guessFileName(response.getHeaders(), apiRequest.url(), contentType))
+                    .sizeBytes(body.length)
                     .build();
+
+            saveRequestHistory(apiRequest, apiResponse, user);
+            return apiResponse;
         } catch (ResourceAccessException e) {
             long duration = Duration.between(startTime, Instant.now()).toMillis();
-            saveRequestHistory(apiRequest, null, duration, user, false);
-            return ApiResponse.builder()
+            ApiResponse apiResponse = ApiResponse.builder()
                     .statusCode(0)
                     .response("Could not connect: " + rootMessage(e))
                     .duration(duration)
                     .success(false)
                     .build();
+            saveRequestHistory(apiRequest, apiResponse, user);
+            return apiResponse;
         } catch (Exception e) {
             long duration = Duration.between(startTime, Instant.now()).toMillis();
             log.warn("Request execution failed: {}", e.getMessage());
-            saveRequestHistory(apiRequest, null, duration, user, false);
-            return ApiResponse.builder()
+            ApiResponse apiResponse = ApiResponse.builder()
                     .statusCode(0)
                     .response("Request failed: " + rootMessage(e))
                     .duration(duration)
                     .success(false)
                     .build();
+            saveRequestHistory(apiRequest, apiResponse, user);
+            return apiResponse;
         }
     }
 
@@ -123,11 +147,6 @@ public class RequestServiceImpl implements RequestService {
         return requestMapper.toResponse(request);
     }
 
-    /**
-     * NEW: saves the current editor state back into an existing request —
-     * used by the Save button / Ctrl+S when a saved request tab is active.
-     * The request stays in its collection/folder.
-     */
     @Override
     @Transactional
     public RequestResponse updateRequest(Long id, ApiRequest apiRequest, User user) {
@@ -142,6 +161,10 @@ public class RequestServiceImpl implements RequestService {
         request.setBody(apiRequest.body());
         request.setPreRequestScript(apiRequest.preRequestScript());
         request.setTestsScript(apiRequest.testsScript());
+        request.setAuthType(apiRequest.authType());
+        request.setAuthToken(apiRequest.authToken());
+        request.setAuthUsername(apiRequest.authUsername());
+        request.setAuthPassword(apiRequest.authPassword());
         Request saved = requestRepository.save(request);
         return requestMapper.toResponse(saved);
     }
@@ -186,15 +209,86 @@ public class RequestServiceImpl implements RequestService {
         return headers;
     }
 
-    private void saveRequestHistory(ApiRequest apiRequest, ResponseEntity<String> response,
-                                    long duration, User user, boolean success) {
+    /** Anything that isn't recognizably text is treated as a binary download. */
+    private boolean isBinary(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false; // most simple REST APIs omit it; assume text (JSON/plain)
+        }
+        String ct = contentType.toLowerCase(Locale.ROOT);
+        if (ct.contains("json") || ct.contains("xml") || ct.contains("text")
+                || ct.contains("javascript") || ct.contains("html") || ct.contains("csv")
+                || ct.contains("yaml") || ct.contains("x-www-form-urlencoded")) {
+            return false;
+        }
+        return ct.contains("pdf") || ct.contains("excel") || ct.contains("spreadsheet")
+                || ct.contains("octet-stream") || ct.contains("zip") || ct.contains("image")
+                || ct.contains("audio") || ct.contains("video") || ct.contains("msword")
+                || ct.contains("officedocument");
+    }
+
+    private String decodeText(byte[] body, String contentType) {
+        Charset charset = StandardCharsets.UTF_8;
+        if (contentType != null) {
+            try {
+                MediaType mt = MediaType.parseMediaType(contentType);
+                if (mt.getCharset() != null) {
+                    charset = mt.getCharset();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return new String(body, charset);
+    }
+
+    private String guessFileName(HttpHeaders headers, String url, String contentType) {
+        String disposition = headers.getFirst(HttpHeaders.CONTENT_DISPOSITION);
+        if (disposition != null) {
+            Matcher m = FILENAME_PATTERN.matcher(disposition);
+            if (m.find()) {
+                return m.group(1).replace("UTF-8''", "");
+            }
+        }
+        String lastSegment = url;
+        int q = lastSegment.indexOf('?');
+        if (q >= 0) {
+            lastSegment = lastSegment.substring(0, q);
+        }
+        int slash = lastSegment.lastIndexOf('/');
+        if (slash >= 0 && slash < lastSegment.length() - 1) {
+            String candidate = lastSegment.substring(slash + 1);
+            if (candidate.contains(".")) {
+                return candidate;
+            }
+        }
+        return "response" + guessExtension(contentType);
+    }
+
+    private String guessExtension(String contentType) {
+        if (contentType == null) {
+            return ".bin";
+        }
+        String ct = contentType.toLowerCase(Locale.ROOT);
+        if (ct.contains("pdf")) return ".pdf";
+        if (ct.contains("spreadsheet") || ct.contains("excel")) return ".xlsx";
+        if (ct.contains("msword") || ct.contains("wordprocessingml")) return ".docx";
+        if (ct.contains("zip")) return ".zip";
+        if (ct.contains("png")) return ".png";
+        if (ct.contains("jpeg") || ct.contains("jpg")) return ".jpg";
+        if (ct.contains("csv")) return ".csv";
+        return ".bin";
+    }
+
+    private void saveRequestHistory(ApiRequest apiRequest, ApiResponse apiResponse, User user) {
         try {
             RequestHistory history = RequestHistory.builder()
                     .timestamp(LocalDateTime.now())
-                    .statusCode(response != null ? response.getStatusCode().value() : 0)
-                    .duration(duration)
-                    .response(response != null ? response.getBody() : "Request failed")
-                    .responseHeaders(response != null ? convertHeadersToString(response.getHeaders()) : "")
+                    .statusCode(apiResponse.getStatusCode())
+                    .duration(apiResponse.getDuration())
+                    .response(apiResponse.isBinary()
+                            ? "[binary response: " + apiResponse.getContentType()
+                                    + ", " + apiResponse.getSizeBytes() + " bytes — not stored]"
+                            : apiResponse.getResponse())
+                    .responseHeaders(apiResponse.getResponseHeaders() != null ? apiResponse.getResponseHeaders() : "")
                     .build();
             if (apiRequest.name() != null && !apiRequest.name().isEmpty()) {
                 requestRepository.findByNameAndCollectionWorkspaceOwner(apiRequest.name(), user)

@@ -797,3 +797,24 @@
 }
 .request-tab-bar .tab:hover .tab-close-button,
 .request-tab-bar .tab:selected .tab-close-button { -fx-background-color: -text-primary; }
+
+/* ============================================================
+   Request tab graphic: colored method badge + name + unsaved dot
+   ============================================================ */
+.tab-method-badge {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 1 4 1 4;
+}
+.tab-name-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-secondary;
+}
+.request-tab-bar .tab:selected .tab-name-label {
+    -fx-text-fill: -text-primary;
+}
+.tab-unsaved-dot {
+    -fx-text-fill: -accent;
+    -fx-font-size: 9px;
+    -fx-padding: 0 0 0 2;
+}

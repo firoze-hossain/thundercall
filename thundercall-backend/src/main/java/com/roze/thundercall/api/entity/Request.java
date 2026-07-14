@@ -39,6 +39,16 @@ public class Request {
     private String preRequestScript;
     @Column(name = "tests_script", columnDefinition = "TEXT")
     private String testsScript;
+
+    // Authorization tab (Bearer/Basic), saved WITH the request like scripts
+    @Column(name = "auth_type")
+    private String authType;
+    @Column(name = "auth_token", columnDefinition = "TEXT")
+    private String authToken;
+    @Column(name = "auth_username")
+    private String authUsername;
+    @Column(name = "auth_password")
+    private String authPassword;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collection_id", nullable = false)
     private Collection collection;

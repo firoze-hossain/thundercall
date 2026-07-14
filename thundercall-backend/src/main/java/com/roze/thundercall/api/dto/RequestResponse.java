@@ -22,6 +22,10 @@ public class RequestResponse {
     private String body;
     private String preRequestScript;
     private String testsScript;
+    private String authType;
+    private String authToken;
+    private String authUsername;
+    private String authPassword;
     private Long collectionId;
     private String collectionName;
     private Long folderId;

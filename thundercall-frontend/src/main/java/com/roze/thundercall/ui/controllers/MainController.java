@@ -8,6 +8,7 @@ import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.utils.AlertUtils;
+import com.roze.thundercall.ui.utils.CsvParser;
 import com.roze.thundercall.ui.utils.ScriptRunner;
 import com.roze.thundercall.ui.utils.ThemeManager;
 import com.roze.thundercall.ui.utils.VariableResolver;
@@ -60,6 +61,13 @@ public class MainController implements Initializable {
     @FXML
     private ComboBox<String> authTypeCombo;
     @FXML
+    private HBox basicAuthBox;
+    @FXML
+    private Label authHintLabel;
+    /** The most recent response — kept as an object so binary bytes never
+     * pass through a TextArea (which would corrupt them). Used by Save. */
+    private ApiResponse lastApiResponse;
+    @FXML
     private TextField tokenField;
     @FXML
     private TextField usernameField;
@@ -79,8 +87,6 @@ public class MainController implements Initializable {
     private TextArea responseBodyArea;
     @FXML
     private ListView<String> historyList;
-    @FXML
-    private TextArea testsArea;
     @FXML
     private TextArea preRequestScriptsArea;
     @FXML
@@ -668,14 +674,31 @@ public class MainController implements Initializable {
         authTypeCombo.getSelectionModel().select(0);
         authTypeCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
             updateAuthFieldsVisibility(newVal);
+            onEditorFieldChanged();
         });
         updateAuthFieldsVisibility("No Auth");
+
+        // Any edit to the auth fields marks the tab unsaved, same as url/body
+        tokenField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        usernameField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        passwordField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
     }
 
     private void updateAuthFieldsVisibility(String authType) {
-        tokenField.setVisible("Bearer Token".equals(authType));
-        usernameField.setVisible("Basic Auth".equals(authType));
-        passwordField.setVisible("Basic Auth".equals(authType));
+        boolean bearer = "Bearer Token".equals(authType);
+        boolean basic = "Basic Auth".equals(authType);
+        tokenField.setVisible(bearer);
+        tokenField.setManaged(bearer);
+        if (authHintLabel != null) {
+            authHintLabel.setVisible(bearer || basic);
+            authHintLabel.setManaged(bearer || basic);
+        }
+        if (basicAuthBox != null) {
+            basicAuthBox.setVisible(basic);
+            basicAuthBox.setManaged(basic);
+        }
+        usernameField.setVisible(basic);
+        passwordField.setVisible(basic);
     }
 
     private void setupTables() {
@@ -790,7 +813,7 @@ public class MainController implements Initializable {
                 requestTabPane.getSelectionModel().select(existing);
                 return;
             }
-            openRequestTab(item.getValue(), requestId);
+            openRequestTab(item.getValue(), requestId, requestMethodMap.get(item));
             new Thread(() -> {
                 try {
                     Optional<RequestResponse> request = RequestService.getRequest(requestId);
@@ -810,57 +833,74 @@ public class MainController implements Initializable {
 
     private void loadRequestIntoUI(RequestResponse requestResponse) {
         Platform.runLater(() -> {
-            // Keep the active tab in sync with the loaded request
-            if (requestTabPane != null) {
-                Tab currentTab = requestTabPane.getSelectionModel().getSelectedItem();
-                RequestTabState state = currentTab != null ? tabStates.get(currentTab) : null;
+            restoringTabState = true;
+            Tab currentTab = requestTabPane != null
+                    ? requestTabPane.getSelectionModel().getSelectedItem() : null;
+            RequestTabState state = currentTab != null ? tabStates.get(currentTab) : null;
+            try {
+                // Keep the active tab in sync with the loaded request
                 if (state != null) {
-                    currentTab.setText(requestResponse.getName());
                     state.name = requestResponse.getName();
                     state.requestId = requestResponse.getId();
                 }
-            }
-            methodCombo.setValue(requestResponse.getMethod().name());
-            urlField.setText(requestResponse.getUrl());
+                methodCombo.setValue(requestResponse.getMethod().name());
+                urlField.setText(requestResponse.getUrl());
 
-            // Load headers
-            if (requestResponse.getHeaders() != null && !requestResponse.getHeaders().isEmpty()) {
-                try {
-                    JSONObject headersJson = new JSONObject(requestResponse.getHeaders());
-                    headersData.clear();
-                    for (String key : headersJson.keySet()) {
-                        headersData.add(new KeyValuePair(key, headersJson.getString(key), ""));
-                    }
-                } catch (Exception e) {
-                    // Fallback to simple header parsing
-                    String[] headerLines = requestResponse.getHeaders().split("\n");
-                    for (String line : headerLines) {
-                        String[] parts = line.split(":", 2);
-                        if (parts.length == 2) {
-                            headersData.add(new KeyValuePair(parts[0].trim(), parts[1].trim(), ""));
+                // Load headers
+                if (requestResponse.getHeaders() != null && !requestResponse.getHeaders().isEmpty()) {
+                    try {
+                        JSONObject headersJson = new JSONObject(requestResponse.getHeaders());
+                        headersData.clear();
+                        for (String key : headersJson.keySet()) {
+                            headersData.add(new KeyValuePair(key, headersJson.getString(key), ""));
+                        }
+                    } catch (Exception e) {
+                        // Fallback to simple header parsing
+                        String[] headerLines = requestResponse.getHeaders().split("\n");
+                        for (String line : headerLines) {
+                            String[] parts = line.split(":", 2);
+                            if (parts.length == 2) {
+                                headersData.add(new KeyValuePair(parts[0].trim(), parts[1].trim(), ""));
+                            }
                         }
                     }
                 }
-            }
 
-            // Load body
-            bodyTextArea.setText(requestResponse.getBody());
-            // Scripts are saved WITH the request (like Postman) — restore them
-            if (preRequestScriptsArea != null) {
-                preRequestScriptsArea.setText(
-                        requestResponse.getPreRequestScript() != null
-                                ? requestResponse.getPreRequestScript() : "");
+                // Load body
+                bodyTextArea.setText(requestResponse.getBody());
+                // Scripts are saved WITH the request (like Postman) — restore them
+                if (preRequestScriptsArea != null) {
+                    preRequestScriptsArea.setText(
+                            requestResponse.getPreRequestScript() != null
+                                    ? requestResponse.getPreRequestScript() : "");
+                }
+                if (postRequestScriptsArea != null) {
+                    postRequestScriptsArea.setText(
+                            requestResponse.getTestsScript() != null
+                                    ? requestResponse.getTestsScript() : "");
+                }
+                if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
+                        && rawBodyTypeButton != null) {
+                    rawBodyTypeButton.setSelected(true);
+                } else if (noneBodyTypeButton != null) {
+                    noneBodyTypeButton.setSelected(true);
+                }
+
+                // Authorization tab (saved WITH the request too)
+                authTypeCombo.setValue(requestResponse.getAuthType() != null
+                        ? requestResponse.getAuthType() : "No Auth");
+                updateAuthFieldsVisibility(authTypeCombo.getValue());
+                tokenField.setText(requestResponse.getAuthToken() != null ? requestResponse.getAuthToken() : "");
+                usernameField.setText(requestResponse.getAuthUsername() != null ? requestResponse.getAuthUsername() : "");
+                passwordField.setText(requestResponse.getAuthPassword() != null ? requestResponse.getAuthPassword() : "");
+            } finally {
+                restoringTabState = false;
             }
-            if (postRequestScriptsArea != null) {
-                postRequestScriptsArea.setText(
-                        requestResponse.getTestsScript() != null
-                                ? requestResponse.getTestsScript() : "");
+            if (state != null) {
+                state.dirty = false; // freshly loaded from the server: nothing unsaved
             }
-            if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
-                    && rawBodyTypeButton != null) {
-                rawBodyTypeButton.setSelected(true);
-            } else if (noneBodyTypeButton != null) {
-                noneBodyTypeButton.setSelected(true);
+            if (currentTab != null) {
+                refreshTabGraphic(currentTab);
             }
 
             updateStatus("Request loaded: " + requestResponse.getName());
@@ -1119,9 +1159,20 @@ public class MainController implements Initializable {
         String body = "";
         String preScript = "";
         String testsScript = "";
+        String authType = "No Auth";
+        String authToken = "";
+        String authUsername = "";
+        String authPassword = "";
         List<KeyValuePair> params = new ArrayList<>();
         List<KeyValuePair> headers = new ArrayList<>();
+        // Postman-style unsaved indicator (the small dot on the tab)
+        boolean dirty = false;
     }
+
+    /** True while we're programmatically loading a tab's state into the
+     * shared editor controls — guards the dirty-tracking listeners so
+     * restoring a tab never marks it unsaved. */
+    private boolean restoringTabState = false;
 
     private void setupRequestTabs() {
         if (requestTabPane == null) {
@@ -1139,19 +1190,73 @@ public class MainController implements Initializable {
                         restoreTabState(newTab);
                     }
                 });
+
+        // Live dirty-tracking + method-badge updates. These controls are
+        // shared across every tab (the tab switch swaps their content), so
+        // one set of listeners covers all tabs; restoringTabState guards
+        // against marking a tab dirty while WE are the ones setting values.
+        methodCombo.valueProperty().addListener((o, ov, nv) -> {
+            if (restoringTabState) {
+                return;
+            }
+            Tab active = requestTabPane.getSelectionModel().getSelectedItem();
+            RequestTabState state = active != null ? tabStates.get(active) : null;
+            if (state != null && nv != null) {
+                state.method = nv;
+                markDirty(active);
+            }
+        });
+        urlField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        bodyTextArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        if (preRequestScriptsArea != null) {
+            preRequestScriptsArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (postRequestScriptsArea != null) {
+            postRequestScriptsArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        paramsData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        headersData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+
         openRequestTab("Untitled Request", null);
+    }
+
+    /** Marks the ACTIVE tab as having unsaved changes (adds the dot), unless
+     * we're currently restoring/loading a tab's own state into the editor. */
+    private void onEditorFieldChanged() {
+        if (restoringTabState || requestTabPane == null) {
+            return;
+        }
+        markDirty(requestTabPane.getSelectionModel().getSelectedItem());
+    }
+
+    private void markDirty(Tab tab) {
+        if (tab == null) {
+            return;
+        }
+        RequestTabState state = tabStates.get(tab);
+        if (state == null || state.dirty) {
+            refreshTabGraphic(tab); // still reflect a live method change even if already dirty
+            return;
+        }
+        state.dirty = true;
+        refreshTabGraphic(tab);
     }
 
     /** Opens a new editor tab (blank when requestId is null) and selects it. */
     private Tab openRequestTab(String name, Long requestId) {
+        return openRequestTab(name, requestId, "GET");
+    }
+
+    private Tab openRequestTab(String name, Long requestId, String method) {
         if (requestTabPane == null) {
             return null;
         }
         RequestTabState state = new RequestTabState();
         state.name = name;
         state.requestId = requestId;
+        state.method = method == null ? "GET" : method;
 
-        Tab tab = new Tab(name);
+        Tab tab = new Tab();
         tab.setClosable(true);
         tabStates.put(tab, state);
         tab.setOnClosed(e -> {
@@ -1171,7 +1276,34 @@ public class MainController implements Initializable {
         switchingTabs = false;
 
         restoreTabState(tab); // blank editor for a fresh tab
+        refreshTabGraphic(tab);
         return tab;
+    }
+
+    /** Postman-style tab label: colored method badge + name + unsaved dot. */
+    private void refreshTabGraphic(Tab tab) {
+        RequestTabState state = tabStates.get(tab);
+        if (state == null) {
+            return;
+        }
+        HBox box = new HBox(6);
+        box.setAlignment(Pos.CENTER_LEFT);
+
+        Label methodLabel = new Label(methodBadge(state.method == null ? "GET" : state.method));
+        methodLabel.getStyleClass().add("tab-method-badge");
+        methodLabel.getStyleClass().add("method-" + (state.method == null ? "get" : state.method.toLowerCase(Locale.ROOT)));
+
+        Label nameLabel = new Label(state.name);
+        nameLabel.getStyleClass().add("tab-name-label");
+
+        box.getChildren().addAll(methodLabel, nameLabel);
+        if (state.dirty) {
+            Label dot = new Label("\u25CF");
+            dot.getStyleClass().add("tab-unsaved-dot");
+            box.getChildren().add(dot);
+        }
+        tab.setGraphic(box);
+        tab.setText(null);
     }
 
     private void captureTabState(Tab tab) {
@@ -1184,6 +1316,10 @@ public class MainController implements Initializable {
         state.body = bodyTextArea.getText();
         state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
         state.testsScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : "";
+        state.authType = authTypeCombo.getValue();
+        state.authToken = tokenField.getText();
+        state.authUsername = usernameField.getText();
+        state.authPassword = passwordField.getText();
         state.params = new ArrayList<>(paramsData);
         state.headers = new ArrayList<>(headersData);
     }
@@ -1193,17 +1329,30 @@ public class MainController implements Initializable {
         if (state == null) {
             return;
         }
-        methodCombo.setValue(state.method == null ? "GET" : state.method);
-        urlField.setText(state.url == null ? "" : state.url);
-        bodyTextArea.setText(state.body == null ? "" : state.body);
-        if (preRequestScriptsArea != null) {
-            preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
+        // Guard: none of the field-changes triggered by restoring should
+        // mark this (or the previous) tab dirty.
+        restoringTabState = true;
+        try {
+            methodCombo.setValue(state.method == null ? "GET" : state.method);
+            urlField.setText(state.url == null ? "" : state.url);
+            bodyTextArea.setText(state.body == null ? "" : state.body);
+            if (preRequestScriptsArea != null) {
+                preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
+            }
+            if (postRequestScriptsArea != null) {
+                postRequestScriptsArea.setText(state.testsScript == null ? "" : state.testsScript);
+            }
+            authTypeCombo.setValue(state.authType == null ? "No Auth" : state.authType);
+            updateAuthFieldsVisibility(authTypeCombo.getValue());
+            tokenField.setText(state.authToken == null ? "" : state.authToken);
+            usernameField.setText(state.authUsername == null ? "" : state.authUsername);
+            passwordField.setText(state.authPassword == null ? "" : state.authPassword);
+            paramsData.setAll(state.params);
+            headersData.setAll(state.headers);
+        } finally {
+            restoringTabState = false;
         }
-        if (postRequestScriptsArea != null) {
-            postRequestScriptsArea.setText(state.testsScript == null ? "" : state.testsScript);
-        }
-        paramsData.setAll(state.params);
-        headersData.setAll(state.headers);
+        refreshTabGraphic(tab);
     }
 
     private Tab findTabByRequestId(Long requestId) {
@@ -1699,6 +1848,8 @@ public class MainController implements Initializable {
         if (currentState != null && currentState.requestId != null) {
             Long requestId = currentState.requestId;
             String requestName = currentState.name;
+            Tab tabToClear = requestTabPane.getSelectionModel().getSelectedItem();
+            RequestTabState finalCurrentState = currentState;
             new Thread(() -> {
                 try {
                     ApiRequest apiRequest = new ApiRequest();
@@ -1711,11 +1862,20 @@ public class MainController implements Initializable {
                             preRequestScriptsArea != null ? preRequestScriptsArea.getText() : null);
                     apiRequest.setTestsScript(
                             postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null);
+                    apiRequest.setAuthType(authTypeCombo.getValue());
+                    apiRequest.setAuthToken(tokenField.getText());
+                    apiRequest.setAuthUsername(usernameField.getText());
+                    apiRequest.setAuthPassword(passwordField.getText());
                     Optional<RequestResponse> updated = RequestService.updateRequest(requestId, apiRequest);
                     Platform.runLater(() -> {
                         if (updated.isPresent()) {
                             refreshCollectionsTree();
                             updateStatus("Saved: " + requestName);
+                            // Clear the unsaved dot — this tab now matches the server
+                            finalCurrentState.dirty = false;
+                            if (tabToClear != null) {
+                                refreshTabGraphic(tabToClear);
+                            }
                         } else {
                             AlertUtils.showError("Failed to save request");
                         }
@@ -1746,6 +1906,8 @@ public class MainController implements Initializable {
     }
 
     private void saveRequestToCollection(String name, Long collectionId, Long folderId) {
+        Tab tabBeingSaved = requestTabPane != null
+                ? requestTabPane.getSelectionModel().getSelectedItem() : null;
         new Thread(() -> {
             try {
                 ApiRequest apiRequest = new ApiRequest();
@@ -1758,6 +1920,10 @@ public class MainController implements Initializable {
                         preRequestScriptsArea != null ? preRequestScriptsArea.getText() : null);
                 apiRequest.setTestsScript(
                         postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null);
+                apiRequest.setAuthType(authTypeCombo.getValue());
+                apiRequest.setAuthToken(tokenField.getText());
+                apiRequest.setAuthUsername(usernameField.getText());
+                apiRequest.setAuthPassword(passwordField.getText());
                 apiRequest.setCollectionId(collectionId);
                 apiRequest.setFolderId(folderId);
 
@@ -1766,6 +1932,19 @@ public class MainController implements Initializable {
                     Platform.runLater(() -> {
                         AlertUtils.showSuccess("Request saved successfully");
                         refreshCollectionsTree();
+                        // FIX: attach the new id/name to this tab — otherwise
+                        // it stayed "untitled" forever and Ctrl+S kept asking
+                        // to save-as again instead of updating in place, and
+                        // the unsaved dot never cleared.
+                        if (tabBeingSaved != null) {
+                            RequestTabState state = tabStates.get(tabBeingSaved);
+                            if (state != null) {
+                                state.requestId = savedRequest.get().getId();
+                                state.name = name;
+                                state.dirty = false;
+                                refreshTabGraphic(tabBeingSaved);
+                            }
+                        }
                     });
                 } else {
                     Platform.runLater(() -> {
@@ -1822,6 +2001,10 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleCopyResponse() {
+        if (lastApiResponse != null && lastApiResponse.isBinary()) {
+            AlertUtils.showInfo("This is a binary response — use the save icon to download it instead of copying text");
+            return;
+        }
         String response = responseBodyArea.getText();
         if (response != null && !response.isEmpty()) {
             ClipboardContent content = new ClipboardContent();
@@ -1833,24 +2016,97 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSaveResponse() {
-        AlertUtils.showInfo("Save response feature coming soon");
+        if (lastApiResponse == null) {
+            AlertUtils.showInfo("Send a request first — there's no response to save yet");
+            return;
+        }
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Save Response");
+
+        if (lastApiResponse.isBinary()) {
+            // PDF/Excel/zip/image etc: save the EXACT bytes the server sent
+            String suggested = lastApiResponse.getFileName() != null
+                    ? lastApiResponse.getFileName() : "response.bin";
+            fileChooser.setInitialFileName(suggested);
+            int dot = suggested.lastIndexOf('.');
+            String ext = dot >= 0 ? suggested.substring(dot + 1) : "bin";
+            fileChooser.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file", "*." + ext),
+                    new FileChooser.ExtensionFilter("All Files", "*.*"));
+
+            File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
+            if (file == null) {
+                return;
+            }
+            try {
+                byte[] bytes = Base64.getDecoder().decode(lastApiResponse.getResponse());
+                java.nio.file.Files.write(file.toPath(), bytes);
+                AlertUtils.showSuccess("Saved " + formatSize(bytes.length) + " to " + file.getName());
+                updateStatus("Response saved: " + file.getName());
+            } catch (Exception e) {
+                AlertUtils.showError("Failed to save file: " + e.getMessage());
+            }
+        } else {
+            // Text response: guess a sensible extension from Content-Type
+            String ext = "txt";
+            String ct = lastApiResponse.getContentType();
+            if (ct != null) {
+                if (ct.contains("json")) {
+                    ext = "json";
+                } else if (ct.contains("xml")) {
+                    ext = "xml";
+                } else if (ct.contains("html")) {
+                    ext = "html";
+                } else if (ct.contains("csv")) {
+                    ext = "csv";
+                }
+            } else if (responseBodyArea.getText().trim().startsWith("{")
+                    || responseBodyArea.getText().trim().startsWith("[")) {
+                ext = "json";
+            }
+            fileChooser.setInitialFileName("response." + ext);
+            fileChooser.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file", "*." + ext),
+                    new FileChooser.ExtensionFilter("All Files", "*.*"));
+
+            File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
+            if (file == null) {
+                return;
+            }
+            try {
+                java.nio.file.Files.writeString(file.toPath(), responseBodyArea.getText());
+                AlertUtils.showSuccess("Saved to " + file.getName());
+                updateStatus("Response saved: " + file.getName());
+            } catch (Exception e) {
+                AlertUtils.showError("Failed to save file: " + e.getMessage());
+            }
+        }
     }
 
     @FXML
     private void handleRunTests() {
-        String testScript = testsArea.getText();
-        if (testScript.isEmpty()) {
-            AlertUtils.showInfo("No test scripts to run");
+        String testScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null;
+        if (testScript == null || testScript.isBlank()) {
+            AlertUtils.showInfo("No test script in the Scripts tab to run");
             return;
         }
+        if (lastApiResponse == null) {
+            AlertUtils.showInfo("Send this request at least once first — there's no response to test against yet");
+            return;
+        }
+        // Re-runs the SAME script the real send pipeline uses, against the
+        // last real response — lets you iterate on a script without
+        // re-sending the request every time.
+        Map<String, String> vars = new LinkedHashMap<>(currentEnvironmentVariables());
+        ScriptRunner.Result result = ScriptRunner.run(
+                testScript, lastApiResponse.getResponse(), lastApiResponse.getStatusCode(), vars);
         testResultsList.getItems().clear();
-        testResultsList.getItems().addAll(
-                "✓ Status code is 200",
-                "✓ Response time <500ms",
-                "✓ Response contains valid JSON",
-                "✓ Content-Type header is present"
-        );
-        updateStatus("Tests executed: 4 passed, 0 failed");
+        if (result.log.isEmpty()) {
+            testResultsList.getItems().add("Script ran but produced no output");
+        } else {
+            testResultsList.getItems().addAll(result.log);
+        }
+        updateStatus("Tests re-run against the last response — see the Tests tab");
     }
 
     @FXML
@@ -1883,11 +2139,15 @@ public class MainController implements Initializable {
         Map<String, String> vars = currentEnvironmentVariables();
         String url = VariableResolver.resolve(buildFullUrl(), vars);
         String method = methodCombo.getValue();
-        Map<String, String> headers = VariableResolver.resolveMap(buildHeaders(), vars);
+        Map<String, String> headers = VariableResolver.resolveMap(buildHeadersForSend(), vars);
         String body = VariableResolver.resolve(buildRequestBody(), vars);
 
         Set<String> unresolved = new LinkedHashSet<>(VariableResolver.findUnresolved(url, vars));
         unresolved.addAll(VariableResolver.findUnresolved(body, vars));
+        // Headers (Authorization included) can carry {{Token}} too — check them
+        for (String headerValue : headers.values()) {
+            unresolved.addAll(VariableResolver.findUnresolved(headerValue, vars));
+        }
         if (!unresolved.isEmpty()) {
             isRequestInProgress = false;
             if (sendButton != null) {
@@ -1937,13 +2197,10 @@ public class MainController implements Initializable {
             Optional<ApiResponse> result = requestTask.getValue();
             if (result.isPresent()) {
                 ApiResponse apiResponse = result.get();
-                updateResponseUI(
-                        apiResponse.getStatusCode(),
-                        apiResponse.getDuration(),
-                        apiResponse.getResponse().length(),
-                        apiResponse.getResponse(),
-                        parseHeaders(apiResponse.getResponseHeaders())
-                );
+                // Kept as an object (not just text) so binary bytes are never
+                // mangled by passing through a JavaFX TextArea.
+                lastApiResponse = apiResponse;
+                updateResponseUI(apiResponse, parseHeaders(apiResponse.getResponseHeaders()));
 
                 String historyEntry = method + " " + url + " (" + apiResponse.getStatusCode() + ")";
                 if (!historyData.contains(historyEntry)) {
@@ -2005,11 +2262,13 @@ public class MainController implements Initializable {
         return headersMap;
     }
 
-    private void updateResponseUI(int statusCode, long responseTime, int contentLength, String responseBody, Map<String, String> headers) {
+    private void updateResponseUI(ApiResponse apiResponse, Map<String, String> headers) {
+        int statusCode = apiResponse.getStatusCode();
+        long responseTime = apiResponse.getDuration();
         Platform.runLater(() -> {
             statusLabel.setText("Status: " + statusCode + " " + getStatusText(statusCode));
             timeLabel.setText("Time: " + responseTime + "ms");
-            sizeLabel.setText("Size: " + contentLength + "B");
+            sizeLabel.setText("Size: " + formatSize(apiResponse.getSizeBytes()));
 
             // Apply status code styling
             statusLabel.getStyleClass().removeAll("status-2xx", "status-4xx", "status-5xx");
@@ -2021,8 +2280,23 @@ public class MainController implements Initializable {
                 statusLabel.getStyleClass().add("status-5xx");
             }
 
-            responseBodyArea.setText(responseBody);
-            formatResponseBody(responseBody);
+            if (apiResponse.isBinary()) {
+                // A generated PDF/Excel/zip etc: never dump raw/Base64 bytes
+                // into the text area. Show a clear "download this" card
+                // instead — Save Response (the icon button) does the rest.
+                responseBodyArea.setEditable(false);
+                responseBodyArea.setText(
+                        "\uD83D\uDCC4  Binary response\n\n"
+                                + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
+                                + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
+                                + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
+                                + "This isn't text, so it can't be shown here — click the save icon "
+                                + "above the response to download it exactly as the server sent it.");
+            } else {
+                responseBodyArea.setEditable(true);
+                responseBodyArea.setText(apiResponse.getResponse());
+                formatResponseBody(apiResponse.getResponse());
+            }
 
             responseHeadersData.clear();
             headers.forEach((key, value) -> responseHeadersData.add(new KeyValuePair(key, value, "")));
@@ -2048,6 +2322,16 @@ public class MainController implements Initializable {
         } catch (Exception e) {
             // If formatting fails, just use the original response
         }
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024 * 1024) {
+            return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        }
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
     private String getStatusText(int statusCode) {
@@ -2145,7 +2429,20 @@ public class MainController implements Initializable {
             }
         }
 
-        // Add authentication headers
+        // NOTE: the Authorization header is intentionally NOT added here.
+        // It's computed fresh in buildHeadersForSend() from the Authorization
+        // tab, and the tab's settings are saved as their own fields — so a
+        // saved request's Headers tab stays clean instead of showing a
+        // duplicate, stale "Authorization: Bearer {{Token}}" row (like
+        // Postman: auth lives in its own tab, not baked into Headers).
+        return headers;
+    }
+
+    /** Headers actually sent on the wire: user headers + the computed
+     * Authorization header from the Authorization tab. */
+    private Map<String, String> buildHeadersForSend() {
+        Map<String, String> headers = buildHeaders();
+
         String authType = authTypeCombo.getValue();
         switch (authType) {
             case "Bearer Token":
@@ -2470,14 +2767,176 @@ public class MainController implements Initializable {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Import Collections");
         fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("CSV Files", "*.csv"),
                 new FileChooser.ExtensionFilter("JSON Files", "*.json"),
                 new FileChooser.ExtensionFilter("All Files", "*.*")
         );
 
         File file = fileChooser.showOpenDialog(Main.getPrimaryStage());
-        if (file != null) {
-            AlertUtils.showInfo("Import functionality coming soon!");
+        if (file == null) {
+            return;
         }
+        if (file.getName().toLowerCase(Locale.ROOT).endsWith(".csv")) {
+            importRequestsFromCsv(file);
+        } else {
+            AlertUtils.showInfo("Postman collection (.json) import is coming soon — "
+                    + "CSV import (Folder, Name, Method, URL, Headers, Body columns) is ready today.");
+        }
+    }
+
+    /**
+     * Bulk-imports requests from a spreadsheet. Expected columns (header
+     * row, any order): Folder, Name, Method, URL, Headers, Body,
+     * PreRequestScript, TestsScript. Folder supports nested paths with "/",
+     * e.g. "Auth/Login" creates (or reuses) Auth > Login. Missing optional
+     * columns are simply left blank.
+     */
+    private void importRequestsFromCsv(File file) {
+        TreeItem<String> selectedItem = collectionsTree.getSelectionModel().getSelectedItem();
+        Long preselectedCollectionId = selectedItem != null ? getCollectionIdFromTreeItem(selectedItem) : null;
+
+        Runnable doImport = () -> new Thread(() -> {
+            try {
+                Long collectionId = preselectedCollectionId;
+                if (collectionId == null) {
+                    Platform.runLater(() -> AlertUtils.showError(
+                            "Select a collection in the sidebar first, then import again"));
+                    return;
+                }
+                String csvText = java.nio.file.Files.readString(file.toPath());
+                List<Map<String, String>> rows = CsvParser.parseWithHeader(csvText);
+                if (rows.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("CSV file has no data rows"));
+                    return;
+                }
+
+                // Pre-load existing folders so re-importing is idempotent —
+                // it reuses folders instead of creating duplicates.
+                Map<String, Long> pathToFolderId = new HashMap<>();
+                Optional<CollectionResponse> existing = CollectionService.getCollectionWithDetails(collectionId);
+                Map<Long, FolderResponse> foldersById = new HashMap<>();
+                if (existing.isPresent() && existing.get().getFolderResponses() != null) {
+                    for (FolderResponse f : existing.get().getFolderResponses()) {
+                        foldersById.put(f.getId(), f);
+                    }
+                    for (FolderResponse f : existing.get().getFolderResponses()) {
+                        pathToFolderId.put(folderPath(f, foldersById), f.getId());
+                    }
+                }
+
+                int requestCount = 0;
+                int folderCount = 0;
+                for (Map<String, String> row : rows) {
+                    String folderPath = row.getOrDefault("Folder", "").trim();
+                    Long folderId = null;
+                    if (!folderPath.isEmpty()) {
+                        String builtPath = "";
+                        for (String segment : folderPath.split("/")) {
+                            segment = segment.trim();
+                            if (segment.isEmpty()) {
+                                continue;
+                            }
+                            builtPath = builtPath.isEmpty() ? segment : builtPath + "/" + segment;
+                            Long existingId = pathToFolderId.get(builtPath);
+                            if (existingId != null) {
+                                folderId = existingId;
+                                continue;
+                            }
+                            Optional<FolderResponse> created =
+                                    FolderService.createFolder(segment, "", collectionId, folderId);
+                            if (created.isEmpty()) {
+                                throw new RuntimeException("Failed to create folder: " + builtPath);
+                            }
+                            folderId = created.get().getId();
+                            pathToFolderId.put(builtPath, folderId);
+                            folderCount++;
+                        }
+                    }
+
+                    String name = row.getOrDefault("Name", "Imported request").trim();
+                    if (name.isEmpty()) {
+                        name = "Imported request";
+                    }
+                    String methodStr = row.getOrDefault("Method", "GET").trim().toUpperCase(Locale.ROOT);
+                    HttpMethod method;
+                    try {
+                        method = HttpMethod.valueOf(methodStr.isEmpty() ? "GET" : methodStr);
+                    } catch (IllegalArgumentException e) {
+                        method = HttpMethod.GET;
+                    }
+
+                    ApiRequest apiRequest = new ApiRequest();
+                    apiRequest.setName(name);
+                    apiRequest.setMethod(method);
+                    apiRequest.setUrl(row.getOrDefault("URL", "").trim());
+                    apiRequest.setHeaders(new JSONObject(parseHeaderCell(row.getOrDefault("Headers", ""))).toString());
+                    apiRequest.setBody(row.getOrDefault("Body", ""));
+                    apiRequest.setPreRequestScript(row.getOrDefault("PreRequestScript", ""));
+                    apiRequest.setTestsScript(row.getOrDefault("TestsScript", ""));
+                    apiRequest.setCollectionId(collectionId);
+                    apiRequest.setFolderId(folderId);
+
+                    if (RequestService.saveRequest(apiRequest).isPresent()) {
+                        requestCount++;
+                    }
+                }
+
+                int finalRequestCount = requestCount;
+                int finalFolderCount = folderCount;
+                Platform.runLater(() -> {
+                    refreshCollectionsTree();
+                    AlertUtils.showSuccess("Imported " + finalRequestCount + " request(s)"
+                            + (finalFolderCount > 0 ? " into " + finalFolderCount + " new folder(s)" : ""));
+                    updateStatus("CSV import complete: " + finalRequestCount + " request(s)");
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> AlertUtils.showError("CSV import failed: " + e.getMessage()));
+            }
+        }).start();
+
+        if (preselectedCollectionId == null) {
+            AlertUtils.showError("Select a collection in the sidebar first, then use Import again");
+            return;
+        }
+        doImport.run();
+    }
+
+    /** Rebuilds "Parent/Child" from a folder and the collection's folder set. */
+    private String folderPath(FolderResponse folder, Map<Long, FolderResponse> byId) {
+        List<String> parts = new ArrayList<>();
+        FolderResponse current = folder;
+        while (current != null) {
+            parts.add(0, current.getName());
+            current = current.getParentFolderId() != null ? byId.get(current.getParentFolderId()) : null;
+        }
+        return String.join("/", parts);
+    }
+
+    /** Header cell supports either "Key: Value; Key2: Value2" or raw JSON. */
+    private Map<String, String> parseHeaderCell(String cell) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (cell == null || cell.isBlank()) {
+            return headers;
+        }
+        String trimmed = cell.trim();
+        if (trimmed.startsWith("{")) {
+            try {
+                JSONObject json = new JSONObject(trimmed);
+                for (String key : json.keySet()) {
+                    headers.put(key, json.getString(key));
+                }
+                return headers;
+            } catch (Exception ignored) {
+                // fall through to the "Key: Value; ..." parser
+            }
+        }
+        for (String pair : trimmed.split(";")) {
+            int idx = pair.indexOf(':');
+            if (idx > 0) {
+                headers.put(pair.substring(0, idx).trim(), pair.substring(idx + 1).trim());
+            }
+        }
+        return headers;
     }
 
     @FXML
@@ -2527,16 +2986,39 @@ public class MainController implements Initializable {
     }
 
     private void showAddRequestDialog(TreeItem<String> parentItem) {
-        TextInputDialog dialog = new TextInputDialog();
+        Dialog<javafx.util.Pair<String, String>> dialog = new Dialog<>();
         dialog.setTitle("New Request");
         dialog.setHeaderText("Create a new request in " + parentItem.getValue());
-        dialog.setContentText("Request name:");
-        ThemeManager.styleDialog(dialog.getDialogPane());
 
-        Optional<String> result = dialog.showAndWait();
-        result.ifPresent(name -> {
-            if (!name.trim().isEmpty()) {
-                createNewRequest(name, parentItem);
+        TextField nameField = new TextField();
+        nameField.setPromptText("Request name");
+        // FIX: every new request used to be hardcoded to GET regardless of
+        // what the user actually wanted — this is where that got decided.
+        ComboBox<String> methodBox = new ComboBox<>();
+        methodBox.getItems().addAll("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD");
+        methodBox.getSelectionModel().select("GET");
+        methodBox.setPrefWidth(110);
+
+        HBox row = new HBox(10, methodBox, nameField);
+        row.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(nameField, javafx.scene.layout.Priority.ALWAYS);
+        VBox content = new VBox(10, new Label("Method and name:"), row);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+        Platform.runLater(nameField::requestFocus);
+
+        dialog.setResultConverter(button -> button == ButtonType.OK
+                ? new javafx.util.Pair<>(methodBox.getValue(), nameField.getText())
+                : null);
+
+        Optional<javafx.util.Pair<String, String>> result = dialog.showAndWait();
+        result.ifPresent(pair -> {
+            String name = pair.getValue();
+            String method = pair.getKey();
+            if (name != null && !name.trim().isEmpty()) {
+                createNewRequest(name, method == null ? "GET" : method, parentItem);
             }
         });
     }
@@ -2725,7 +3207,7 @@ public class MainController implements Initializable {
         }).start();
     }
 
-    private void createNewRequest(String name, TreeItem<String> parentItem) {
+    private void createNewRequest(String name, String method, TreeItem<String> parentItem) {
         new Thread(() -> {
             try {
                 Long collectionId = getCollectionIdFromTreeItem(parentItem);
@@ -2734,7 +3216,7 @@ public class MainController implements Initializable {
                 if (collectionId != null) {
                     ApiRequest apiRequest = new ApiRequest();
                     apiRequest.setName(name);
-                    apiRequest.setMethod(HttpMethod.GET);
+                    apiRequest.setMethod(HttpMethod.valueOf(method));
                     apiRequest.setUrl("https://api.example.com/endpoint");
                     apiRequest.setHeaders("{}");
                     apiRequest.setBody("");
@@ -2747,7 +3229,7 @@ public class MainController implements Initializable {
                             refreshCollectionsTree();
                             updateStatus("Request created: " + name);
                             // Open the new request in its own tab, like Postman
-                            openRequestTab(name, savedRequest.get().getId());
+                            openRequestTab(name, savedRequest.get().getId(), method);
                             loadRequestIntoUI(savedRequest.get());
                         });
                     } else {

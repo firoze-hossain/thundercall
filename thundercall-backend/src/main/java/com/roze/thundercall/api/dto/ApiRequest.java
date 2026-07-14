@@ -14,6 +14,10 @@ public record ApiRequest(
         Long collectionId,
         Long folderId,
         String preRequestScript,
-        String testsScript
+        String testsScript,
+        String authType,
+        String authToken,
+        String authUsername,
+        String authPassword
 ) {
 }

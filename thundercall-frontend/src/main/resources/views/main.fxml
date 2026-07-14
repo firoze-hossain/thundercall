@@ -329,10 +329,14 @@
 
                             <Tab text="Authorization">
                                 <VBox spacing="10" styleClass="auth-panel">
+                                    <Label text="Type" styleClass="scripts-section-label"/>
                                     <ComboBox fx:id="authTypeCombo" promptText="Select Auth Type" prefWidth="240"/>
-                                    <TextField fx:id="tokenField" promptText="Enter token" visible="false"/>
-                                    <HBox spacing="10" visible="false">
-                                        <TextField fx:id="usernameField" promptText="Username" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="authHintLabel" styleClass="sidebar-hint" wrapText="true"
+                                           text="Use a {{variable}} to pull the value from the selected environment — e.g. {{Token}}."/>
+                                    <TextField fx:id="tokenField" promptText="Token, e.g. {{Token}} or {{ACCESS_TOKEN}}"
+                                               managed="false" visible="false"/>
+                                    <HBox spacing="10" fx:id="basicAuthBox" managed="false" visible="false">
+                                        <TextField fx:id="usernameField" promptText="Username (supports {{variables}})" HBox.hgrow="ALWAYS"/>
                                         <PasswordField fx:id="passwordField" promptText="Password" HBox.hgrow="ALWAYS"/>
                                     </HBox>
                                 </VBox>
@@ -443,7 +447,6 @@
                                               promptText="Runs after the response. Supported: const d = pm.response.json().data;  pm.environment.set(&quot;TOKEN&quot;, d.token);  pm.response.code"
                                               styleClass="scripts-textarea" VBox.vgrow="ALWAYS"/>
                                     <HBox spacing="10" alignment="CENTER_RIGHT">
-                                        <Button text="Run Pre-request Scripts" styleClass="run-scripts-btn"/>
                                         <Button text="Run Tests" onAction="#handleRunTests" styleClass="run-tests-btn"/>
                                     </HBox>
                                 </VBox>
@@ -530,9 +533,8 @@
                             </Tab>
                             <Tab text="Tests">
                                 <VBox spacing="10">
-                                    <TextArea fx:id="testsArea" promptText="Write test scripts here"
-                                              styleClass="tests-textarea"/>
-                                    <Button text="Run Tests" onAction="#handleRunTests" styleClass="run-tests-btn"/>
+                                    <Label styleClass="sidebar-hint" wrapText="true"
+                                           text="Results from the request's Scripts tab appear here automatically after each Send."/>
                                     <ListView fx:id="testResultsList" styleClass="test-results" VBox.vgrow="ALWAYS"/>
                                 </VBox>
                             </Tab>
