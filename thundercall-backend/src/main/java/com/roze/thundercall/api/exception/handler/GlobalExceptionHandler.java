@@ -40,4 +40,18 @@ public class GlobalExceptionHandler {
         response.setTimestamp(Instant.now());
         return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
     }
+
+    // FIX: this was previously unhandled — application-level validation
+    // errors (like "a folder with this name already exists here") fell
+    // through with no clear status or message, which is exactly what made
+    // a genuine, easily-fixable business rule look like a mysterious
+    // session/auth failure on the client for several rounds of debugging.
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
+        ErrorResponse response = new ErrorResponse();
+        response.setStatus(HttpStatus.CONFLICT.value());
+        response.setMessage(ex.getMessage());
+        response.setTimestamp(Instant.now());
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
 }

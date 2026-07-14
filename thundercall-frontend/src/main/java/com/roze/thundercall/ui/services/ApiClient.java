@@ -92,7 +92,7 @@ public class ApiClient {
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
-            throw new IOException(describeError(responseCode, connection));
+            throw new IOException(describeError("POST", endpoint, responseCode, connection));
         }
     }
 
@@ -113,7 +113,7 @@ public class ApiClient {
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
-            throw new IOException(describeError(responseCode, connection));
+            throw new IOException(describeError("GET", endpoint, responseCode, connection));
         }
     }
 
@@ -139,7 +139,7 @@ public class ApiClient {
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
-            throw new IOException(describeError(responseCode, connection));
+            throw new IOException(describeError("PUT", endpoint, responseCode, connection));
         }
     }
 
@@ -165,7 +165,7 @@ public class ApiClient {
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
-            throw new IOException(describeError(responseCode, connection));
+            throw new IOException(describeError("PATCH", endpoint, responseCode, connection));
         }
     }
 
@@ -194,7 +194,7 @@ public class ApiClient {
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
-            throw new IOException(describeError(responseCode, connection));
+            throw new IOException(describeError("DELETE", endpoint, responseCode, connection));
         }
     }
 
@@ -296,8 +296,17 @@ public class ApiClient {
      * Builds a clear error message even when the server returns an empty
      * body (as Spring Security's default rejection does for 401/403).
      */
-    private static String describeError(int responseCode, HttpURLConnection connection) throws IOException {
+    /** Prints the TRUE raw failure (before any friendly rewriting) and
+     * returns the user-facing message. Kept separate so a future log
+     * always shows exactly what the server actually sent back, not just
+     * the simplified "session expired" text — that distinction is the
+     * whole reason this method exists after debugging a repeat failure
+     * that survived two successful token refreshes in a row. */
+    private static String describeError(String method, String endpoint, int responseCode,
+                                        HttpURLConnection connection) throws IOException {
         String body = readError(connection);
+        System.out.println("[ApiClient] " + method + " " + endpoint + " failed: HTTP " + responseCode
+                + ", raw body: " + (body == null || body.isBlank() ? "(empty)" : body));
         if (isAuthError(responseCode) && (body == null || body.isBlank() || body.equals("Unknown error"))) {
             return "HTTP " + responseCode + ": Your session has expired — please log in again";
         }

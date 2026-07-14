@@ -24,6 +24,28 @@ public interface FolderRepository extends JpaRepository<Folder, Long>, JpaSpecif
             @Param("user") User user
     );
 
+    // FIX: the old check above ignored parentFolderId, so two DIFFERENT
+    // folders that legitimately share a name (e.g. "common" nested under
+    // two different parents — completely normal in real API structures)
+    // were wrongly rejected as duplicates. Uniqueness is scoped to the
+    // parent (or "top-level" when parentFolderId is null) instead.
+    @Query("SELECT f FROM Folder f WHERE f.collection.workspace.owner = :user AND f.name = :name "
+            + "AND f.collection.id = :collectionId AND f.parentFolder.id = :parentFolderId")
+    Optional<Folder> findByNameAndCollectionIdAndParentFolderIdAndCollectionWorkspaceOwner(
+            @Param("name") String name,
+            @Param("collectionId") Long collectionId,
+            @Param("parentFolderId") Long parentFolderId,
+            @Param("user") User user
+    );
+
+    @Query("SELECT f FROM Folder f WHERE f.collection.workspace.owner = :user AND f.name = :name "
+            + "AND f.collection.id = :collectionId AND f.parentFolder IS NULL")
+    Optional<Folder> findByNameAndCollectionIdAndParentFolderIsNullAndCollectionWorkspaceOwner(
+            @Param("name") String name,
+            @Param("collectionId") Long collectionId,
+            @Param("user") User user
+    );
+
     @Query("SELECT COUNT(r) FROM Request r WHERE r.folder.id = :folderId")
     Long countRequestsByFolderId(@Param("folderId") Long folderId);
 }
