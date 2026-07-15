@@ -145,10 +145,20 @@
 
 
 /* ============ Split panes / panels ============ */
-.main-split, .split-pane { -fx-background-color: -bg-base; -fx-padding: 0; }
+.main-split, .split-pane, .sidebar-split-pane { -fx-background-color: -bg-base; -fx-padding: 0; }
+/* FIX: the divider's hit-area was only 1-2px, making it fiddly to grab
+   with the mouse — widened substantially (both the sidebar divider and
+   the request/response divider use this) with a hover highlight so it's
+   obvious where to drag. */
 .split-pane-divider {
     -fx-background-color: -border-subtle;
-    -fx-padding: 0 1 0 1;
+    -fx-padding: 0 3 0 3;
+}
+.split-pane-divider:hover, .split-pane-divider:pressed {
+    -fx-background-color: -accent;
+}
+.sidebar-split-pane > .split-pane-divider {
+    -fx-padding: 0 4 0 4;
 }
 
 .requestResponse-panel, .response-panel, .scripts-panel {

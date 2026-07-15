@@ -1142,6 +1142,15 @@ public class MainController implements Initializable {
      *  Params table uses this to keep the URL's query string in sync). */
     private void setupKeyValueTable(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data,
                                     Runnable onCommit, String... columns) {
+        // FIX: the FXML used to ALSO define static <columns> for these
+        // tables (an old, pre-dynamic-setup leftover). Every table ended
+        // up with its columns doubled — the 3 static ones from FXML plus
+        // 3 more added here — which is exactly the "Key Value Description
+        // Key Value Description" duplication. The static columns are gone
+        // from the FXML now, but clearing here too means this can never
+        // recur even if a table is (re)initialized more than once.
+        table.getColumns().clear();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setItems(data);
         table.setEditable(true);
 
@@ -3023,7 +3032,70 @@ public class MainController implements Initializable {
         return headersMap;
     }
 
+    private boolean isPdfResponse(ApiResponse apiResponse) {
+        String contentType = apiResponse.getContentType();
+        String fileName = apiResponse.getFileName();
+        return (contentType != null && contentType.toLowerCase(Locale.ROOT).contains("pdf"))
+                || (fileName != null && fileName.toLowerCase(Locale.ROOT).endsWith(".pdf"));
+    }
+
+    /** Renders every page of a PDF response as an image and shows them in
+     * the response's WebView pane — that pane existed already but was
+     * never actually wired up to anything, always blank. */
+    private void renderPdfPreview(ApiResponse apiResponse) {
+        if (responsePreview == null) {
+            return;
+        }
+        responsePreview.getEngine().loadContent(
+                "<html><body style='margin:0;padding:12px;background:#1d1f24;'>"
+                        + "<p style='font-family:sans-serif;color:#9a9ea9;font-size:12px;'>Rendering PDF preview…</p>"
+                        + "</body></html>");
+
+        new Thread(() -> {
+            try {
+                byte[] pdfBytes = Base64.getDecoder().decode(apiResponse.getResponse());
+                StringBuilder html = new StringBuilder(
+                        "<html><body style='margin:0;padding:12px;background:#1d1f24;text-align:center;'>");
+                try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
+                    org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
+                    int pageCount = document.getNumberOfPages();
+                    // A very long PDF would be slow/heavy to render fully inline;
+                    // cap it and point to Save for the complete file.
+                    int pagesToRender = Math.min(pageCount, 20);
+                    for (int i = 0; i < pagesToRender; i++) {
+                        java.awt.image.BufferedImage image = renderer.renderImageWithDPI(i, 110);
+                        java.io.ByteArrayOutputStream pngBytes = new java.io.ByteArrayOutputStream();
+                        javax.imageio.ImageIO.write(image, "png", pngBytes);
+                        String base64Png = Base64.getEncoder().encodeToString(pngBytes.toByteArray());
+                        html.append("<img src='data:image/png;base64,").append(base64Png)
+                                .append("' style='max-width:100%;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.4);'/>");
+                    }
+                    if (pageCount > pagesToRender) {
+                        html.append("<p style='font-family:sans-serif;color:#9a9ea9;font-size:12px;'>")
+                                .append(pageCount - pagesToRender)
+                                .append(" more page(s) not shown — save the file to see the rest.</p>");
+                    }
+                }
+                html.append("</body></html>");
+                String finalHtml = html.toString();
+                Platform.runLater(() -> responsePreview.getEngine().loadContent(finalHtml));
+            } catch (Exception e) {
+                Platform.runLater(() -> responsePreview.getEngine().loadContent(
+                        "<html><body style='margin:0;padding:12px;background:#1d1f24;'>"
+                                + "<p style='font-family:sans-serif;color:#e57373;font-size:12px;'>"
+                                + "Couldn't render a preview: " + e.getMessage() + "</p></body></html>"));
+            }
+        }).start();
+    }
+
+    private void clearResponsePreview() {
+        if (responsePreview != null) {
+            responsePreview.getEngine().loadContent("");
+        }
+    }
+
     private void updateResponseUI(ApiResponse apiResponse, Map<String, String> headers) {
+
         Platform.runLater(() -> {
             renderResponse(apiResponse, headers);
 
@@ -3064,17 +3136,27 @@ public class MainController implements Initializable {
             // into the text area. Show a clear "download this" card
             // instead — Save Response (the icon button) does the rest.
             responseBodyArea.setEditable(false);
+            boolean isPdf = isPdfResponse(apiResponse);
             responseBodyArea.replaceText(
                     "\uD83D\uDCC4  Binary response\n\n"
                             + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
                             + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
                             + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
-                            + "This isn't text, so it can't be shown here — click the save icon "
-                            + "above the response to download it exactly as the server sent it.");
+                            + (isPdf
+                            ? "PDF preview is shown on the right. Click the save icon above "
+                            + "the response to download the original file."
+                            : "This isn't text, so it can't be shown here — click the save icon "
+                            + "above the response to download it exactly as the server sent it."));
+            if (isPdf) {
+                renderPdfPreview(apiResponse);
+            } else {
+                clearResponsePreview();
+            }
         } else {
             responseBodyArea.setEditable(true);
             responseBodyArea.replaceText(apiResponse.getResponse() != null ? apiResponse.getResponse() : "");
             formatResponseBody(apiResponse.getResponse());
+            clearResponsePreview();
         }
 
         responseHeadersData.clear();
@@ -3096,6 +3178,7 @@ public class MainController implements Initializable {
         responseBodyArea.setEditable(true);
         responseBodyArea.replaceText("");
         responseHeadersData.clear();
+        clearResponsePreview();
     }
 
     private void formatResponseBody(String responseBody) {

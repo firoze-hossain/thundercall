@@ -1,100 +1,77 @@
-# Round 25 — Params sync, better cell editing, environment menu, full Auth redesign
+# Round 26 — Params table fixed, resizable panels, PDF preview
 
-FRONTEND ONLY: 2 files (main.css untouched this round — nothing to add).
-
-| File | Destination |
-|---|---|
-| MainController.java | .../ui/controllers/ |
-| main.fxml | src/main/resources/views/ |
+5 files: MainController.java, main.fxml, main.css, pom.xml, module-info.java.
 
 ---
 
-## 1. Params showing empty after import — root cause found and fixed
+## 1. The doubled Params columns — real root cause found and fixed
 
-The Params tab was a **write-only scratchpad**: nothing ever parsed an
-existing URL's query string into it. Your imported request's URL already
-had `?eid=16465` baked in, but the Params table had no idea that string
-existed — it only ever got populated by manually clicking "Add Row".
+Your screenshot showing "Key Value Description Key Value Description" was
+a genuine, significant bug: **all five key-value tables** (Params,
+Headers, Form Data, Response Headers, Cookies) had their columns defined
+**twice** — once statically in the FXML (an old leftover from before
+columns were set up dynamically in Java), and again by the Java code,
+which never cleared the FXML-defined ones first. Every one of these
+tables was silently showing 6 columns instead of 3.
 
-Fixed properly, matching Postman's actual model: **the URL and the Params
-table are now two views of the same data, synced live in both
-directions**:
-- Opening a request (or importing, or just typing in the URL bar) parses
-  the query string straight into the Params table.
-- Editing a Params row — or adding/deleting one — rewrites the URL's query
-  string immediately.
+Fixed on both sides so this can't recur:
+- Removed the static `<columns>` blocks from all five tables in the FXML.
+- The Java setup now explicitly clears any existing columns before adding
+  its own, so even if a table got initialized twice for some other reason,
+  it can't double up again.
 
-This also fixed a **real latent bug** I found while doing this: the old
-`buildFullUrl()` re-appended every Params row onto the URL again at send
-time. Since the URL could already contain the same param (like your
-imported `?eid=16465`), sending would have produced `?eid=16465&eid=16465`
-— doubled. That re-appending logic is gone now; the URL is always the
-single source of truth by send time.
+I believe this also explains the odd reddish highlight you saw — with the
+table secretly rendering two overlapping copies of itself, a normal
+"row selected" highlight would have looked like visual noise layered on
+itself. With the duplication gone, editing a param should now look clean,
+like your Postman reference — a normal row highlight while selected, gone
+once you click away or save. If you still see something odd after this
+fix, send a fresh screenshot and I'll dig further.
 
-## 2. Table cell editing — commits on losing focus now, not just Enter
+## 2. Sidebar (Collections/Environments/History) is now resizable
 
-This was a genuine JavaFX quirk: the default table cell editor **cancels**
-an edit when you click away instead of saving it — Enter was the only way
-to commit, exactly matching what felt "not good." Fixed with a custom
-cell that also commits when it loses focus (clicking another cell,
-another tab, anywhere) — the standard, well-known fix for this.
+This panel was a fixed 264px region with no divider at all — dragging
+never did anything because there was nothing to drag. It's now inside the
+same kind of SplitPane as the request/response area, so you can widen it
+by mouse to see full request and collection names instead of them getting
+cut off (min 200px, max 560px, so it can't be dragged away entirely or
+absurdly wide).
 
-Separately: **Ctrl+S now force-commits any cell you're still typing in**
-before saving. A global shortcut doesn't naturally make a focused table
-cell lose focus on its own, so without this, whatever you were mid-typing
-when you hit Ctrl+S could have been silently dropped.
+## 3. Both dividers are much easier to grab now
 
-## 3. Environments — right-click menu: Rename, Duplicate, Export as JSON, Delete
+The response-panel divider (and the new sidebar divider) had only a 1-2px
+hit area, which is exactly what made it fiddly to resize. Both are
+significantly wider now, with a highlight color on hover so it's obvious
+where to click-drag.
 
-Added the locally-relevant subset of Postman's environment menu (Share,
-fork, pull-request, merge are git/cloud team features with no equivalent
-in a self-hosted single-user tool, so those aren't included):
-- **Rename** (Ctrl+E) and **Duplicate** (Ctrl+D) work like the collection
-  tree's existing rename/duplicate.
-- **Export as JSON** writes a clean `{name, description, values: [...]}`
-  file you can hand to someone else or re-import later.
-- **Delete** with confirmation.
+## 4. PDF responses now render an actual preview
 
-## 4/5/6. Authorization tab — full Postman-style redesign
+The response viewer already had an unused preview pane sitting next to it
+(built earlier but never wired to anything — always blank, which is
+what you were seeing). When a response is a PDF, it now renders every
+page as an image directly into that pane (capped at 20 pages for very
+long documents, with a note if there's more — Save still gets you the
+complete file). Excel and everything else binary is untouched — same
+info-card-and-download behavior as before.
 
-- **Two-column layout** matching Postman: Auth Type on the left, the
-  actual fields on the right — replacing the old single stacked column.
-- **Bearer Token field now has the same `{{variable}}` autocomplete and
-  coloring as the URL bar and body** (this needed converting it to the
-  same CodeArea-based editor under the hood) — type `{{` and your
-  environment's variables show up live, exactly like your reference
-  screenshot. Same treatment for the Basic Auth username field.
-- **OAuth 2.0 got a real, complete implementation** — not just a UI
-  mockup:
-  - Full Postman-style panel: "Add auth data to" (Headers/Query Params),
-    Current Token + Header Prefix, and a "Configure New Token" section
-    with Grant Type, Auth URL, Access Token URL, Client ID/Secret, Scope,
-    and (for Password Credentials) Username/Password — fields show and
-    hide per grant type, same as Postman.
-  - **"Get New Access Token" actually works** for Client Credentials and
-    Password Credentials grants — a real POST to your Access Token URL,
-    parsing `access_token` from the response and filling in Current
-    Token.
-  - Authorization Code and Implicit need an interactive browser sign-in
-    step this app doesn't have yet — rather than fake a result, it tells
-    you plainly and suggests pasting a token manually, or using the two
-    working grant types.
-  - The resulting token is used at send time exactly like Bearer Token —
-    as an `Authorization` header, or appended to the URL as
-    `access_token=...` if you chose "Query Params."
-  - OAuth2 config is saved with the request (reusing the existing
-    `authToken` column as a small JSON blob — no database change needed),
-    so it survives switching tabs, closing, and reopening.
+**One honest flag on this one:** PDF rendering needed a new library
+(Apache PDFBox), added to `pom.xml` and `module-info.java`. Given the
+module-path debugging we already went through together, I want to be
+upfront: I can't compile-test this myself in my environment, so there's a
+real chance it needs one more small module tweak on first build. If you
+see a "module X not found" or "module X not read" error:
+- The fast, proven fix you already know works: **delete
+  `module-info.java` entirely** — this removes this whole class of error
+  for good, with no downside for a desktop app like this.
+- Or, the narrower fix: add `requires <exact-name-from-the-error>;` to
+  module-info.java, same as we did for reactfx.
 
 ## Test
-1. Rebuild frontend.
-2. Open an imported request with a `?param=value` URL — Params tab shows
-   it now. Edit a param value, watch the URL bar update live. Type
-   directly in the URL bar, watch Params update.
-3. Edit a param cell, click elsewhere without pressing Enter — it sticks.
-4. Right-click an environment — Rename/Duplicate/Export/Delete all there.
-5. Authorization → Bearer Token → type `{{` in the Token field — your
-   environment variables suggest, same as the URL bar.
-6. Authorization → OAuth 2.0 → Client Credentials → fill in your token
-   URL/client id/secret → "Get New Access Token" → a real token comes
-   back and gets used on Send.
+1. Rebuild. If PDFBox causes a module error, see the fallback above.
+2. Open any request with params — table shows 3 columns now, editing one
+   updates the URL, no visual duplication.
+3. Drag the sidebar's right edge — it resizes now.
+4. Drag the response panel's top edge — noticeably easier to grab.
+5. Send a request that returns a PDF — preview renders on the right;
+   send one that returns an Excel file — same download-card behavior as
+   before, untouched.

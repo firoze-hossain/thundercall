@@ -7,6 +7,7 @@ module com.roze.thundercall {
     requires org.controlsfx.controls;
     requires org.fxmisc.richtext;
     requires reactfx;
+    requires org.apache.pdfbox;
     requires com.fasterxml.jackson.databind;
     requires org.apache.commons.lang3;
     requires org.kordamp.ikonli.javafx;
@@ -16,6 +17,7 @@ module com.roze.thundercall {
     requires org.json;
     requires java.logging;
     requires java.scripting;
+    requires java.desktop;
     opens com.roze.thundercall.ui to javafx.graphics, javafx.fxml;
     opens com.roze.thundercall.ui.controllers to javafx.fxml, javafx.base;
     opens com.roze.thundercall.ui.models to javafx.base;
