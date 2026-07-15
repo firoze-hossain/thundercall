@@ -68,18 +68,56 @@ public class MainController implements Initializable {
     @FXML
     private ComboBox<String> authTypeCombo;
     @FXML
-    private HBox basicAuthBox;
+    private VBox basicAuthBox;
     @FXML
     private Label authHintLabel;
     /** The most recent response — kept as an object so binary bytes never
      * pass through a TextArea (which would corrupt them). Used by Save. */
     private ApiResponse lastApiResponse;
     @FXML
-    private TextField tokenField;
+    private CodeArea tokenField;
     @FXML
-    private TextField usernameField;
+    private Label tokenPromptLabel;
+    @FXML
+    private CodeArea usernameField;
+    @FXML
+    private Label usernamePromptLabel;
     @FXML
     private PasswordField passwordField;
+    @FXML
+    private VBox bearerAuthBox;
+    @FXML
+    private VBox oauth2Box;
+    @FXML
+    private ComboBox<String> oauth2AddToCombo;
+    @FXML
+    private TextField oauth2CurrentTokenField;
+    @FXML
+    private TextField oauth2HeaderPrefixField;
+    @FXML
+    private ComboBox<String> oauth2GrantTypeCombo;
+    @FXML
+    private HBox oauth2AuthUrlRow;
+    @FXML
+    private TextField oauth2AuthUrlField;
+    @FXML
+    private TextField oauth2TokenUrlField;
+    @FXML
+    private TextField oauth2ClientIdField;
+    @FXML
+    private PasswordField oauth2ClientSecretField;
+    @FXML
+    private TextField oauth2ScopeField;
+    @FXML
+    private HBox oauth2UsernameRow;
+    @FXML
+    private TextField oauth2UsernameField;
+    @FXML
+    private HBox oauth2PasswordRow;
+    @FXML
+    private PasswordField oauth2PasswordField;
+    @FXML
+    private Label oauth2StatusLabel;
     @FXML
     private CodeArea bodyTextArea;
     @FXML
@@ -694,8 +732,12 @@ public class MainController implements Initializable {
      * same autocomplete-and-auto-close behavior as the body editor. */
     private void setupUrlField() {
         urlField.setWrapText(false);
-        urlField.plainTextChanges().subscribe(change ->
-                urlField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(urlField.getText())));
+        urlField.plainTextChanges().subscribe(change -> {
+            urlField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(urlField.getText()));
+            if (!syncingUrlAndParams) {
+                syncUrlToParams();
+            }
+        });
         VariableAutocomplete.attach(urlField, this::currentEnvironmentVariables);
         if (urlPromptLabel != null) {
             urlPromptLabel.visibleProperty().bind(
@@ -754,8 +796,8 @@ public class MainController implements Initializable {
         // Postman-style colored methods — reuses the same .method-xxx
         // classes already defined for the tree's method badges, so the
         // colors are consistent everywhere in the app.
-        javafx.util.Callback<javafx.scene.control.ListView<String>, javafx.scene.control.ListCell<String>> methodCellFactory =
-                lv -> new javafx.scene.control.ListCell<>() {
+        javafx.util.Callback<ListView<String>, ListCell<String>> methodCellFactory =
+                lv -> new ListCell<>() {
                     @Override
                     protected void updateItem(String method, boolean empty) {
                         super.updateItem(method, empty);
@@ -788,31 +830,295 @@ public class MainController implements Initializable {
         });
         updateAuthFieldsVisibility("No Auth");
 
+        // {{variable}} coloring + autocomplete on the token/username fields —
+        // exactly the same behavior as the URL bar and request body.
+        tokenField.setWrapText(false);
+        tokenField.plainTextChanges().subscribe(change ->
+                tokenField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(tokenField.getText())));
+        VariableAutocomplete.attach(tokenField, this::currentEnvironmentVariables);
+        if (tokenPromptLabel != null) {
+            tokenPromptLabel.visibleProperty().bind(
+                    javafx.beans.binding.Bindings.createBooleanBinding(
+                            () -> tokenField.getText().isEmpty(), tokenField.textProperty()));
+        }
+
+        usernameField.setWrapText(false);
+        usernameField.plainTextChanges().subscribe(change ->
+                usernameField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(usernameField.getText())));
+        VariableAutocomplete.attach(usernameField, this::currentEnvironmentVariables);
+        if (usernamePromptLabel != null) {
+            usernamePromptLabel.visibleProperty().bind(
+                    javafx.beans.binding.Bindings.createBooleanBinding(
+                            () -> usernameField.getText().isEmpty(), usernameField.textProperty()));
+        }
+
         // Any edit to the auth fields marks the tab unsaved, same as url/body
         tokenField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         usernameField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         passwordField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+
+        setupOAuth2Panel();
     }
 
     private void updateAuthFieldsVisibility(String authType) {
         boolean bearer = "Bearer Token".equals(authType);
         boolean basic = "Basic Auth".equals(authType);
-        tokenField.setVisible(bearer);
-        tokenField.setManaged(bearer);
+        boolean oauth2 = "OAuth 2.0".equals(authType);
+
+        if (bearerAuthBox != null) {
+            bearerAuthBox.setVisible(bearer);
+            bearerAuthBox.setManaged(bearer);
+        }
         if (authHintLabel != null) {
-            authHintLabel.setVisible(bearer || basic);
-            authHintLabel.setManaged(bearer || basic);
+            authHintLabel.setVisible(bearer || basic || oauth2);
+            authHintLabel.setManaged(bearer || basic || oauth2);
+            authHintLabel.setText(oauth2
+                    ? "The authorization data will be automatically generated when you send the request."
+                    : "The authorization header will be generated automatically when you send the request.");
         }
         if (basicAuthBox != null) {
             basicAuthBox.setVisible(basic);
             basicAuthBox.setManaged(basic);
         }
-        usernameField.setVisible(basic);
-        passwordField.setVisible(basic);
+        if (oauth2Box != null) {
+            oauth2Box.setVisible(oauth2);
+            oauth2Box.setManaged(oauth2);
+        }
+    }
+
+    /** Sets up the OAuth 2.0 panel: grant-type dropdown (with fields that
+     * show/hide per grant type, like Postman), and the combo for where the
+     * resulting token gets attached. */
+    /** What actually gets persisted in the authToken column: the plain
+     * token for Bearer Auth, or a JSON blob of the whole OAuth2
+     * configuration when OAuth 2.0 is selected — reuses the existing
+     * column rather than needing a schema change. */
+    private String getAuthTokenForPersistence() {
+        if ("OAuth 2.0".equals(authTypeCombo.getValue())) {
+            return serializeOAuth2Config();
+        }
+        return tokenField.getText();
+    }
+
+    private void loadAuthTokenForPersistence(String authType, String authToken) {
+        if ("OAuth 2.0".equals(authType)) {
+            deserializeOAuth2Config(authToken);
+            tokenField.replaceText("");
+        } else {
+            tokenField.replaceText(authToken == null ? "" : authToken);
+            resetOAuth2Fields();
+        }
+    }
+
+    private String serializeOAuth2Config() {
+        if (oauth2GrantTypeCombo == null) {
+            return "";
+        }
+        JSONObject json = new JSONObject();
+        json.put("grantType", nullToEmpty(oauth2GrantTypeCombo.getValue()));
+        json.put("addTo", nullToEmpty(oauth2AddToCombo.getValue()));
+        json.put("currentToken", nullToEmpty(oauth2CurrentTokenField.getText()));
+        json.put("headerPrefix", nullToEmpty(oauth2HeaderPrefixField.getText()));
+        json.put("authUrl", nullToEmpty(oauth2AuthUrlField.getText()));
+        json.put("tokenUrl", nullToEmpty(oauth2TokenUrlField.getText()));
+        json.put("clientId", nullToEmpty(oauth2ClientIdField.getText()));
+        json.put("clientSecret", nullToEmpty(oauth2ClientSecretField.getText()));
+        json.put("scope", nullToEmpty(oauth2ScopeField.getText()));
+        json.put("username", nullToEmpty(oauth2UsernameField.getText()));
+        json.put("password", nullToEmpty(oauth2PasswordField.getText()));
+        return json.toString();
+    }
+
+    private void deserializeOAuth2Config(String raw) {
+        if (oauth2GrantTypeCombo == null) {
+            return;
+        }
+        resetOAuth2Fields();
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject(raw);
+            oauth2GrantTypeCombo.setValue(json.optString("grantType", "Client Credentials"));
+            oauth2AddToCombo.setValue(json.optString("addTo", "Request Headers"));
+            oauth2CurrentTokenField.setText(json.optString("currentToken", ""));
+            oauth2HeaderPrefixField.setText(json.optString("headerPrefix", "Bearer"));
+            oauth2AuthUrlField.setText(json.optString("authUrl", ""));
+            oauth2TokenUrlField.setText(json.optString("tokenUrl", ""));
+            oauth2ClientIdField.setText(json.optString("clientId", ""));
+            oauth2ClientSecretField.setText(json.optString("clientSecret", ""));
+            oauth2ScopeField.setText(json.optString("scope", ""));
+            oauth2UsernameField.setText(json.optString("username", ""));
+            oauth2PasswordField.setText(json.optString("password", ""));
+        } catch (Exception ignored) {
+            // Not valid OAuth2 JSON (e.g. an older/foreign value) — leave defaults
+        }
+    }
+
+    private void resetOAuth2Fields() {
+        if (oauth2GrantTypeCombo == null) {
+            return;
+        }
+        oauth2GrantTypeCombo.setValue("Client Credentials");
+        oauth2AddToCombo.setValue("Request Headers");
+        oauth2CurrentTokenField.setText("");
+        oauth2HeaderPrefixField.setText("Bearer");
+        oauth2AuthUrlField.setText("");
+        oauth2TokenUrlField.setText("");
+        oauth2ClientIdField.setText("");
+        oauth2ClientSecretField.setText("");
+        oauth2ScopeField.setText("");
+        oauth2UsernameField.setText("");
+        oauth2PasswordField.setText("");
+        if (oauth2StatusLabel != null) {
+            oauth2StatusLabel.setText("");
+        }
+    }
+
+    private String nullToEmpty(String s) {
+        return s == null ? "" : s;
+    }
+
+    /** "Get New Access Token" — fully implemented for the two grant types
+     * that don't need a browser redirect (Client Credentials and Password
+     * Credentials); Authorization Code and Implicit need an interactive
+     * browser step this app doesn't have yet, so they're told plainly
+     * rather than faking a result. */
+    @FXML
+    private void handleGetOAuth2Token() {
+        String grantType = oauth2GrantTypeCombo.getValue();
+        String tokenUrl = oauth2TokenUrlField.getText().trim();
+        if (tokenUrl.isEmpty()) {
+            oauth2StatusLabel.setText("Enter an Access Token URL first.");
+            return;
+        }
+        if ("Authorization Code".equals(grantType) || "Implicit".equals(grantType)) {
+            oauth2StatusLabel.setText("This grant type needs a browser sign-in step, which isn't built yet — "
+                    + "paste a token directly into \"Current Token\" above, or use Client Credentials/"
+                    + "Password Credentials if your server supports them.");
+            return;
+        }
+
+        oauth2StatusLabel.setText("Requesting token...");
+        Map<String, String> vars = currentEnvironmentVariables();
+        String resolvedTokenUrl = VariableResolver.resolve(tokenUrl, vars);
+        String clientId = VariableResolver.resolve(oauth2ClientIdField.getText().trim(), vars);
+        String clientSecret = VariableResolver.resolve(oauth2ClientSecretField.getText().trim(), vars);
+        String scope = VariableResolver.resolve(oauth2ScopeField.getText().trim(), vars);
+        String username = VariableResolver.resolve(oauth2UsernameField.getText().trim(), vars);
+        String password = VariableResolver.resolve(oauth2PasswordField.getText().trim(), vars);
+        boolean isPasswordGrant = "Password Credentials".equals(grantType);
+
+        new Thread(() -> {
+            try {
+                StringBuilder form = new StringBuilder();
+                form.append("grant_type=").append(isPasswordGrant ? "password" : "client_credentials");
+                if (!clientId.isEmpty()) {
+                    form.append("&client_id=").append(URLEncoder.encode(clientId, StandardCharsets.UTF_8));
+                }
+                if (!clientSecret.isEmpty()) {
+                    form.append("&client_secret=").append(URLEncoder.encode(clientSecret, StandardCharsets.UTF_8));
+                }
+                if (!scope.isEmpty()) {
+                    form.append("&scope=").append(URLEncoder.encode(scope, StandardCharsets.UTF_8));
+                }
+                if (isPasswordGrant) {
+                    form.append("&username=").append(URLEncoder.encode(username, StandardCharsets.UTF_8));
+                    form.append("&password=").append(URLEncoder.encode(password, StandardCharsets.UTF_8));
+                }
+
+                URL url = new URL(resolvedTokenUrl);
+                java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setDoOutput(true);
+                try (var os = connection.getOutputStream()) {
+                    os.write(form.toString().getBytes(StandardCharsets.UTF_8));
+                }
+
+                int code = connection.getResponseCode();
+                java.io.InputStream stream = code < 400 ? connection.getInputStream() : connection.getErrorStream();
+                String body = stream != null
+                        ? new String(stream.readAllBytes(), StandardCharsets.UTF_8) : "";
+
+                if (code >= 200 && code < 300) {
+                    JSONObject responseJson = new JSONObject(body);
+                    String accessToken = responseJson.optString("access_token", "");
+                    if (accessToken.isEmpty()) {
+                        Platform.runLater(() -> oauth2StatusLabel.setText(
+                                "Server responded but no \"access_token\" field was found in: " + abbreviate(body)));
+                        return;
+                    }
+                    Platform.runLater(() -> {
+                        oauth2CurrentTokenField.setText(accessToken);
+                        oauth2StatusLabel.setText("Token received successfully.");
+                    });
+                } else {
+                    String finalBody = body;
+                    Platform.runLater(() -> oauth2StatusLabel.setText(
+                            "Server returned HTTP " + code + ": " + abbreviate(finalBody)));
+                }
+            } catch (Exception e) {
+                Platform.runLater(() -> oauth2StatusLabel.setText("Request failed: " + e.getMessage()));
+            }
+        }).start();
+    }
+
+    private String abbreviate(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() > 200 ? s.substring(0, 197) + "..." : s;
+    }
+
+    private void setupOAuth2Panel() {
+        if (oauth2AddToCombo == null) {
+            return; // old FXML without the OAuth2 panel
+        }
+        oauth2AddToCombo.getItems().addAll("Request Headers", "Query Params");
+        oauth2AddToCombo.getSelectionModel().select(0);
+
+        oauth2GrantTypeCombo.getItems().addAll(
+                "Authorization Code", "Implicit", "Password Credentials", "Client Credentials");
+        oauth2GrantTypeCombo.getSelectionModel().select("Client Credentials");
+        oauth2GrantTypeCombo.valueProperty().addListener((obs, oldVal, newVal) -> updateOAuth2FieldsVisibility(newVal));
+        updateOAuth2FieldsVisibility("Client Credentials");
+
+        // Any OAuth2 field edit marks the tab unsaved, same as everything else
+        for (TextField field : new TextField[]{oauth2CurrentTokenField, oauth2HeaderPrefixField,
+                oauth2AuthUrlField, oauth2TokenUrlField, oauth2ClientIdField, oauth2ScopeField, oauth2UsernameField}) {
+            field.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        oauth2ClientSecretField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        oauth2PasswordField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        oauth2GrantTypeCombo.valueProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        oauth2AddToCombo.valueProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+    }
+
+    /** Shows only the fields each grant type actually needs — Authorization
+     * Code/Implicit need a browser redirect (Auth URL); Password
+     * Credentials needs a username/password; Client Credentials needs
+     * neither, just the client id/secret already shown for all types. */
+    private void updateOAuth2FieldsVisibility(String grantType) {
+        boolean needsAuthUrl = "Authorization Code".equals(grantType) || "Implicit".equals(grantType);
+        boolean needsUserPass = "Password Credentials".equals(grantType);
+        if (oauth2AuthUrlRow != null) {
+            oauth2AuthUrlRow.setVisible(needsAuthUrl);
+            oauth2AuthUrlRow.setManaged(needsAuthUrl);
+        }
+        if (oauth2UsernameRow != null) {
+            oauth2UsernameRow.setVisible(needsUserPass);
+            oauth2UsernameRow.setManaged(needsUserPass);
+        }
+        if (oauth2PasswordRow != null) {
+            oauth2PasswordRow.setVisible(needsUserPass);
+            oauth2PasswordRow.setManaged(needsUserPass);
+        }
     }
 
     private void setupTables() {
-        setupKeyValueTable(paramsTable, paramsData, "Key", "Value", "Description");
+        setupKeyValueTable(paramsTable, paramsData, this::syncParamsToUrl, "Key", "Value", "Description");
         setupKeyValueTable(headersTable, headersData, "Key", "Value", "Description");
         setupKeyValueTable(responseHeadersTable, responseHeadersData, "Key", "Value");
         setupKeyValueTable(cookiesTable, cookiesData, "Name", "Value", "Domain");
@@ -829,6 +1135,13 @@ public class MainController implements Initializable {
     }
 
     private void setupKeyValueTable(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data, String... columns) {
+        setupKeyValueTable(table, data, null, columns);
+    }
+
+    /** @param onCommit optional — run after any cell edit commits (e.g. the
+     *  Params table uses this to keep the URL's query string in sync). */
+    private void setupKeyValueTable(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data,
+                                    Runnable onCommit, String... columns) {
         table.setItems(data);
         table.setEditable(true);
 
@@ -847,7 +1160,32 @@ public class MainController implements Initializable {
                         return new SimpleStringProperty("");
                 }
             });
-            column.setCellFactory(TextFieldTableCell.forTableColumn());
+            // FIX: JavaFX's default TextFieldTableCell only commits an edit
+            // on Enter — clicking away to edit a different cell silently
+            // CANCELS it instead of saving, which is exactly what felt
+            // "not good" about double-click-type-Enter. This cell commits
+            // on focus-loss too, so clicking elsewhere behaves like every
+            // other spreadsheet-style editor (and like Postman's tables).
+            column.setCellFactory(col -> commitOnFocusLossCell());
+            column.setOnEditCommit(event -> {
+                String newValue = event.getNewValue();
+                switch (colIndex) {
+                    case 0:
+                        event.getRowValue().setKey(newValue);
+                        break;
+                    case 1:
+                        event.getRowValue().setValue(newValue);
+                        break;
+                    case 2:
+                        event.getRowValue().setDescription(newValue);
+                        break;
+                    default:
+                        break;
+                }
+                if (onCommit != null) {
+                    onCommit.run();
+                }
+            });
             column.setPrefWidth(150);
             table.getColumns().add(column);
         }
@@ -863,6 +1201,26 @@ public class MainController implements Initializable {
         });
         contextMenu.getItems().addAll(addItem, deleteItem);
         table.setContextMenu(contextMenu);
+    }
+
+    /** A TextFieldTableCell that also commits when it loses focus (clicking
+     * to another cell, another tab, or Send) instead of only on Enter —
+     * the standard fix for JavaFX's well-known cancel-on-focus-loss quirk. */
+    private TableCell<KeyValuePair, String> commitOnFocusLossCell() {
+        TextFieldTableCell<KeyValuePair, String> cell = new TextFieldTableCell<>(new javafx.util.converter.DefaultStringConverter()) {
+            @Override
+            public void startEdit() {
+                super.startEdit();
+                if (getGraphic() instanceof TextField field) {
+                    field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                        if (!isFocused && isEditing()) {
+                            commitEdit(field.getText());
+                        }
+                    });
+                }
+            }
+        };
+        return cell;
     }
 
     private void setupEnvironmentCombo() {
@@ -1000,8 +1358,8 @@ public class MainController implements Initializable {
                 authTypeCombo.setValue(requestResponse.getAuthType() != null
                         ? requestResponse.getAuthType() : "No Auth");
                 updateAuthFieldsVisibility(authTypeCombo.getValue());
-                tokenField.setText(requestResponse.getAuthToken() != null ? requestResponse.getAuthToken() : "");
-                usernameField.setText(requestResponse.getAuthUsername() != null ? requestResponse.getAuthUsername() : "");
+                loadAuthTokenForPersistence(authTypeCombo.getValue(), requestResponse.getAuthToken());
+                usernameField.replaceText(requestResponse.getAuthUsername() != null ? requestResponse.getAuthUsername() : "");
                 passwordField.setText(requestResponse.getAuthPassword() != null ? requestResponse.getAuthPassword() : "");
             } finally {
                 restoringTabState = false;
@@ -1040,7 +1398,7 @@ public class MainController implements Initializable {
             darkBtn.setSelected(true);
         }
 
-        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(10, darkBtn, lightBtn);
+        VBox content = new VBox(10, darkBtn, lightBtn);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
@@ -1165,6 +1523,157 @@ public class MainController implements Initializable {
                 openEnvironmentEditor(selected);
             }
         });
+        setupEnvironmentsContextMenu();
+    }
+
+    /** Right-click menu for the Environments list — Rename, Duplicate,
+     * Export as JSON, Delete (the locally-relevant subset of Postman's
+     * own environment menu; Share/fork/PR/merge are cloud/git features
+     * with no equivalent in a self-hosted single-user tool like this). */
+    private void setupEnvironmentsContextMenu() {
+        ContextMenu menu = new ContextMenu();
+        MenuItem renameItem = new MenuItem("Rename");
+        MenuItem duplicateItem = new MenuItem("Duplicate");
+        MenuItem exportItem = new MenuItem("Export as JSON");
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.getStyleClass().add("danger-menu-item");
+        renameItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+E"));
+        duplicateItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+D"));
+
+        renameItem.setOnAction(e -> {
+            EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
+            if (env == null) {
+                return;
+            }
+            TextInputDialog dialog = new TextInputDialog(env.getName());
+            dialog.setTitle("Rename Environment");
+            dialog.setHeaderText("Rename \"" + env.getName() + "\"");
+            dialog.setContentText("New name:");
+            ThemeManager.styleDialog(dialog.getDialogPane());
+            dialog.showAndWait().ifPresent(newName -> {
+                if (newName == null || newName.isBlank() || newName.equals(env.getName())) {
+                    return;
+                }
+                new Thread(() -> {
+                    Optional<EnvironmentResponse> updated = EnvironmentService.updateEnvironment(
+                            env.getId(), newName.trim(), env.getDescription(), env.getVariables(), env.getIsActive());
+                    Platform.runLater(() -> {
+                        if (updated.isPresent()) {
+                            loadEnvironments();
+                            updateStatus("Environment renamed to \"" + newName.trim() + "\"");
+                        } else {
+                            AlertUtils.showError("Failed to rename environment");
+                        }
+                    });
+                }).start();
+            });
+        });
+
+        duplicateItem.setOnAction(e -> {
+            EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
+            if (env == null) {
+                return;
+            }
+            String copyName = env.getName() + " Copy";
+            new Thread(() -> {
+                Optional<EnvironmentResponse> created = EnvironmentService.createEnvironment(
+                        copyName, env.getDescription(),
+                        env.getVariables() != null ? new LinkedHashMap<>(env.getVariables()) : new LinkedHashMap<>());
+                Platform.runLater(() -> {
+                    if (created.isPresent()) {
+                        loadEnvironments();
+                        updateStatus("Duplicated as \"" + copyName + "\"");
+                    } else {
+                        AlertUtils.showError("Failed to duplicate environment");
+                    }
+                });
+            }).start();
+        });
+
+        exportItem.setOnAction(e -> {
+            EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
+            if (env == null) {
+                return;
+            }
+            exportEnvironmentAsJson(env);
+        });
+
+        deleteItem.setOnAction(e -> {
+            EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
+            if (env == null) {
+                return;
+            }
+            if (!AlertUtils.showConfirmation("Delete Environment",
+                    "Delete \"" + env.getName() + "\"? This cannot be undone.")) {
+                return;
+            }
+            new Thread(() -> {
+                boolean deleted = EnvironmentService.deleteEnvironment(env.getId());
+                Platform.runLater(() -> {
+                    if (deleted) {
+                        loadEnvironments();
+                        updateStatus("Environment deleted: " + env.getName());
+                    } else {
+                        AlertUtils.showError("Failed to delete environment");
+                    }
+                });
+            }).start();
+        });
+
+        menu.getItems().addAll(renameItem, duplicateItem, new SeparatorMenuItem(), exportItem,
+                new SeparatorMenuItem(), deleteItem);
+
+        // Only show the menu when right-clicking an actual row, and select
+        // it first so the actions above operate on the right environment.
+        environmentsList.setContextMenu(menu);
+        environmentsList.setOnMousePressed(e -> {
+            if (e.getButton() == javafx.scene.input.MouseButton.SECONDARY) {
+                int index = environmentsList.getSelectionModel().getSelectedIndex();
+                Node node = e.getPickResult().getIntersectedNode();
+                while (node != null && !(node instanceof ListCell)) {
+                    node = node.getParent();
+                }
+                if (node instanceof ListCell<?> cell && cell.getItem() != null) {
+                    environmentsList.getSelectionModel().select((EnvironmentResponse) cell.getItem());
+                }
+            }
+        });
+    }
+
+    /** Exports one environment as a clean, portable JSON file. */
+    private void exportEnvironmentAsJson(EnvironmentResponse env) {
+        JSONObject root = new JSONObject();
+        root.put("name", env.getName());
+        root.put("description", env.getDescription() != null ? env.getDescription() : "");
+        JSONArray values = new JSONArray();
+        if (env.getVariables() != null) {
+            env.getVariables().forEach((key, value) -> {
+                JSONObject entry = new JSONObject();
+                entry.put("key", key);
+                entry.put("value", value);
+                entry.put("enabled", true);
+                values.put(entry);
+            });
+        }
+        root.put("values", values);
+        root.put("_exported_from", "Thundercall");
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Export Environment");
+        String suggested = env.getName().replaceAll("[^a-zA-Z0-9-_ ]", "").trim().replace(' ', '_') + ".json";
+        fileChooser.setInitialFileName(suggested);
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("JSON Files", "*.json"));
+        File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
+        if (file == null) {
+            return;
+        }
+        try {
+            java.nio.file.Files.writeString(file.toPath(), root.toString(2));
+            AlertUtils.showSuccess("Exported \"" + env.getName() + "\" to " + file.getName());
+            updateStatus("Environment exported: " + file.getName());
+        } catch (Exception ex) {
+            AlertUtils.showError("Failed to write file: " + ex.getMessage());
+        }
     }
 
     /** Postman-style variable editor: key/value table with add/delete/save. */
@@ -1329,10 +1838,111 @@ public class MainController implements Initializable {
         if (postRequestScriptsArea != null) {
             postRequestScriptsArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         }
-        paramsData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        paramsData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> {
+            onEditorFieldChanged();
+            if (!syncingUrlAndParams) {
+                syncParamsToUrl();
+            }
+        });
         headersData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
 
         openRequestTab("Untitled Request", null);
+    }
+
+    /** True while the URL<->Params sync itself is writing to either side —
+     * prevents the two directions from ping-ponging off each other. */
+    private boolean syncingUrlAndParams = false;
+
+    /** Parses the URL's query string into the Params table — this is what
+     * fixes params showing empty after opening an imported request (or any
+     * request whose URL already has a query string baked in): the Params
+     * tab used to be a write-only scratchpad that was never derived from
+     * the URL at all. Existing rows are matched by key so a param's
+     * Description survives repeated URL edits instead of being wiped. */
+    private void syncUrlToParams() {
+        String url = urlField.getText();
+        int qIndex = url.indexOf('?');
+        String query = qIndex >= 0 ? url.substring(qIndex + 1) : "";
+
+        LinkedHashMap<String, String> parsed = new LinkedHashMap<>();
+        if (!query.isEmpty()) {
+            for (String pair : query.split("&")) {
+                if (pair.isEmpty()) {
+                    continue;
+                }
+                int eq = pair.indexOf('=');
+                String key = eq >= 0 ? pair.substring(0, eq) : pair;
+                String value = eq >= 0 ? pair.substring(eq + 1) : "";
+                try {
+                    key = java.net.URLDecoder.decode(key, StandardCharsets.UTF_8);
+                    value = java.net.URLDecoder.decode(value, StandardCharsets.UTF_8);
+                } catch (Exception ignored) {
+                    // keep the raw (un-decoded) text rather than losing the param
+                }
+                parsed.put(key, value);
+            }
+        }
+
+        syncingUrlAndParams = true;
+        try {
+            // Keep existing rows (and their Description) for keys still present
+            Map<String, KeyValuePair> existingByKey = new HashMap<>();
+            for (KeyValuePair kv : paramsData) {
+                if (!kv.getKey().isEmpty()) {
+                    existingByKey.put(kv.getKey(), kv);
+                }
+            }
+            List<KeyValuePair> rebuilt = new ArrayList<>();
+            for (Map.Entry<String, String> entry : parsed.entrySet()) {
+                KeyValuePair existing = existingByKey.get(entry.getKey());
+                if (existing != null) {
+                    existing.setValue(entry.getValue());
+                    rebuilt.add(existing);
+                } else {
+                    rebuilt.add(new KeyValuePair(entry.getKey(), entry.getValue(), ""));
+                }
+            }
+            if (!rebuilt.equals(new ArrayList<>(paramsData))) {
+                paramsData.setAll(rebuilt);
+            }
+        } finally {
+            syncingUrlAndParams = false;
+        }
+    }
+
+    /** The reverse direction: rebuilds the URL's query string from whatever
+     * is currently in the Params table — editing a param updates the URL
+     * live, exactly like Postman. */
+    private void syncParamsToUrl() {
+        String url = urlField.getText();
+        int qIndex = url.indexOf('?');
+        String base = qIndex >= 0 ? url.substring(0, qIndex) : url;
+
+        StringBuilder query = new StringBuilder();
+        for (KeyValuePair kv : paramsData) {
+            if (kv.getKey() == null || kv.getKey().isEmpty()) {
+                continue;
+            }
+            if (query.length() > 0) {
+                query.append('&');
+            }
+            try {
+                query.append(URLEncoder.encode(kv.getKey(), StandardCharsets.UTF_8))
+                        .append('=')
+                        .append(URLEncoder.encode(kv.getValue() == null ? "" : kv.getValue(), StandardCharsets.UTF_8));
+            } catch (Exception ignored) {
+                query.append(kv.getKey()).append('=').append(kv.getValue() == null ? "" : kv.getValue());
+            }
+        }
+        String newUrl = query.length() > 0 ? base + "?" + query : base;
+        if (!newUrl.equals(url)) {
+            syncingUrlAndParams = true;
+            try {
+                urlField.replaceText(newUrl);
+            } finally {
+                syncingUrlAndParams = false;
+            }
+        }
     }
 
     /** Marks the ACTIVE tab as having unsaved changes (adds the dot), unless
@@ -1432,7 +2042,7 @@ public class MainController implements Initializable {
         state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
         state.testsScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : "";
         state.authType = authTypeCombo.getValue();
-        state.authToken = tokenField.getText();
+        state.authToken = getAuthTokenForPersistence();
         state.authUsername = usernameField.getText();
         state.authPassword = passwordField.getText();
         state.params = new ArrayList<>(paramsData);
@@ -1466,8 +2076,8 @@ public class MainController implements Initializable {
             }
             authTypeCombo.setValue(state.authType == null ? "No Auth" : state.authType);
             updateAuthFieldsVisibility(authTypeCombo.getValue());
-            tokenField.setText(state.authToken == null ? "" : state.authToken);
-            usernameField.setText(state.authUsername == null ? "" : state.authUsername);
+            loadAuthTokenForPersistence(authTypeCombo.getValue(), state.authToken);
+            usernameField.replaceText(state.authUsername == null ? "" : state.authUsername);
             passwordField.setText(state.authPassword == null ? "" : state.authPassword);
             paramsData.setAll(state.params);
             headersData.setAll(state.headers);
@@ -1972,6 +2582,16 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSaveRequest() {
+        // FIX: Ctrl+S is a scene-level shortcut, so it can fire while a
+        // Params/Headers table cell is still mid-edit (focus never left
+        // the cell's text field) — without this, whatever you were
+        // typing when you hit Ctrl+S could be silently lost. Shifting
+        // focus away forces the focus-loss commit (see
+        // commitOnFocusLossCell) to run synchronously before we read
+        // any of the tables below.
+        if (paramsTable != null) {
+            paramsTable.requestFocus();
+        }
         // Postman behaviour: if the active tab is an already-saved request,
         // Save / Ctrl+S updates it IN PLACE (same collection & folder).
         RequestTabState currentState = null;
@@ -1997,7 +2617,7 @@ public class MainController implements Initializable {
                     apiRequest.setTestsScript(
                             postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null);
                     apiRequest.setAuthType(authTypeCombo.getValue());
-                    apiRequest.setAuthToken(tokenField.getText());
+                    apiRequest.setAuthToken(getAuthTokenForPersistence());
                     apiRequest.setAuthUsername(usernameField.getText());
                     apiRequest.setAuthPassword(passwordField.getText());
                     Optional<RequestResponse> updated = RequestService.updateRequest(requestId, apiRequest);
@@ -2055,7 +2675,7 @@ public class MainController implements Initializable {
                 apiRequest.setTestsScript(
                         postRequestScriptsArea != null ? postRequestScriptsArea.getText() : null);
                 apiRequest.setAuthType(authTypeCombo.getValue());
-                apiRequest.setAuthToken(tokenField.getText());
+                apiRequest.setAuthToken(getAuthTokenForPersistence());
                 apiRequest.setAuthUsername(usernameField.getText());
                 apiRequest.setAuthPassword(passwordField.getText());
                 apiRequest.setCollectionId(collectionId);
@@ -2272,6 +2892,11 @@ public class MainController implements Initializable {
         // The UI keeps showing the template; only the outgoing request is resolved.
         Map<String, String> vars = currentEnvironmentVariables();
         String url = VariableResolver.resolve(buildFullUrl(), vars);
+        if ("OAuth 2.0".equals(authTypeCombo.getValue()) && oauth2CurrentTokenField != null
+                && oauth2AddToCombo != null && "Query Params".equals(oauth2AddToCombo.getValue())
+                && !oauth2CurrentTokenField.getText().isBlank()) {
+            url = appendQueryParam(url, "access_token", oauth2CurrentTokenField.getText().trim());
+        }
         String method = methodCombo.getValue();
         Map<String, String> headers = VariableResolver.resolveMap(buildHeadersForSend(), vars);
         String body = VariableResolver.resolve(buildRequestBody(), vars);
@@ -2306,11 +2931,12 @@ public class MainController implements Initializable {
         }
 
         // Use Task for proper JavaFX threading
+        String finalUrl = url;
         Task<Optional<ApiResponse>> requestTask = new Task<Optional<ApiResponse>>() {
             @Override
             protected Optional<ApiResponse> call() throws Exception {
                 ApiRequest apiRequest = new ApiRequest();
-                apiRequest.setUrl(url);
+                apiRequest.setUrl(finalUrl);
                 apiRequest.setMethod(HttpMethod.valueOf(method));
                 apiRequest.setHeaders(new JSONObject(headers).toString());
                 apiRequest.setBody(body);
@@ -2319,6 +2945,7 @@ public class MainController implements Initializable {
             }
         };
 
+        String finalUrl1 = url;
         requestTask.setOnSucceeded(event -> {
             isRequestInProgress = false;
 
@@ -2336,7 +2963,7 @@ public class MainController implements Initializable {
                 lastApiResponse = apiResponse;
                 updateResponseUI(apiResponse, parseHeaders(apiResponse.getResponseHeaders()));
 
-                String historyEntry = method + " " + url + " (" + apiResponse.getStatusCode() + ")";
+                String historyEntry = method + " " + finalUrl1 + " (" + apiResponse.getStatusCode() + ")";
                 if (!historyData.contains(historyEntry)) {
                     historyData.add(0, historyEntry);
                     historyList.setItems(historyData);
@@ -2524,33 +3151,25 @@ public class MainController implements Initializable {
         }
     }
 
-    private String buildFullUrl() {
-        String baseUrl = urlField.getText().trim();
-        StringBuilder urlBuilder = new StringBuilder(baseUrl);
-
-        // Add query parameters
-        if (!paramsData.isEmpty()) {
-            boolean firstParam = true;
-            for (KeyValuePair param : paramsData) {
-                if (!param.getKey().isEmpty() && !param.getValue().isEmpty()) {
-                    if (firstParam) {
-                        urlBuilder.append("?");
-                        firstParam = false;
-                    } else {
-                        urlBuilder.append("&");
-                    }
-                    try {
-                        urlBuilder.append(URLEncoder.encode(param.getKey(), StandardCharsets.UTF_8.toString()))
-                                .append("=")
-                                .append(URLEncoder.encode(param.getValue(), StandardCharsets.UTF_8.toString()));
-                    } catch (UnsupportedEncodingException e) {
-                        urlBuilder.append(param.getKey()).append("=").append(param.getValue());
-                    }
-                }
-            }
+    /** Appends one query parameter to a (possibly already-parameterized) URL. */
+    private String appendQueryParam(String url, String key, String value) {
+        try {
+            String separator = url.contains("?") ? "&" : "?";
+            return url + separator + URLEncoder.encode(key, StandardCharsets.UTF_8)
+                    + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return url + (url.contains("?") ? "&" : "?") + key + "=" + value;
         }
+    }
 
-        return urlBuilder.toString();
+    private String buildFullUrl() {
+        // FIX: params used to be appended here again on top of the URL,
+        // but the URL and Params table are now kept in sync live (see
+        // syncParamsToUrl/syncUrlToParams) — the URL already reflects
+        // whatever is in the Params table by the time Send is clicked.
+        // Appending again here would have double-added every param
+        // (?eid=16465&eid=16465) once params round-tripped through the URL.
+        return urlField.getText().trim();
     }
 
     private Map<String, String> buildHeaders() {
@@ -2619,7 +3238,16 @@ public class MainController implements Initializable {
                 }
                 break;
             case "OAuth 2.0":
-                AlertUtils.showInfo("OAuth 2.0 support coming soon!");
+                // Query Params mode is handled separately, right after the
+                // URL is resolved (see handleSendRequest) — a token added
+                // there belongs in the URL, not a header.
+                if (oauth2CurrentTokenField != null && oauth2AddToCombo != null
+                        && "Request Headers".equals(oauth2AddToCombo.getValue())
+                        && !oauth2CurrentTokenField.getText().isBlank()) {
+                    String prefix = oauth2HeaderPrefixField != null ? oauth2HeaderPrefixField.getText().trim() : "Bearer";
+                    headers.put("Authorization",
+                            (prefix.isEmpty() ? "" : prefix + " ") + oauth2CurrentTokenField.getText().trim());
+                }
                 break;
         }
 
@@ -3624,7 +4252,7 @@ public class MainController implements Initializable {
         JSONObject root = new JSONObject();
         JSONObject info = new JSONObject();
         info.put("name", collection.getName());
-        info.put("_postman_id", java.util.UUID.randomUUID().toString());
+        info.put("_postman_id", UUID.randomUUID().toString());
         info.put("schema", "https://schema.getpostman.com/json/collection/v2.1.0/collection.json");
         root.put("info", info);
 

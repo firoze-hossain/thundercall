@@ -332,18 +332,99 @@
                             </Tab>
 
                             <Tab text="Authorization">
-                                <VBox spacing="10" styleClass="auth-panel">
-                                    <Label text="Type" styleClass="scripts-section-label"/>
-                                    <ComboBox fx:id="authTypeCombo" promptText="Select Auth Type" prefWidth="240"/>
-                                    <Label fx:id="authHintLabel" styleClass="sidebar-hint" wrapText="true"
-                                           text="Use a {{variable}} to pull the value from the selected environment — e.g. {{Token}}."/>
-                                    <TextField fx:id="tokenField" promptText="Token, e.g. {{Token}} or {{ACCESS_TOKEN}}"
-                                               managed="false" visible="false"/>
-                                    <HBox spacing="10" fx:id="basicAuthBox" managed="false" visible="false">
-                                        <TextField fx:id="usernameField" promptText="Username (supports {{variables}})" HBox.hgrow="ALWAYS"/>
-                                        <PasswordField fx:id="passwordField" promptText="Password" HBox.hgrow="ALWAYS"/>
-                                    </HBox>
-                                </VBox>
+                                <HBox spacing="24" styleClass="auth-panel">
+                                    <VBox spacing="10" minWidth="200" maxWidth="200">
+                                        <Label text="Auth Type" styleClass="scripts-section-label"/>
+                                        <ComboBox fx:id="authTypeCombo" promptText="Select Auth Type" prefWidth="190"/>
+                                        <Label fx:id="authHintLabel" styleClass="sidebar-hint" wrapText="true"
+                                               text="The authorization header will be generated automatically when you send the request."/>
+                                    </VBox>
+                                    <VBox spacing="14" HBox.hgrow="ALWAYS">
+                                        <!-- Bearer Token -->
+                                        <VBox fx:id="bearerAuthBox" spacing="6" managed="false" visible="false">
+                                            <Label text="Token" styleClass="scripts-section-label"/>
+                                            <StackPane>
+                                                <Label fx:id="tokenPromptLabel" styleClass="url-prompt-label"
+                                                       text="{{Token}} or paste a token" mouseTransparent="true"/>
+                                                <CodeArea fx:id="tokenField" styleClass="url-field"/>
+                                            </StackPane>
+                                        </VBox>
+                                        <!-- Basic Auth -->
+                                        <VBox fx:id="basicAuthBox" spacing="12" managed="false" visible="false">
+                                            <VBox spacing="6">
+                                                <Label text="Username" styleClass="scripts-section-label"/>
+                                                <StackPane>
+                                                    <Label fx:id="usernamePromptLabel" styleClass="url-prompt-label"
+                                                           text="Username or {{variable}}" mouseTransparent="true"/>
+                                                    <CodeArea fx:id="usernameField" styleClass="url-field"/>
+                                                </StackPane>
+                                            </VBox>
+                                            <VBox spacing="6">
+                                                <Label text="Password" styleClass="scripts-section-label"/>
+                                                <PasswordField fx:id="passwordField" promptText="Password"/>
+                                            </VBox>
+                                        </VBox>
+                                        <!-- OAuth 2.0 -->
+                                        <VBox fx:id="oauth2Box" spacing="12" managed="false" visible="false">
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Add auth data to" prefWidth="140"/>
+                                                <ComboBox fx:id="oauth2AddToCombo" prefWidth="200"/>
+                                            </HBox>
+                                            <Label text="Current Token" styleClass="scripts-section-label"/>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Token" prefWidth="140"/>
+                                                <TextField fx:id="oauth2CurrentTokenField" promptText="(none yet)"
+                                                           HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Header Prefix" prefWidth="140"/>
+                                                <TextField fx:id="oauth2HeaderPrefixField" text="Bearer" prefWidth="200"/>
+                                            </HBox>
+                                            <Separator/>
+                                            <Label text="Configure New Token" styleClass="scripts-section-label"/>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Grant Type" prefWidth="140"/>
+                                                <ComboBox fx:id="oauth2GrantTypeCombo" prefWidth="260"/>
+                                            </HBox>
+                                            <HBox fx:id="oauth2AuthUrlRow" spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Auth URL" prefWidth="140"/>
+                                                <TextField fx:id="oauth2AuthUrlField" promptText="https://.../authorize"
+                                                           HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Access Token URL" prefWidth="140"/>
+                                                <TextField fx:id="oauth2TokenUrlField" promptText="https://.../oauth/token"
+                                                           HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Client ID" prefWidth="140"/>
+                                                <TextField fx:id="oauth2ClientIdField" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Client Secret" prefWidth="140"/>
+                                                <PasswordField fx:id="oauth2ClientSecretField" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Scope" prefWidth="140"/>
+                                                <TextField fx:id="oauth2ScopeField" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox fx:id="oauth2UsernameRow" spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Username" prefWidth="140"/>
+                                                <TextField fx:id="oauth2UsernameField" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox fx:id="oauth2PasswordRow" spacing="10" alignment="CENTER_LEFT">
+                                                <Label text="Password" prefWidth="140"/>
+                                                <PasswordField fx:id="oauth2PasswordField" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                                <Region HBox.hgrow="ALWAYS"/>
+                                                <Button text="Get New Access Token" styleClass="run-tests-btn"
+                                                        onAction="#handleGetOAuth2Token"/>
+                                            </HBox>
+                                            <Label fx:id="oauth2StatusLabel" styleClass="sidebar-hint" wrapText="true"/>
+                                        </VBox>
+                                    </VBox>
+                                </HBox>
                             </Tab>
 
                             <Tab text="Headers">
