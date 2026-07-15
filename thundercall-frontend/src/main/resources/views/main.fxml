@@ -7,6 +7,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.shape.Circle?>
 <?import javafx.scene.web.WebView?>
+<?import org.fxmisc.richtext.CodeArea?>
 <StackPane xmlns="http://javafx.com/javafx/21"
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.roze.thundercall.ui.controllers.MainController"
@@ -256,9 +257,12 @@
                              minHeight="36" prefHeight="36" maxHeight="36"/>
                     <HBox styleClass="url-bar" spacing="8" alignment="CENTER_LEFT">
                         <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"/>
-                        <TextField fx:id="urlField" styleClass="url-field"
-                                   promptText="Enter URL or paste text — use {{variables}} from the selected environment"
-                                   HBox.hgrow="ALWAYS"/>
+                        <StackPane HBox.hgrow="ALWAYS" alignment="CENTER_LEFT">
+                            <Label fx:id="urlPromptLabel" styleClass="url-prompt-label"
+                                   text="Enter URL or paste text — use {{variables}} from the selected environment"
+                                   mouseTransparent="true"/>
+                            <CodeArea fx:id="urlField" styleClass="url-field"/>
+                        </StackPane>
                         <Button text="Send" styleClass="send-button" onAction="#handleSendRequest"/>
                         <Button styleClass="icon-button" onAction="#handleSaveRequest">
                             <tooltip>
@@ -396,8 +400,9 @@
                                                       styleClass="body-type-btn"/>
                                     </HBox>
                                     <StackPane VBox.vgrow="ALWAYS">
-                                        <TextArea fx:id="bodyTextArea" styleClass="body-textarea"
-                                                  promptText="Request body content"/>
+                                        <Label fx:id="bodyPromptLabel" styleClass="body-prompt-label"
+                                               text="Request body content" mouseTransparent="true"/>
+                                        <CodeArea fx:id="bodyTextArea" styleClass="body-textarea"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false">
                                             <columns>
                                                 <TableColumn text="Key" prefWidth="180">
@@ -489,8 +494,17 @@
                         <tabs>
                             <Tab text="Body">
                                 <SplitPane orientation="HORIZONTAL" dividerPositions="0.7">
-                                    <TextArea fx:id="responseBodyArea" styleClass="response-body" editable="false"
-                                              promptText="Click Send to get a response"/>
+                                    <StackPane>
+                                        <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
+                                               text="Click Send to get a response" mouseTransparent="true"/>
+                                        <CodeArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
+                                        <VBox fx:id="responseSearchBarContainer" alignment="TOP_RIGHT"
+                                              pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
+                                            <padding>
+                                                <Insets top="8" right="8"/>
+                                            </padding>
+                                        </VBox>
+                                    </StackPane>
                                     <WebView fx:id="responsePreview"/>
                                 </SplitPane>
                             </Tab>

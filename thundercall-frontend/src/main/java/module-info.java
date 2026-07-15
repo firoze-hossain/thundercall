@@ -6,7 +6,7 @@ module com.roze.thundercall {
     requires javafx.base;
     requires org.controlsfx.controls;
     requires org.fxmisc.richtext;
-
+    requires reactfx;
     requires com.fasterxml.jackson.databind;
     requires org.apache.commons.lang3;
     requires org.kordamp.ikonli.javafx;

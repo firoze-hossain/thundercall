@@ -818,3 +818,123 @@
     -fx-font-size: 9px;
     -fx-padding: 0 0 0 2;
 }
+
+/* ============================================================
+   CodeArea editors (URL bar, request body, response body) —
+   RichTextFX ships its own default stylesheet with black text,
+   so the base text color must be overridden per editor here.
+   ============================================================ */
+.url-field, .body-textarea, .response-body {
+    -fx-caret-fill: -text-primary;
+}
+.url-field .text, .body-textarea .text, .response-body .text {
+    -fx-fill: -text-primary;
+}
+.url-field .selection, .body-textarea .selection, .response-body .selection {
+    -fx-fill: -accent-soft;
+}
+.url-field .paragraph-box, .body-textarea .paragraph-box, .response-body .paragraph-box {
+    -fx-background-color: transparent;
+}
+.url-field .scroll-pane, .url-field .scroll-pane .viewport,
+.body-textarea .scroll-pane, .body-textarea .scroll-pane .viewport,
+.response-body .scroll-pane, .response-body .scroll-pane .viewport {
+    -fx-background-color: transparent;
+}
+.url-field:focus-within { -fx-border-color: -accent; }
+
+/* Placeholder text for the CodeArea-based fields (CodeArea has no
+   built-in promptText, so a Label is overlaid and hidden once non-empty) */
+.url-prompt-label, .body-prompt-label, .response-prompt-label {
+    -fx-text-fill: -text-muted;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 13px;
+    -fx-padding: 0 0 0 2;
+}
+.response-prompt-label { -fx-padding: 10; }
+
+/* ============ JSON / variable syntax highlighting, Postman-style ============ */
+.json-key         { -fx-fill: #6cb6ff; -fx-font-weight: bold; }   /* blue */
+.json-string      { -fx-fill: #92c792; }                          /* green */
+.json-number      { -fx-fill: #d19a66; }                          /* tan/orange */
+.json-boolean     { -fx-fill: #6cb6ff; -fx-font-weight: bold; }   /* blue, same family as keys */
+.json-punctuation { -fx-fill: -text-secondary; }
+.json-variable    {
+    -fx-fill: #1d1f24;
+    -fx-font-weight: bold;
+}
+/* {{variables}} get a filled pill background like Postman's orange tags —
+   RichTextFX renders each styled run as its own <text>, so a background
+   rectangle is faked via a rounded background on the run itself. */
+.text.json-variable {
+    -rtfx-background-color: #ffb454;
+}
+
+/* ============ Variable autocomplete popup ============ */
+.variable-suggestions {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 4;
+}
+.variable-suggestions .list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 6 10 6 10;
+}
+.variable-suggestions .list-cell:filled:selected,
+.variable-suggestions .list-cell:filled:hover {
+    -fx-background-color: -bg-hover;
+    -fx-background-radius: 6;
+}
+.variable-suggestion-name {
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+.variable-suggestion-value {
+    -fx-text-fill: -text-muted;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 11px;
+}
+
+/* ============ Response find bar (Ctrl/Cmd+F) ============ */
+.search-bar {
+    -fx-background-color: -bg-elevated;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-padding: 3 4 3 4;
+}
+.search-field {
+    -fx-background-color: -bg-panel;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-muted;
+    -fx-background-radius: 4;
+    -fx-padding: 2 6 2 6;
+    -fx-font-size: 11px;
+    -fx-pref-width: 130;
+    -fx-pref-height: 22;
+}
+.search-count-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 10px;
+    -fx-padding: 0 3 0 3;
+}
+.search-nav-btn, .search-close-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-padding: 1 5 1 5;
+    -fx-font-size: 10px;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+    -fx-min-width: 20;
+    -fx-min-height: 20;
+}
+.search-nav-btn:hover, .search-close-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+.text.search-match { -rtfx-background-color: #5a5320; }
+.text.search-match-current { -rtfx-background-color: -accent; -fx-fill: #1d1f24; }

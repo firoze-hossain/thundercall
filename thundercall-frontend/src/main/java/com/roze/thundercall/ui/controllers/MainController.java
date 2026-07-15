@@ -8,6 +8,10 @@ import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.utils.AlertUtils;
+import com.roze.thundercall.ui.utils.CodeAreaSearch;
+import com.roze.thundercall.ui.utils.JsonSyntaxHighlighter;
+import com.roze.thundercall.ui.utils.VariableAutocomplete;
+import org.fxmisc.richtext.CodeArea;
 import com.roze.thundercall.ui.utils.CsvParser;
 import com.roze.thundercall.ui.utils.ScriptRunner;
 import com.roze.thundercall.ui.utils.ThemeManager;
@@ -56,7 +60,9 @@ public class MainController implements Initializable {
     @FXML
     private Label statusMessage;
     @FXML
-    private TextField urlField;
+    private CodeArea urlField;
+    @FXML
+    private Label urlPromptLabel;
     @FXML
     private ComboBox<String> methodCombo;
     @FXML
@@ -75,7 +81,9 @@ public class MainController implements Initializable {
     @FXML
     private PasswordField passwordField;
     @FXML
-    private TextArea bodyTextArea;
+    private CodeArea bodyTextArea;
+    @FXML
+    private Label bodyPromptLabel;
     @FXML
     private ToggleGroup bodyTypeGroup;
     @FXML
@@ -85,7 +93,12 @@ public class MainController implements Initializable {
     @FXML
     private Label sizeLabel;
     @FXML
-    private TextArea responseBodyArea;
+    private CodeArea responseBodyArea;
+    @FXML
+    private Label responsePromptLabel;
+    @FXML
+    private VBox responseSearchBarContainer;
+    private CodeAreaSearch responseSearch;
     @FXML
     private ListView<String> historyList;
     @FXML
@@ -202,6 +215,9 @@ public class MainController implements Initializable {
                     .addListener((obs, oldVal, newVal) -> applyCollectionsFilter(newVal));
         }
         setupRequestTabs();
+        setupUrlField();
+        setupBodyCodeArea();
+        setupResponseCodeArea();
         setupEnvironmentsList();
 
         // Fix for TreeView context menu
@@ -674,9 +690,86 @@ public class MainController implements Initializable {
         showFeatureTour();
     }
 
+    /** URL bar: only {{variables}} are colored (it isn't JSON), plus the
+     * same autocomplete-and-auto-close behavior as the body editor. */
+    private void setupUrlField() {
+        urlField.setWrapText(false);
+        urlField.plainTextChanges().subscribe(change ->
+                urlField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(urlField.getText())));
+        VariableAutocomplete.attach(urlField, this::currentEnvironmentVariables);
+        if (urlPromptLabel != null) {
+            urlPromptLabel.visibleProperty().bind(
+                    javafx.beans.binding.Bindings.createBooleanBinding(
+                            () -> urlField.getText().isEmpty(), urlField.textProperty()));
+        }
+        // Enter in the URL bar sends the request, like Postman
+        urlField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                handleSendRequest();
+                e.consume();
+            }
+        });
+    }
+
+    /** Request body editor: full JSON + {{variable}} coloring, autocomplete,
+     * and auto-closing braces. */
+    private void setupBodyCodeArea() {
+        bodyTextArea.plainTextChanges().subscribe(change ->
+                bodyTextArea.setStyleSpans(0, JsonSyntaxHighlighter.computeHighlighting(bodyTextArea.getText())));
+        VariableAutocomplete.attach(bodyTextArea, this::currentEnvironmentVariables);
+        if (bodyPromptLabel != null) {
+            bodyPromptLabel.visibleProperty().bind(
+                    javafx.beans.binding.Bindings.createBooleanBinding(
+                            () -> bodyTextArea.getText().isEmpty(), bodyTextArea.textProperty()));
+        }
+    }
+
+    /** Response viewer: read-only JSON + {{variable}} coloring, plus a
+     * Ctrl/Cmd+F find bar overlaid in its top-right corner. */
+    private void setupResponseCodeArea() {
+        responseBodyArea.setWrapText(true);
+        responseBodyArea.plainTextChanges().subscribe(change -> {
+            if (responseSearch == null || responseSearch.getBar().isManaged()) {
+                return; // the search bar owns styling (base + match highlight) while open
+            }
+            responseBodyArea.setStyleSpans(0,
+                    JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+        });
+        if (responsePromptLabel != null) {
+            responsePromptLabel.visibleProperty().bind(
+                    javafx.beans.binding.Bindings.createBooleanBinding(
+                            () -> responseBodyArea.getText().isEmpty(), responseBodyArea.textProperty()));
+        }
+        responseSearch = CodeAreaSearch.attach(responseBodyArea);
+        if (responseSearchBarContainer != null) {
+            responseSearchBarContainer.getChildren().add(responseSearch.getBar());
+        }
+    }
+
+
     private void setUpMethodCombo() {
         methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS");
         methodCombo.getSelectionModel().select(0);
+
+        // Postman-style colored methods — reuses the same .method-xxx
+        // classes already defined for the tree's method badges, so the
+        // colors are consistent everywhere in the app.
+        javafx.util.Callback<javafx.scene.control.ListView<String>, javafx.scene.control.ListCell<String>> methodCellFactory =
+                lv -> new javafx.scene.control.ListCell<>() {
+                    @Override
+                    protected void updateItem(String method, boolean empty) {
+                        super.updateItem(method, empty);
+                        getStyleClass().removeIf(c -> c.startsWith("method-"));
+                        if (empty || method == null) {
+                            setText(null);
+                        } else {
+                            setText(method);
+                            getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
+                        }
+                    }
+                };
+        methodCombo.setCellFactory(methodCellFactory);
+        methodCombo.setButtonCell(methodCellFactory.call(null));
     }
 
     private void loadUserData() {
@@ -861,7 +954,7 @@ public class MainController implements Initializable {
                     state.requestId = requestResponse.getId();
                 }
                 methodCombo.setValue(requestResponse.getMethod().name());
-                urlField.setText(requestResponse.getUrl());
+                urlField.replaceText(requestResponse.getUrl() != null ? requestResponse.getUrl() : "");
 
                 // Load headers
                 if (requestResponse.getHeaders() != null && !requestResponse.getHeaders().isEmpty()) {
@@ -884,7 +977,7 @@ public class MainController implements Initializable {
                 }
 
                 // Load body
-                bodyTextArea.setText(requestResponse.getBody());
+                bodyTextArea.replaceText(requestResponse.getBody() != null ? requestResponse.getBody() : "");
                 // Scripts are saved WITH the request (like Postman) — restore them
                 if (preRequestScriptsArea != null) {
                     preRequestScriptsArea.setText(
@@ -1184,6 +1277,11 @@ public class MainController implements Initializable {
         List<KeyValuePair> headers = new ArrayList<>();
         // Postman-style unsaved indicator (the small dot on the tab)
         boolean dirty = false;
+        // FIX: the response viewer used to be one shared set of fields
+        // across every tab, so switching tabs could show a DIFFERENT
+        // tab's response — each tab now keeps its own last response.
+        ApiResponse lastApiResponse;
+        Map<String, String> lastResponseHeaders;
     }
 
     /** True while we're programmatically loading a tab's state into the
@@ -1339,6 +1437,13 @@ public class MainController implements Initializable {
         state.authPassword = passwordField.getText();
         state.params = new ArrayList<>(paramsData);
         state.headers = new ArrayList<>(headersData);
+
+        // FIX: snapshot the response too, so switching back to this tab
+        // later shows ITS response, not whatever the app last displayed.
+        state.lastApiResponse = this.lastApiResponse;
+        Map<String, String> headersSnapshot = new LinkedHashMap<>();
+        responseHeadersData.forEach(kv -> headersSnapshot.put(kv.getKey(), kv.getValue()));
+        state.lastResponseHeaders = headersSnapshot;
     }
 
     private void restoreTabState(Tab tab) {
@@ -1351,8 +1456,8 @@ public class MainController implements Initializable {
         restoringTabState = true;
         try {
             methodCombo.setValue(state.method == null ? "GET" : state.method);
-            urlField.setText(state.url == null ? "" : state.url);
-            bodyTextArea.setText(state.body == null ? "" : state.body);
+            urlField.replaceText(state.url == null ? "" : state.url);
+            bodyTextArea.replaceText(state.body == null ? "" : state.body);
             if (preRequestScriptsArea != null) {
                 preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
             }
@@ -1369,6 +1474,18 @@ public class MainController implements Initializable {
         } finally {
             restoringTabState = false;
         }
+
+        // FIX: this is the actual bug fix — redisplay THIS tab's own
+        // response (or clear to "no response yet" if it has none) instead
+        // of leaving whatever the previously-viewed tab's response was.
+        this.lastApiResponse = state.lastApiResponse;
+        if (state.lastApiResponse != null) {
+            renderResponse(state.lastApiResponse,
+                    state.lastResponseHeaders != null ? state.lastResponseHeaders : Collections.emptyMap());
+        } else {
+            clearResponseUI();
+        }
+
         refreshTabGraphic(tab);
     }
 
@@ -2280,45 +2397,10 @@ public class MainController implements Initializable {
     }
 
     private void updateResponseUI(ApiResponse apiResponse, Map<String, String> headers) {
-        int statusCode = apiResponse.getStatusCode();
-        long responseTime = apiResponse.getDuration();
         Platform.runLater(() -> {
-            statusLabel.setText("Status: " + statusCode + " " + getStatusText(statusCode));
-            timeLabel.setText("Time: " + responseTime + "ms");
-            sizeLabel.setText("Size: " + formatSize(apiResponse.getSizeBytes()));
+            renderResponse(apiResponse, headers);
 
-            // Apply status code styling
-            statusLabel.getStyleClass().removeAll("status-2xx", "status-4xx", "status-5xx");
-            if (statusCode >= 200 && statusCode < 300) {
-                statusLabel.getStyleClass().add("status-2xx");
-            } else if (statusCode >= 400 && statusCode < 500) {
-                statusLabel.getStyleClass().add("status-4xx");
-            } else if (statusCode >= 500) {
-                statusLabel.getStyleClass().add("status-5xx");
-            }
-
-            if (apiResponse.isBinary()) {
-                // A generated PDF/Excel/zip etc: never dump raw/Base64 bytes
-                // into the text area. Show a clear "download this" card
-                // instead — Save Response (the icon button) does the rest.
-                responseBodyArea.setEditable(false);
-                responseBodyArea.setText(
-                        "\uD83D\uDCC4  Binary response\n\n"
-                                + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
-                                + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
-                                + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
-                                + "This isn't text, so it can't be shown here — click the save icon "
-                                + "above the response to download it exactly as the server sent it.");
-            } else {
-                responseBodyArea.setEditable(true);
-                responseBodyArea.setText(apiResponse.getResponse());
-                formatResponseBody(apiResponse.getResponse());
-            }
-
-            responseHeadersData.clear();
-            headers.forEach((key, value) -> responseHeadersData.add(new KeyValuePair(key, value, "")));
-
-            // Add to history
+            // Add to history (only for an actual new send, not a tab restore)
             String historyEntry = methodCombo.getValue() + " " + urlField.getText();
             if (!historyData.contains(historyEntry)) {
                 historyData.add(0, historyEntry);
@@ -2327,14 +2409,76 @@ public class MainController implements Initializable {
         });
     }
 
+    /** Renders a response into the shared viewer — used both right after a
+     * send and when switching to a tab that already has a stored response.
+     * Must run on the FX thread. */
+    private void renderResponse(ApiResponse apiResponse, Map<String, String> headers) {
+        int statusCode = apiResponse.getStatusCode();
+        long responseTime = apiResponse.getDuration();
+        statusLabel.setText("Status: " + statusCode + " " + getStatusText(statusCode));
+        timeLabel.setText("Time: " + responseTime + "ms");
+        sizeLabel.setText("Size: " + formatSize(apiResponse.getSizeBytes()));
+
+        // Apply status code styling
+        statusLabel.getStyleClass().removeAll("status-2xx", "status-4xx", "status-5xx");
+        if (statusCode >= 200 && statusCode < 300) {
+            statusLabel.getStyleClass().add("status-2xx");
+        } else if (statusCode >= 400 && statusCode < 500) {
+            statusLabel.getStyleClass().add("status-4xx");
+        } else if (statusCode >= 500) {
+            statusLabel.getStyleClass().add("status-5xx");
+        }
+
+        if (responseSearch != null) {
+            responseSearch.reset();
+        }
+        if (apiResponse.isBinary()) {
+            // A generated PDF/Excel/zip etc: never dump raw/Base64 bytes
+            // into the text area. Show a clear "download this" card
+            // instead — Save Response (the icon button) does the rest.
+            responseBodyArea.setEditable(false);
+            responseBodyArea.replaceText(
+                    "\uD83D\uDCC4  Binary response\n\n"
+                            + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
+                            + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
+                            + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
+                            + "This isn't text, so it can't be shown here — click the save icon "
+                            + "above the response to download it exactly as the server sent it.");
+        } else {
+            responseBodyArea.setEditable(true);
+            responseBodyArea.replaceText(apiResponse.getResponse() != null ? apiResponse.getResponse() : "");
+            formatResponseBody(apiResponse.getResponse());
+        }
+
+        responseHeadersData.clear();
+        if (headers != null) {
+            headers.forEach((key, value) -> responseHeadersData.add(new KeyValuePair(key, value, "")));
+        }
+    }
+
+    /** Resets the response viewer to its empty "no response yet" state —
+     * used when switching to a tab that has never been sent. */
+    private void clearResponseUI() {
+        statusLabel.setText("Status: ");
+        statusLabel.getStyleClass().removeAll("status-2xx", "status-4xx", "status-5xx");
+        timeLabel.setText("Time: ");
+        sizeLabel.setText("Size: ");
+        if (responseSearch != null) {
+            responseSearch.reset();
+        }
+        responseBodyArea.setEditable(true);
+        responseBodyArea.replaceText("");
+        responseHeadersData.clear();
+    }
+
     private void formatResponseBody(String responseBody) {
         try {
             if (responseBody.trim().startsWith("{")) {
                 JSONObject json = new JSONObject(responseBody);
-                responseBodyArea.setText(json.toString(2));
+                responseBodyArea.replaceText(json.toString(2));
             } else if (responseBody.trim().startsWith("<")) {
                 JSONObject json = XML.toJSONObject(responseBody);
-                responseBodyArea.setText(json.toString(2));
+                responseBodyArea.replaceText(json.toString(2));
             }
         } catch (Exception e) {
             // If formatting fails, just use the original response
@@ -2566,10 +2710,10 @@ public class MainController implements Initializable {
     @FXML
     private void handleSamplePostRequest() {
         methodCombo.getSelectionModel().select("POST");
-        urlField.setText("https://jsonplaceholder.typicode.com/posts");
+        urlField.replaceText("https://jsonplaceholder.typicode.com/posts");
 
         // Set sample JSON body
-        bodyTextArea.setText("{\n  \"title\": \"foo\",\n  \"body\": \"bar\",\n  \"userId\": 1\n}");
+        bodyTextArea.replaceText("{\n  \"title\": \"foo\",\n  \"body\": \"bar\",\n  \"userId\": 1\n}");
 
         // Select Raw body type
         for (Toggle toggle : bodyTypeGroup.getToggles()) {
