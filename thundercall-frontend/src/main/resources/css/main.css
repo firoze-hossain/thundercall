@@ -576,6 +576,13 @@
     -fx-font-weight: bold;
 }
 
+.verification-code-field {
+    -fx-font-size: 22px;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-alignment: center;
+    -fx-padding: 10;
+}
+
 .primary-button {
     -fx-background-color: -accent;
     -fx-text-fill: white;

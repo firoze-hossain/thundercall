@@ -8,6 +8,7 @@ import com.roze.thundercall.ui.models.AuthResponse;
 import com.roze.thundercall.ui.models.BaseResponse;
 import com.roze.thundercall.ui.models.LoginRequest;
 import com.roze.thundercall.ui.models.RegisterRequest;
+import com.roze.thundercall.ui.models.RegisterResponse;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,7 +33,7 @@ import java.nio.charset.StandardCharsets;
  * "Unknown error", plus the app returns them to the login screen.
  */
 public class ApiClient {
-    private static final String BASE_URL = "http://localhost:8084/api/v1";
+    private static final String BASE_URL = "http://localhost:9084/api/v1";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static String token;
     private static String refreshToken;
@@ -59,15 +60,35 @@ public class ApiClient {
         }
     }
 
-    public static AuthResponse register(String username, String email, String password) throws IOException {
+    public static RegisterResponse register(String username, String email, String password) throws IOException {
         RegisterRequest request = new RegisterRequest(username, email, password);
-        BaseResponse<AuthResponse> wrapper = post("/auth/register", request, new TypeReference<BaseResponse<AuthResponse>>() {
+        BaseResponse<RegisterResponse> wrapper = post("/auth/register", request, new TypeReference<BaseResponse<RegisterResponse>>() {
         });
         if (wrapper != null && wrapper.getData() != null) {
             return wrapper.getData();
         } else {
             throw new IOException("Invalid response from server: " + (wrapper != null ? wrapper.getMessage() : "null response"));
         }
+    }
+
+    public static AuthResponse verifyEmail(String email, String code) throws IOException {
+        java.util.Map<String, String> request = new java.util.HashMap<>();
+        request.put("email", email);
+        request.put("code", code);
+        BaseResponse<AuthResponse> wrapper = post("/auth/verify-email", request, new TypeReference<BaseResponse<AuthResponse>>() {
+        });
+        if (wrapper != null && wrapper.getData() != null) {
+            return wrapper.getData();
+        } else {
+            throw new IOException("Invalid response from server: " + (wrapper != null ? wrapper.getMessage() : "null response"));
+        }
+    }
+
+    public static void resendVerificationCode(String email) throws IOException {
+        java.util.Map<String, String> request = new java.util.HashMap<>();
+        request.put("email", email);
+        post("/auth/resend-verification", request, new TypeReference<BaseResponse<Void>>() {
+        });
     }
 
     public static <T> T post(String endpoint, Object data, TypeReference<T> responseType) throws IOException {

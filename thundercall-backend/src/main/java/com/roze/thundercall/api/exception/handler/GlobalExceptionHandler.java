@@ -1,6 +1,7 @@
 package com.roze.thundercall.api.exception.handler;
 
 import com.roze.thundercall.api.exception.AuthException;
+import com.roze.thundercall.api.exception.EmailNotVerifiedException;
 import com.roze.thundercall.api.exception.ResourceExistException;
 import com.roze.thundercall.api.exception.ResourceNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -41,6 +42,19 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
     }
 
+    // Carries the account's real email (not whatever text was typed to
+    // log in, which can be a username) in "details" so the client can
+    // go straight to the code-entry screen without guessing.
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<ErrorResponse> handleEmailNotVerified(EmailNotVerifiedException ex) {
+        ErrorResponse response = new ErrorResponse();
+        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setMessage(ex.getMessage());
+        response.setTimestamp(Instant.now());
+        response.setDetails(java.util.List.of(ex.getEmail()));
+        return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    }
+
     // FIX: this was previously unhandled — application-level validation
     // errors (like "a folder with this name already exists here") fell
     // through with no clear status or message, which is exactly what made
@@ -48,6 +62,18 @@ public class GlobalExceptionHandler {
     // session/auth failure on the client for several rounds of debugging.
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
+        ErrorResponse response = new ErrorResponse();
+        response.setStatus(HttpStatus.CONFLICT.value());
+        response.setMessage(ex.getMessage());
+        response.setTimestamp(Instant.now());
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+    // Used for things like "mail isn't configured yet" or "the invitation
+    // was created but the email failed to send" — a real, expected
+    // condition with a clear user-facing message, not a server bug.
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalStateException(IllegalStateException ex) {
         ErrorResponse response = new ErrorResponse();
         response.setStatus(HttpStatus.CONFLICT.value());
         response.setMessage(ex.getMessage());

@@ -75,7 +75,7 @@ public class AuthController {
     }
 
     private void showAccountSuggestions() {
-        java.util.List<String> accounts = CredentialStore.savedUsernames();
+        List<String> accounts = CredentialStore.savedUsernames();
         if (accounts.isEmpty()) {
             return;
         }
@@ -131,8 +131,21 @@ public class AuthController {
                 });
             } catch (IOException e) {
                 Platform.runLater(() -> {
-                    AlertUtils.showError("Login failed: " + e.getMessage());
-                    setLoading(false);
+                    if (e.getMessage() != null && e.getMessage().contains("verify your email")) {
+                        // The account exists but hasn't been verified yet.
+                        // The server sends the account's REAL email back in
+                        // "details" — what was typed here could be a
+                        // username, not an email, so we use that instead
+                        // of guessing (falls back to what was typed only
+                        // if the server didn't include it, e.g. an older
+                        // backend build).
+                        setLoading(false);
+                        String realEmail = extractDetailEmail(e.getMessage());
+                        Main.showVerifyEmailView(realEmail != null ? realEmail : usernameOrEmail);
+                    } else {
+                        AlertUtils.showError("Login failed: " + e.getMessage());
+                        setLoading(false);
+                    }
                 });
             }
         }).start();
@@ -151,14 +164,10 @@ public class AuthController {
         setLoading(true);
         new Thread(() -> {
             try {
-                AuthResponse response = ApiClient.register(username, email, password);
+                com.roze.thundercall.ui.models.RegisterResponse response = ApiClient.register(username, email, password);
                 Platform.runLater(() -> {
-                    if (rememberMeCheck != null && rememberMeCheck.isSelected()) {
-                        CredentialStore.save(username, password);
-                    }
-                    TokenManager.storeTokens(response);
-                    AlertUtils.showSuccess("Registration successful");
-                    Main.showMainView();
+                    AlertUtils.showSuccess(response.getMessage());
+                    Main.showVerifyEmailView(response.getEmail());
                 });
             } catch (IOException e) {
                 Platform.runLater(() -> {
@@ -167,6 +176,23 @@ public class AuthController {
                 });
             }
         }).start();
+    }
+
+    /** Pulls the first value out of the raw error's "details":["..."]
+     * array, which is where the server puts the account's real email for
+     * the "please verify your email" case. Returns null if it's not
+     * there (older backend, or a different kind of error). */
+    private String extractDetailEmail(String rawErrorMessage) {
+        if (rawErrorMessage == null) {
+            return null;
+        }
+        int idx = rawErrorMessage.indexOf("\"details\":[\"");
+        if (idx < 0) {
+            return null;
+        }
+        int start = idx + "\"details\":[\"".length();
+        int end = rawErrorMessage.indexOf('"', start);
+        return end > start ? rawErrorMessage.substring(start, end) : null;
     }
 
     @FXML

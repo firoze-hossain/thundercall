@@ -36,6 +36,16 @@ public class User {
 
     private Boolean enabled;
 
+    // Email verification (separate from "enabled", which is for admin
+    // disable/enable — a user can be enabled but not yet verified).
+    // NOTE: default value is set explicitly in UserMapper.toEntity(),
+    // not here — this class is constructed via "new User()" + setters
+    // in most places, not the Lombok builder, so a builder-only default
+    // wouldn't reliably apply.
+    private Boolean emailVerified;
+    private String verificationCode;
+    private LocalDateTime verificationCodeExpiresAt;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

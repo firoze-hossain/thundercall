@@ -1,6 +1,5 @@
 package com.roze.thundercall.ui.models;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,6 +13,10 @@ public class AuthResponse {
     private String refreshToken;
     private String username;
     private String email;
-    @JsonIgnore
+    // FIX: this was @JsonIgnore'd, so the frontend never actually knew
+    // the logged-in user's role — meaning there was no way to hide
+    // admin-only UI (like Mail Server Settings) from regular users. It's
+    // a plain String here (not the backend's Role enum), which Jackson
+    // deserializes from the JSON string with no extra config needed.
     private String role;
 }

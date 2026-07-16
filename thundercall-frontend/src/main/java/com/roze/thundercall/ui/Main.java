@@ -35,6 +35,7 @@ public class Main extends Application {
             Scene scene = new Scene(fxmlLoader.load(), 800, 600);
             primaryStage.setScene(scene);
             primaryStage.setTitle("Login");
+            resetStageToSceneSize(800, 600);
             primaryStage.show();
         } catch (IOException e) {
             AlertUtils.showError("Failed to load login view");
@@ -47,10 +48,45 @@ public class Main extends Application {
             Scene scene = new Scene(fxmlLoader.load(), 880, 600);
             primaryStage.setScene(scene);
             primaryStage.setTitle("Register");
+            resetStageToSceneSize(880, 600);
             primaryStage.show();
         } catch (IOException e) {
             AlertUtils.showError("Failed to load register view");
         }
+    }
+
+    public static void showVerifyEmailView(String email) {
+        try {
+            FXMLLoader fxmlLoader = new FXMLLoader(Main.class.getResource("/views/verify-email.fxml"));
+            Scene scene = new Scene(fxmlLoader.load(), 880, 600);
+            com.roze.thundercall.ui.controllers.VerifyEmailController controller = fxmlLoader.getController();
+            controller.setEmail(email);
+            primaryStage.setScene(scene);
+            primaryStage.setTitle("Verify your email");
+            resetStageToSceneSize(880, 600);
+            primaryStage.show();
+        } catch (IOException e) {
+            AlertUtils.showError("Failed to load the verification view");
+        }
+    }
+
+    /** FIX: setScene() alone never resets the STAGE's own width/height or
+     * maximized state — only the Scene's preferred size. If the main
+     * window had been resized or maximized, logging out would swap in
+     * the (smaller, fixed-layout) login scene but leave the stage at
+     * whatever large size it already was, stretching the login card
+     * across it. Auth views always get their own correct size now,
+     * regardless of what size the previous view left the window at. */
+    private static void resetStageToSceneSize(double width, double height) {
+        // Clear the main view's minimum constraints first — otherwise a
+        // stage left at 860x560 minimum (set for the main view) would
+        // clamp this smaller auth window instead of actually shrinking it.
+        primaryStage.setMinWidth(0);
+        primaryStage.setMinHeight(0);
+        primaryStage.setMaximized(false);
+        primaryStage.setWidth(width);
+        primaryStage.setHeight(height);
+        primaryStage.centerOnScreen();
     }
 
     public static void showMainView() {
@@ -71,6 +107,15 @@ public class Main extends Application {
             Scene scene = new Scene(root, 1200, 800);
             primaryStage.setScene(scene);
             primaryStage.setTitle("Thundercall Client");
+            // FIX: nothing stopped the window being resized down to a
+            // width where the icon rail's labels ("Collections",
+            // "Environments", "History") get clipped mid-word and the
+            // sidebar/request panes overlap. A sane minimum keeps every
+            // panel legible; the window can still be resized freely
+            // above this, and the sidebar/response dividers still work
+            // exactly as before.
+            primaryStage.setMinWidth(860);
+            primaryStage.setMinHeight(560);
             primaryStage.show();
 
             System.out.println("Main view displayed successfully");

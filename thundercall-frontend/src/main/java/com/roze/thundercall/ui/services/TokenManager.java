@@ -11,6 +11,7 @@ public class TokenManager {
     private static final String USERNAME_KEY = "username";
     private static final String EMAIL_KEY = "email";
     private static final String USER_ID_KEY = "user_id";
+    private static final String ROLE_KEY = "role";
 
     public static void storeTokens(AuthResponse response) {
         if (response == null) {
@@ -26,10 +27,22 @@ public class TokenManager {
         prefs.put(REFRESH_TOKEN_KEY, response.getRefreshToken());
         prefs.put(USERNAME_KEY, response.getUsername());
         prefs.put(EMAIL_KEY, response.getEmail());
+        if (response.getRole() != null) {
+            prefs.put(ROLE_KEY, response.getRole());
+        } else {
+            prefs.remove(ROLE_KEY);
+        }
         // FIX: the refresh token was persisted to disk but never handed to
         // ApiClient — so ApiClient had no way to silently renew an expired
         // access token. This is what makes automatic refresh possible.
         ApiClient.setRefreshToken(response.getRefreshToken());
+    }
+
+    /** True only for an ADMIN-role account — used to hide owner-only UI
+     * (like Mail Server Settings) from regular users entirely, rather
+     * than showing it and letting the server reject the request. */
+    public static boolean isAdmin() {
+        return "ADMIN".equalsIgnoreCase(prefs.get(ROLE_KEY, null));
     }
 
     public static boolean isLoggedIn() {
@@ -52,6 +65,7 @@ public class TokenManager {
         prefs.remove(TOKEN_KEY);
         prefs.remove(REFRESH_TOKEN_KEY);
         prefs.remove(USERNAME_KEY);
+        prefs.remove(ROLE_KEY);
         ApiClient.setToken(null);
         ApiClient.setRefreshToken(null);
     }

@@ -35,6 +35,7 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -220,11 +221,17 @@ public class MainController implements Initializable {
     @FXML
     private VBox historyPane;
     @FXML
+    private VBox teamsPane;
+    @FXML
+    private ListView<TeamResponse> teamsList;
+    @FXML
     private ToggleButton railCollectionsBtn;
     @FXML
     private ToggleButton railEnvironmentsBtn;
     @FXML
     private ToggleButton railHistoryBtn;
+    @FXML
+    private ToggleButton railTeamsBtn;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -257,6 +264,7 @@ public class MainController implements Initializable {
         setupBodyCodeArea();
         setupResponseCodeArea();
         setupEnvironmentsList();
+        setupTeamsList();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -294,6 +302,7 @@ public class MainController implements Initializable {
             loadCollectionsFromServer();
             loadEnvironments();
             loadHistory();
+            loadTeams();
 
             logger.info("MainController initialized successfully");
         } catch (Exception e) {
@@ -1408,6 +1417,15 @@ public class MainController implements Initializable {
         }
 
         VBox content = new VBox(10, darkBtn, lightBtn);
+        // FIX: this used to always show "Mail Server Settings..." to
+        // every user — the backend correctly rejected non-admins, but
+        // only after they'd already clicked into it and hit Save/Test.
+        // Regular users shouldn't see this entry point exist at all.
+        if (TokenManager.isAdmin()) {
+            Hyperlink mailSettingsLink = new Hyperlink("Mail Server Settings...");
+            mailSettingsLink.setOnAction(e -> openMailSettingsDialog());
+            content.getChildren().addAll(new Separator(), mailSettingsLink);
+        }
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
@@ -1418,6 +1436,488 @@ public class MainController implements Initializable {
                 updateStatus("Theme: " + (lightBtn.isSelected() ? "Light" : "Dark"));
             }
         });
+    }
+
+    /** Lets the project owner configure the app's own outgoing SMTP
+     * server — used for email verification codes and team invitations.
+     * The backend rejects this for non-admins, so nothing bad happens if
+     * a non-admin somehow opens it; they'll just see a clear error. */
+    // ============================================================
+    // Team management
+    // ============================================================
+
+    private void setupTeamsList() {
+        if (teamsList == null) {
+            return;
+        }
+        teamsList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(TeamResponse team, boolean empty) {
+                super.updateItem(team, empty);
+                if (empty || team == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                Label nameLabel = new Label(team.getName());
+                nameLabel.getStyleClass().add("variable-suggestion-name");
+                Label metaLabel = new Label(team.getMemberCount() + " member"
+                        + (team.getMemberCount() == 1 ? "" : "s") + " · " + team.getMyRole());
+                metaLabel.getStyleClass().add("variable-suggestion-value");
+                setGraphic(new VBox(1, nameLabel, metaLabel));
+                setText(null);
+            }
+        });
+        teamsList.setOnMouseClicked(e -> {
+            TeamResponse selected = teamsList.getSelectionModel().getSelectedItem();
+            if (e.getClickCount() == 2 && selected != null) {
+                openTeamDetailDialog(selected);
+            }
+        });
+    }
+
+    private void loadTeams() {
+        if (teamsList == null) {
+            return;
+        }
+        new Thread(() -> {
+            Optional<List<TeamResponse>> teams = TeamService.getMyTeams();
+            Platform.runLater(() -> teams.ifPresent(list -> teamsList.getItems().setAll(list)));
+        }).start();
+    }
+
+    @FXML
+    private void handleCreateTeam() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Create Team");
+        dialog.setHeaderText("Give your team a name — you can invite people once it's created.");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("Team name");
+        TextArea descriptionField = new TextArea();
+        descriptionField.setPromptText("What's this team for? (optional)");
+        descriptionField.setPrefRowCount(3);
+        descriptionField.setWrapText(true);
+
+        VBox content = new VBox(10, new Label("Name"), nameField, new Label("Description"), descriptionField);
+        content.setPadding(new Insets(10));
+        content.setPrefWidth(360);
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(button -> {
+            if (button != ButtonType.OK) {
+                return;
+            }
+            String name = nameField.getText() == null ? "" : nameField.getText().trim();
+            if (name.isEmpty()) {
+                AlertUtils.showError("Give the team a name first.");
+                return;
+            }
+            new Thread(() -> {
+                Optional<TeamResponse> created = TeamService.createTeam(name, descriptionField.getText());
+                Platform.runLater(() -> {
+                    if (created.isPresent()) {
+                        loadTeams();
+                        updateStatus("Team created: " + name);
+                    }
+                });
+            }).start();
+        });
+    }
+
+    @FXML
+    private void handleJoinTeam() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Join a Team");
+        dialog.setHeaderText("Enter the invite code from your invitation email");
+        dialog.setContentText("Invite code:");
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(token -> {
+            String trimmed = token == null ? "" : token.trim();
+            if (trimmed.isEmpty()) {
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    TeamResponse team = TeamService.acceptInvitation(trimmed);
+                    Platform.runLater(() -> {
+                        loadTeams();
+                        AlertUtils.showSuccess("You've joined \"" + team.getName() + "\"");
+                        updateStatus("Joined team: " + team.getName());
+                    });
+                } catch (IOException e) {
+                    Platform.runLater(() -> AlertUtils.showError(
+                            "Couldn't join that team: " + TeamService.friendlyMessage(e)));
+                }
+            }).start();
+        });
+    }
+
+    /** The main team-management surface: members, pending invitations
+     * (owner/admin only), inviting people by email, changing roles,
+     * removing members, and leaving/deleting the team — each action's
+     * visibility is driven by the viewer's own role on this team. */
+    private void openTeamDetailDialog(TeamResponse team) {
+        boolean isOwner = "OWNER".equals(team.getMyRole());
+        boolean isAdminOrOwner = isOwner || "ADMIN".equals(team.getMyRole());
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle(team.getName());
+        dialog.setHeaderText((team.getDescription() != null && !team.getDescription().isBlank()
+                ? team.getDescription() + "\n" : "")
+                + "Your role: " + team.getMyRole() + "  ·  Owner: " + team.getOwnerUsername());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        Label statusLabel = new Label();
+        statusLabel.setWrapText(true);
+        statusLabel.setMaxWidth(480);
+
+        // ---- Members ----
+        TableView<TeamMemberResponse> membersTable = new TableView<>();
+        TableColumn<TeamMemberResponse, String> memberNameCol = new TableColumn<>("Username");
+        memberNameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+        TableColumn<TeamMemberResponse, String> memberEmailCol = new TableColumn<>("Email");
+        memberEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
+        TableColumn<TeamMemberResponse, String> memberRoleCol = new TableColumn<>("Role");
+        memberRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
+        membersTable.getColumns().addAll(memberNameCol, memberEmailCol, memberRoleCol);
+        membersTable.setPrefHeight(160);
+        membersTable.setPrefWidth(480);
+        membersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+
+        Runnable[] refreshMembers = new Runnable[1];
+        refreshMembers[0] = () -> new Thread(() -> {
+            Optional<List<TeamMemberResponse>> members = TeamService.getMembers(team.getId());
+            Platform.runLater(() -> members.ifPresent(list -> membersTable.getItems().setAll(list)));
+        }).start();
+        refreshMembers[0].run();
+
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.getChildren().add(new Label("Members"));
+        content.getChildren().add(membersTable);
+
+        if (isAdminOrOwner) {
+            ComboBox<String> newRoleCombo = new ComboBox<>();
+            newRoleCombo.getItems().addAll("ADMIN", "MEMBER");
+            newRoleCombo.setPromptText("New role");
+            Button changeRoleBtn = new Button("Change Role");
+            Button removeBtn = new Button("Remove Member");
+            HBox memberActions = new HBox(8, newRoleCombo, changeRoleBtn, removeBtn);
+            memberActions.setAlignment(Pos.CENTER_LEFT);
+            content.getChildren().add(memberActions);
+
+            changeRoleBtn.setOnAction(e -> {
+                TeamMemberResponse selected = membersTable.getSelectionModel().getSelectedItem();
+                String newRole = newRoleCombo.getValue();
+                if (selected == null || newRole == null) {
+                    statusLabel.setText("Select a member and a role first.");
+                    return;
+                }
+                new Thread(() -> {
+                    boolean ok = TeamService.changeMemberRole(team.getId(), selected.getUserId(), newRole);
+                    Platform.runLater(() -> {
+                        statusLabel.setText(ok ? "Role updated." : "Couldn't change that role.");
+                        if (ok) {
+                            refreshMembers[0].run();
+                        }
+                    });
+                }).start();
+            });
+            removeBtn.setOnAction(e -> {
+                TeamMemberResponse selected = membersTable.getSelectionModel().getSelectedItem();
+                if (selected == null) {
+                    statusLabel.setText("Select a member to remove first.");
+                    return;
+                }
+                if (!AlertUtils.showConfirmation("Remove Member",
+                        "Remove " + selected.getUsername() + " from " + team.getName() + "?")) {
+                    return;
+                }
+                new Thread(() -> {
+                    boolean ok = TeamService.removeMember(team.getId(), selected.getUserId());
+                    Platform.runLater(() -> {
+                        statusLabel.setText(ok ? "Member removed." : "Couldn't remove that member.");
+                        if (ok) {
+                            refreshMembers[0].run();
+                        }
+                    });
+                }).start();
+            });
+        }
+
+        // ---- Pending invitations (owner/admin only) ----
+        if (isAdminOrOwner) {
+            content.getChildren().add(new Separator());
+            content.getChildren().add(new Label("Pending Invitations"));
+
+            TableView<TeamInvitationResponse> invitationsTable = new TableView<>();
+            TableColumn<TeamInvitationResponse, String> inviteEmailCol = new TableColumn<>("Email");
+            inviteEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
+            TableColumn<TeamInvitationResponse, String> inviteRoleCol = new TableColumn<>("Role");
+            inviteRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
+            TableColumn<TeamInvitationResponse, String> inviteStatusCol = new TableColumn<>("Status");
+            inviteStatusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
+            invitationsTable.getColumns().addAll(inviteEmailCol, inviteRoleCol, inviteStatusCol);
+            invitationsTable.setPrefHeight(120);
+            invitationsTable.setPrefWidth(480);
+            invitationsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+            content.getChildren().add(invitationsTable);
+
+            Runnable[] refreshInvitations = new Runnable[1];
+            refreshInvitations[0] = () -> new Thread(() -> {
+                Optional<List<TeamInvitationResponse>> invitations = TeamService.getPendingInvitations(team.getId());
+                Platform.runLater(() -> invitations.ifPresent(list -> invitationsTable.getItems().setAll(list)));
+            }).start();
+            refreshInvitations[0].run();
+
+            Button revokeBtn = new Button("Revoke Invitation");
+            content.getChildren().add(revokeBtn);
+            revokeBtn.setOnAction(e -> {
+                TeamInvitationResponse selected = invitationsTable.getSelectionModel().getSelectedItem();
+                if (selected == null) {
+                    statusLabel.setText("Select an invitation to revoke first.");
+                    return;
+                }
+                new Thread(() -> {
+                    boolean ok = TeamService.revokeInvitation(team.getId(), selected.getId());
+                    Platform.runLater(() -> {
+                        statusLabel.setText(ok ? "Invitation revoked." : "Couldn't revoke that invitation.");
+                        if (ok) {
+                            refreshInvitations[0].run();
+                        }
+                    });
+                }).start();
+            });
+
+            // ---- Invite by email ----
+            content.getChildren().add(new Separator());
+            content.getChildren().add(new Label("Invite someone by email"));
+            TextField inviteEmailField = new TextField();
+            inviteEmailField.setPromptText("email@example.com");
+            ComboBox<String> inviteRoleCombo = new ComboBox<>();
+            inviteRoleCombo.getItems().addAll("ADMIN", "MEMBER");
+            inviteRoleCombo.setValue("MEMBER");
+            Button inviteBtn = new Button("Send Invite");
+            HBox inviteRow = new HBox(8, inviteEmailField, inviteRoleCombo, inviteBtn);
+            inviteRow.setAlignment(Pos.CENTER_LEFT);
+            HBox.setHgrow(inviteEmailField, Priority.ALWAYS);
+            content.getChildren().add(inviteRow);
+
+            inviteBtn.setOnAction(e -> {
+                String email = inviteEmailField.getText() == null ? "" : inviteEmailField.getText().trim();
+                if (email.isEmpty()) {
+                    statusLabel.setText("Enter an email address first.");
+                    return;
+                }
+                statusLabel.setText("Sending invitation...");
+                new Thread(() -> {
+                    try {
+                        TeamService.inviteMember(team.getId(), email, inviteRoleCombo.getValue());
+                        Platform.runLater(() -> {
+                            statusLabel.setText("Invitation sent to " + email + ".");
+                            inviteEmailField.clear();
+                            refreshInvitations[0].run();
+                        });
+                    } catch (IOException ex) {
+                        Platform.runLater(() -> statusLabel.setText(
+                                "Couldn't send that invitation: " + TeamService.friendlyMessage(ex)));
+                    }
+                }).start();
+            });
+        }
+
+        // ---- Leave / delete ----
+        content.getChildren().add(new Separator());
+        HBox dangerRow = new HBox(8);
+        dangerRow.setAlignment(Pos.CENTER_LEFT);
+        if (isOwner) {
+            Button deleteBtn = new Button("Delete Team");
+            deleteBtn.getStyleClass().add("danger-menu-item");
+            deleteBtn.setOnAction(e -> {
+                if (!AlertUtils.showConfirmation("Delete Team",
+                        "Delete \"" + team.getName() + "\"? This removes everyone and can't be undone.")) {
+                    return;
+                }
+                new Thread(() -> {
+                    boolean ok = TeamService.deleteTeam(team.getId());
+                    Platform.runLater(() -> {
+                        if (ok) {
+                            dialog.close();
+                            loadTeams();
+                            updateStatus("Team deleted: " + team.getName());
+                        } else {
+                            statusLabel.setText("Couldn't delete this team.");
+                        }
+                    });
+                }).start();
+            });
+            dangerRow.getChildren().add(deleteBtn);
+        } else {
+            Button leaveBtn = new Button("Leave Team");
+            leaveBtn.getStyleClass().add("danger-menu-item");
+            leaveBtn.setOnAction(e -> {
+                if (!AlertUtils.showConfirmation("Leave Team", "Leave \"" + team.getName() + "\"?")) {
+                    return;
+                }
+                new Thread(() -> {
+                    boolean ok = TeamService.leaveTeam(team.getId());
+                    Platform.runLater(() -> {
+                        if (ok) {
+                            dialog.close();
+                            loadTeams();
+                            updateStatus("Left team: " + team.getName());
+                        } else {
+                            statusLabel.setText("Couldn't leave this team.");
+                        }
+                    });
+                }).start();
+            });
+            dangerRow.getChildren().add(leaveBtn);
+        }
+        content.getChildren().add(dangerRow);
+        content.getChildren().add(statusLabel);
+
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefViewportHeight(520);
+        dialog.getDialogPane().setContent(scrollPane);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+        dialog.showAndWait();
+    }
+
+    /** Lets the project owner configure the app's own outgoing SMTP
+     * server — used for email verification codes and team invitations.
+     * The backend rejects this for non-admins, so nothing bad happens if
+     * a non-admin somehow opens it; they'll just see a clear error. */
+    private void openMailSettingsDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Mail Server Settings");
+        dialog.setHeaderText("Outgoing mail (SMTP) — used for verification emails and team invitations");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CLOSE);
+
+        TextField hostField = new TextField();
+        hostField.setPromptText("smtp.gmail.com");
+        TextField portField = new TextField();
+        portField.setPromptText("587");
+        TextField usernameField2 = new TextField();
+        usernameField2.setPromptText("you@example.com");
+        PasswordField passwordField2 = new PasswordField();
+        passwordField2.setPromptText("(leave blank to keep the current password)");
+        TextField fromAddressField = new TextField();
+        fromAddressField.setPromptText("noreply@yourapp.com");
+        TextField fromNameField = new TextField();
+        fromNameField.setPromptText("Thundercall");
+        CheckBox tlsCheck = new CheckBox("Use STARTTLS");
+        tlsCheck.setSelected(true);
+        CheckBox sslCheck = new CheckBox("Use SSL");
+        // FIX: this used to sit in the same row as the STARTTLS/SSL
+        // protocol checkboxes — easy to miss as "just another technical
+        // toggle" when it's actually the master on/off switch. It's now
+        // its own bold, top-of-form row, and defaults to checked (a fresh
+        // setup should just work once real details are filled in, not
+        // silently stay off).
+        CheckBox enabledCheck = new CheckBox("Mail sending enabled");
+        enabledCheck.setSelected(true);
+        enabledCheck.setStyle("-fx-font-weight: bold;");
+        Label statusLabel = new Label();
+        statusLabel.setWrapText(true);
+        statusLabel.setMaxWidth(360);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(10));
+        int row = 0;
+        grid.add(enabledCheck, 0, row, 2, 1);
+        row++;
+        grid.addRow(row++, new Label("SMTP Host"), hostField);
+        grid.addRow(row++, new Label("SMTP Port"), portField);
+        grid.addRow(row++, new Label("Username"), usernameField2);
+        grid.addRow(row++, new Label("Password"), passwordField2);
+        grid.addRow(row++, new Label("From Address"), fromAddressField);
+        grid.addRow(row++, new Label("From Name"), fromNameField);
+        grid.add(new HBox(12, tlsCheck, sslCheck), 1, row++);
+
+        TextField testEmailField = new TextField();
+        testEmailField.setPromptText("Send a test to...");
+        Button testBtn = new Button("Send test email");
+        Button saveBtn = new Button("Save");
+        HBox actionsRow = new HBox(8, testEmailField, testBtn, new Region(), saveBtn);
+        HBox.setHgrow(testEmailField, Priority.ALWAYS);
+        HBox.setHgrow((Region) actionsRow.getChildren().get(2), Priority.ALWAYS);
+
+        VBox content = new VBox(10, grid, actionsRow, statusLabel);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        // Load current values
+        new Thread(() -> {
+            try {
+                Optional<MailSettingsResponse> current = MailSettingsService.getSettings();
+                Platform.runLater(() -> current.ifPresent(settings -> {
+                    hostField.setText(settings.getSmtpHost());
+                    portField.setText(settings.getSmtpPort() != null ? String.valueOf(settings.getSmtpPort()) : "");
+                    usernameField2.setText(settings.getSmtpUsername());
+                    fromAddressField.setText(settings.getFromAddress());
+                    fromNameField.setText(settings.getFromName());
+                    tlsCheck.setSelected(settings.isUseTls());
+                    sslCheck.setSelected(settings.isUseSsl());
+                    enabledCheck.setSelected(settings.isEnabled());
+                    if (settings.isHasPassword()) {
+                        passwordField2.setPromptText("(a password is already saved — leave blank to keep it)");
+                    }
+                }));
+            } catch (IOException e) {
+                Platform.runLater(() -> statusLabel.setText("Couldn't load current settings: " + e.getMessage()));
+            }
+        }).start();
+
+        saveBtn.setOnAction(e -> {
+            int port;
+            try {
+                port = Integer.parseInt(portField.getText().trim());
+            } catch (NumberFormatException ex) {
+                statusLabel.setText("Port must be a number, e.g. 587.");
+                return;
+            }
+            MailSettingsRequest request = new MailSettingsRequest(
+                    hostField.getText().trim(), port, usernameField2.getText().trim(),
+                    passwordField2.getText(), fromAddressField.getText().trim(), fromNameField.getText().trim(),
+                    tlsCheck.isSelected(), sslCheck.isSelected(), enabledCheck.isSelected());
+            statusLabel.setText("Saving...");
+            new Thread(() -> {
+                try {
+                    MailSettingsService.updateSettings(request);
+                    Platform.runLater(() -> statusLabel.setText("Saved."));
+                } catch (IOException ex) {
+                    Platform.runLater(() -> statusLabel.setText("Couldn't save: " + ex.getMessage()));
+                }
+            }).start();
+        });
+
+        testBtn.setOnAction(e -> {
+            String toAddress = testEmailField.getText().trim();
+            if (toAddress.isEmpty()) {
+                statusLabel.setText("Enter an address to send the test email to.");
+                return;
+            }
+            statusLabel.setText("Sending test email...");
+            new Thread(() -> {
+                try {
+                    MailSettingsService.sendTestEmail(toAddress);
+                    Platform.runLater(() -> statusLabel.setText("Test email sent to " + toAddress + " — check the inbox."));
+                } catch (IOException ex) {
+                    Platform.runLater(() -> statusLabel.setText("Couldn't send: " + ex.getMessage()));
+                }
+            }).start();
+        });
+
+        dialog.showAndWait();
     }
 
     @FXML
@@ -1462,6 +1962,12 @@ public class MainController implements Initializable {
         showSidebarPane(historyPane);
     }
 
+    @FXML
+    private void handleShowTeams() {
+        showSidebarPane(teamsPane);
+        loadTeams();
+    }
+
     private void showSidebarPane(VBox pane) {
         if (collectionsPane == null || environmentsPane == null || historyPane == null || pane == null) {
             return; // old FXML without the rail
@@ -1469,6 +1975,9 @@ public class MainController implements Initializable {
         collectionsPane.setVisible(pane == collectionsPane);
         environmentsPane.setVisible(pane == environmentsPane);
         historyPane.setVisible(pane == historyPane);
+        if (teamsPane != null) {
+            teamsPane.setVisible(pane == teamsPane);
+        }
     }
 
     /**
@@ -1650,6 +2159,70 @@ public class MainController implements Initializable {
     }
 
     /** Exports one environment as a clean, portable JSON file. */
+    @FXML
+    private void handleImportEnvironment() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Import Environment");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("JSON Files", "*.json"));
+        File file = fileChooser.showOpenDialog(Main.getPrimaryStage());
+        if (file == null) {
+            return;
+        }
+        try {
+            String content = java.nio.file.Files.readString(file.toPath());
+            JSONObject root = new JSONObject(content);
+
+            String name = root.optString("name", file.getName().replaceAll("(?i)\\.json$", ""));
+            String description = root.optString("description", "Imported from " + file.getName());
+
+            // Understands both our own export format and Postman's actual
+            // environment export (both use a top-level "values" array of
+            // {key, value[, enabled]} — Postman also adds "type", which we
+            // just ignore).
+            Map<String, String> variables = new LinkedHashMap<>();
+            JSONArray values = root.optJSONArray("values");
+            if (values != null) {
+                for (int i = 0; i < values.length(); i++) {
+                    JSONObject entry = values.getJSONObject(i);
+                    boolean enabled = entry.optBoolean("enabled", true);
+                    if (!enabled) {
+                        continue; // matches Postman: disabled variables aren't carried over
+                    }
+                    String key = entry.optString("key", null);
+                    if (key == null || key.isBlank()) {
+                        continue;
+                    }
+                    variables.put(key, entry.optString("value", ""));
+                }
+            }
+
+            if (variables.isEmpty()) {
+                AlertUtils.showError("No variables found in that file — expected a \"values\" array "
+                        + "with key/value pairs (this app's own export, or a Postman environment export).");
+                return;
+            }
+
+            String finalName = name;
+            new Thread(() -> {
+                Optional<EnvironmentResponse> created = EnvironmentService.createEnvironment(
+                        finalName, description, variables);
+                Platform.runLater(() -> {
+                    if (created.isPresent()) {
+                        loadEnvironments();
+                        updateStatus("Imported environment \"" + finalName + "\" with "
+                                + variables.size() + " variable(s)");
+                        AlertUtils.showSuccess("Imported \"" + finalName + "\" with "
+                                + variables.size() + " variable(s)");
+                    } else {
+                        AlertUtils.showError("Failed to import environment");
+                    }
+                });
+            }).start();
+        } catch (Exception ex) {
+            AlertUtils.showError("Couldn't read that file: " + ex.getMessage());
+        }
+    }
+
     private void exportEnvironmentAsJson(EnvironmentResponse env) {
         JSONObject root = new JSONObject();
         root.put("name", env.getName());
@@ -2137,7 +2710,7 @@ public class MainController implements Initializable {
                 moreBtn.getStyleClass().add("tree-inline-btn");
                 plusBtn.setTooltip(new Tooltip("Add request"));
                 moreBtn.setTooltip(new Tooltip("More actions"));
-                HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+                HBox.setHgrow(spacer, Priority.ALWAYS);
                 box.setAlignment(Pos.CENTER_LEFT);
 
                 plusBtn.setOnAction(e -> {
@@ -4542,7 +5115,7 @@ public class MainController implements Initializable {
 
         HBox row = new HBox(10, methodBox, nameField);
         row.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(nameField, javafx.scene.layout.Priority.ALWAYS);
+        HBox.setHgrow(nameField, Priority.ALWAYS);
         VBox content = new VBox(10, new Label("Method and name:"), row);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);

@@ -155,6 +155,16 @@
                         </graphic>
                         <contentDisplay>TOP</contentDisplay>
                     </ToggleButton>
+                    <ToggleButton fx:id="railTeamsBtn" text="Teams" styleClass="rail-btn"
+                                  toggleGroup="$sidebarRailGroup"
+                                  onAction="#handleShowTeams" maxWidth="10000">
+                        <graphic>
+                            <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
+                                <Image url="@../images/user-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <contentDisplay>TOP</contentDisplay>
+                    </ToggleButton>
                 </VBox>
                 <!-- Sidebar + main content now share ONE SplitPane, so the
                      sidebar (Collections/Environments/History) can be
@@ -210,6 +220,16 @@
                         <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
                             <Label text="Environments" styleClass="section-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleImportEnvironment">
+                                <tooltip>
+                                    <Tooltip text="Import environment from JSON"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/folder-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
                             <Button styleClass="icon-button" onAction="#handleNewEnvironment">
                                 <tooltip>
                                     <Tooltip text="New environment"/>
@@ -246,6 +266,40 @@
                             </Button>
                         </HBox>
                         <ListView fx:id="historyList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                    </VBox>
+
+                    <!-- Teams pane -->
+                    <VBox fx:id="teamsPane" spacing="6" visible="false">
+                        <padding>
+                            <Insets top="8" right="8" bottom="8" left="8"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
+                            <Label text="Teams" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleJoinTeam">
+                                <tooltip>
+                                    <Tooltip text="Join a team with an invite code"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/folder-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                            <Button styleClass="icon-button" onAction="#handleCreateTeam">
+                                <tooltip>
+                                    <Tooltip text="Create a team"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/add-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                        <Label styleClass="sidebar-hint" wrapText="true"
+                               text="Double-click a team to manage members and invitations."/>
+                        <ListView fx:id="teamsList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
                 </StackPane>
                     <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">

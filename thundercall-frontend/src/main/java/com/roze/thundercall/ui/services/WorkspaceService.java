@@ -35,10 +35,10 @@ public class WorkspaceService {
     }
 
     /** Fetches all workspaces of the logged-in user (GET /workspaces). */
-    public static Optional<java.util.List<Workspace>> getUserWorkspaces() {
+    public static Optional<List<Workspace>> getUserWorkspaces() {
         try {
-            BaseResponse<java.util.List<Workspace>> response = ApiClient.get(BASE_URL,
-                    new TypeReference<BaseResponse<java.util.List<Workspace>>>() {
+            BaseResponse<List<Workspace>> response = ApiClient.get(BASE_URL,
+                    new TypeReference<BaseResponse<List<Workspace>>>() {
                     });
             if (response != null && response.isSuccess()) {
                 return Optional.ofNullable(response.getData());
