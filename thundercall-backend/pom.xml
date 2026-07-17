@@ -43,6 +43,16 @@
 			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
 		<dependency>
+			<!-- Real Socket.IO protocol client (engine.io framing, namespaces,
+			     event ack, reconnection) — hand-rolling this protocol over raw
+			     WebSocket would be unreliable across different Socket.IO server
+			     versions, so this uses the same official client library real
+			     Java Socket.IO integrations use. -->
+			<groupId>io.socket</groupId>
+			<artifactId>socket.io-client</artifactId>
+			<version>2.1.2</version>
+		</dependency>
+		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
 			<version>0.12.7</version>

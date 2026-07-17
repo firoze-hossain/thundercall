@@ -546,6 +546,7 @@
 .method-head    { -fx-text-fill: #7ec98f; -fx-font-weight: bold; }
 .method-options { -fx-text-fill: #9aa0a6; -fx-font-weight: bold; }
 .method-ws      { -fx-text-fill: #4dd0e1; -fx-font-weight: bold; }
+.method-socketio { -fx-text-fill: #ab47bc; -fx-font-weight: bold; }
 
 /* ============================================================
    Auth pages (login.fxml / register.fxml)

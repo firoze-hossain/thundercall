@@ -5,5 +5,7 @@ public enum HttpMethod {
     // Not a real HTTP verb — used only to mark a request as a
     // WebSocket connection so it can be saved/loaded like any other
     // request. Never sent through the normal HTTP execute path.
-    WS
+    WS,
+    // Same idea as WS, for Socket.IO connections.
+    SOCKETIO
 }

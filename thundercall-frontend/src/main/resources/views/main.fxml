@@ -358,6 +358,8 @@
                         <Button text="Send" fx:id="sendBtn" styleClass="send-button" onAction="#handleSendRequest"/>
                         <Button text="Connect" fx:id="wsConnectBtn" styleClass="send-button" visible="false" managed="false"
                                 onAction="#handleWsConnectToggle"/>
+                        <Button text="Connect" fx:id="socketIoConnectBtn" styleClass="send-button" visible="false" managed="false"
+                                onAction="#handleSocketIoConnectToggle"/>
                         <Button styleClass="icon-button" onAction="#handleSaveRequest">
                             <tooltip>
                                 <Tooltip text="Save request"/>
@@ -398,6 +400,25 @@
                                               wrapText="true" VBox.vgrow="ALWAYS"/>
                                     <HBox alignment="CENTER_RIGHT" spacing="8">
                                         <Button text="Send" onAction="#handleWsSendMessage" styleClass="send-button"/>
+                                    </HBox>
+                                </VBox>
+                            </Tab>
+                            <Tab text="Socket.IO" fx:id="socketIoTab">
+                                <VBox spacing="8">
+                                    <padding>
+                                        <Insets top="10" right="10" bottom="10" left="10"/>
+                                    </padding>
+                                    <HBox spacing="8" alignment="CENTER_LEFT">
+                                        <Label text="Namespace"/>
+                                        <TextField fx:id="socketIoNamespaceField" promptText="/ (default)" prefWidth="160"/>
+                                        <Label fx:id="socketIoStatusLabel" text="Not connected" styleClass="ws-status-label"/>
+                                    </HBox>
+                                    <ListView fx:id="socketIoEventLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
+                                    <HBox spacing="8" alignment="CENTER_LEFT">
+                                        <TextField fx:id="socketIoEventNameField" promptText="Event name, e.g. chat message" prefWidth="200"/>
+                                        <TextField fx:id="socketIoEventDataField" promptText="Data (JSON or plain text)"
+                                                   HBox.hgrow="ALWAYS" onAction="#handleSocketIoEmit"/>
+                                        <Button text="Emit" onAction="#handleSocketIoEmit" styleClass="add-row-button"/>
                                     </HBox>
                                 </VBox>
                             </Tab>

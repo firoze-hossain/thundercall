@@ -86,6 +86,20 @@ public class MainController implements Initializable {
     @FXML
     private TabPane requestBuilderTabPane;
     @FXML
+    private Button socketIoConnectBtn;
+    @FXML
+    private Tab socketIoTab;
+    @FXML
+    private TextField socketIoNamespaceField;
+    @FXML
+    private Label socketIoStatusLabel;
+    @FXML
+    private ListView<String> socketIoEventLog;
+    @FXML
+    private TextField socketIoEventNameField;
+    @FXML
+    private TextField socketIoEventDataField;
+    @FXML
     private ComboBox<String> authTypeCombo;
     @FXML
     private VBox basicAuthBox;
@@ -195,6 +209,14 @@ public class MainController implements Initializable {
     // browser's cross-origin restrictions stopping a direct connection.
     private WebSocket activeWebSocket;
     private volatile boolean wsConnected = false;
+    // Socket.IO connects through the backend (see the class-level note
+    // near the WS section) — the desktop client just polls it
+    // periodically for new events rather than holding its own live
+    // connection, so state here is simpler: a session id and a poll loop.
+    private volatile String socketIoSessionId;
+    private volatile boolean socketIoConnected = false;
+    private int socketIoEventsSeen = 0;
+    private Thread socketIoPollThread;
     private long requestStartTime;
     private final ObservableList<String> historyData = FXCollections.observableArrayList();
     private final ObservableList<KeyValuePair> paramsData = FXCollections.observableArrayList();
@@ -905,7 +927,7 @@ public class MainController implements Initializable {
 
 
     private void setUpMethodCombo() {
-        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "WS");
+        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "WS", "SOCKETIO");
         methodCombo.getSelectionModel().select(0);
 
         // Postman-style colored methods — reuses the same .method-xxx
@@ -930,13 +952,18 @@ public class MainController implements Initializable {
 
         methodCombo.valueProperty().addListener((obs, oldMethod, newMethod) -> {
             boolean isWs = "WS".equals(newMethod);
+            boolean isSocketIo = "SOCKETIO".equals(newMethod);
             if (sendBtn != null) {
-                sendBtn.setVisible(!isWs);
-                sendBtn.setManaged(!isWs);
+                sendBtn.setVisible(!isWs && !isSocketIo);
+                sendBtn.setManaged(!isWs && !isSocketIo);
             }
             if (wsConnectBtn != null) {
                 wsConnectBtn.setVisible(isWs);
                 wsConnectBtn.setManaged(isWs);
+            }
+            if (socketIoConnectBtn != null) {
+                socketIoConnectBtn.setVisible(isSocketIo);
+                socketIoConnectBtn.setManaged(isSocketIo);
             }
             // FIX: the compose box used to be buried in the response
             // area's Messages tab, easy to miss entirely — it's now the
@@ -945,11 +972,17 @@ public class MainController implements Initializable {
             if (isWs && requestBuilderTabPane != null && wsMessageTab != null) {
                 requestBuilderTabPane.getSelectionModel().select(wsMessageTab);
             }
+            if (isSocketIo && requestBuilderTabPane != null && socketIoTab != null) {
+                requestBuilderTabPane.getSelectionModel().select(socketIoTab);
+            }
             // Switching away from WS while still connected would leave a
             // socket open with no way to see or close it from the UI —
             // disconnect cleanly instead.
             if (!isWs && wsConnected) {
                 closeActiveWebSocket();
+            }
+            if (!isSocketIo && socketIoConnected) {
+                closeActiveSocketIoSession();
             }
         });
     }
@@ -4397,6 +4430,163 @@ public class MainController implements Initializable {
         wsMessageLog.scrollTo(wsMessageLog.getItems().size() - 1);
     }
 
+    // ============================================================
+    // Socket.IO (method = "SOCKETIO")
+    // ============================================================
+
+    @FXML
+    private void handleSocketIoConnectToggle() {
+        if (socketIoConnected) {
+            closeActiveSocketIoSession();
+            return;
+        }
+        String rawUrl = urlField.getText() == null ? "" : urlField.getText().trim();
+        if (rawUrl.isEmpty()) {
+            AlertUtils.showError("Enter a Socket.IO server URL first, e.g. http://localhost:3000");
+            return;
+        }
+        Map<String, String> vars = currentEnvironmentVariables();
+        String resolvedUrl = VariableResolver.resolve(rawUrl, vars);
+        String namespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : null;
+
+        if (socketIoEventLog != null) {
+            socketIoEventLog.getItems().clear();
+        }
+        socketIoEventsSeen = 0;
+        setSocketIoStatus("Connecting...");
+        socketIoConnectBtn.setDisable(true);
+
+        new Thread(() -> {
+            try {
+                SocketIoStatusResponse status = SocketIoService.connect(resolvedUrl, namespace);
+                socketIoSessionId = status.getSessionId();
+                socketIoConnected = true;
+                Platform.runLater(() -> {
+                    socketIoConnectBtn.setText("Disconnect");
+                    socketIoConnectBtn.setDisable(false);
+                    setSocketIoStatus("Status: " + status.getStatus());
+                    applySocketIoEvents(status.getEvents());
+                    updateStatus("Socket.IO connecting...");
+                });
+                startSocketIoPolling();
+            } catch (IOException e) {
+                Platform.runLater(() -> {
+                    socketIoConnectBtn.setDisable(false);
+                    setSocketIoStatus("Couldn't connect: " + SocketIoService.friendlyMessage(e));
+                    updateStatus("Socket.IO connection failed");
+                });
+            }
+        }).start();
+    }
+
+    /** The desktop client doesn't hold its own live Socket.IO connection
+     * — the backend does (see SocketIoServiceImpl) — so this just asks
+     * for what's new every half second while connected. Simple and
+     * reliable over adding a second streaming layer on top of the
+     * connection the backend already maintains. */
+    private void startSocketIoPolling() {
+        socketIoPollThread = new Thread(() -> {
+            while (socketIoConnected && socketIoSessionId != null) {
+                try {
+                    Thread.sleep(500);
+                    if (!socketIoConnected || socketIoSessionId == null) {
+                        break;
+                    }
+                    String sid = socketIoSessionId;
+                    SocketIoStatusResponse status = SocketIoService.poll(sid, socketIoEventsSeen);
+                    Platform.runLater(() -> {
+                        setSocketIoStatus("Status: " + status.getStatus());
+                        applySocketIoEvents(status.getEvents());
+                    });
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (IOException e) {
+                    // A single transient poll failure isn't worth giving up
+                    // the whole connection over — show it and keep trying.
+                    Platform.runLater(() -> setSocketIoStatus("Poll error: " + SocketIoService.friendlyMessage(e)));
+                }
+            }
+        });
+        socketIoPollThread.setDaemon(true);
+        socketIoPollThread.start();
+    }
+
+    private void applySocketIoEvents(List<SocketIoEventResponse> events) {
+        if (events == null || events.isEmpty() || socketIoEventLog == null) {
+            return;
+        }
+        for (SocketIoEventResponse event : events) {
+            String prefix;
+            switch (event.getDirection()) {
+                case "in":
+                    prefix = "↓ RECV ";
+                    break;
+                case "out":
+                    prefix = "↑ SENT ";
+                    break;
+                default:
+                    prefix = "• ";
+                    break;
+            }
+            socketIoEventLog.getItems().add(prefix + event.getEventName() + "  " + event.getData());
+        }
+        socketIoEventsSeen += events.size();
+        socketIoEventLog.scrollTo(socketIoEventLog.getItems().size() - 1);
+    }
+
+    @FXML
+    private void handleSocketIoEmit() {
+        if (!socketIoConnected || socketIoSessionId == null) {
+            AlertUtils.showError("Not connected — click Connect first.");
+            return;
+        }
+        String eventName = socketIoEventNameField.getText() == null ? "" : socketIoEventNameField.getText().trim();
+        if (eventName.isEmpty()) {
+            AlertUtils.showError("Enter an event name first.");
+            return;
+        }
+        Map<String, String> vars = currentEnvironmentVariables();
+        String data = VariableResolver.resolve(
+                socketIoEventDataField.getText() == null ? "" : socketIoEventDataField.getText(), vars);
+        String sid = socketIoSessionId;
+        new Thread(() -> {
+            try {
+                SocketIoService.emit(sid, eventName, data);
+                Platform.runLater(() -> socketIoEventDataField.clear());
+            } catch (IOException e) {
+                Platform.runLater(() -> AlertUtils.showError(
+                        "Couldn't emit that event: " + SocketIoService.friendlyMessage(e)));
+            }
+        }).start();
+    }
+
+    private void closeActiveSocketIoSession() {
+        socketIoConnected = false;
+        String sid = socketIoSessionId;
+        socketIoSessionId = null;
+        if (sid != null) {
+            new Thread(() -> {
+                try {
+                    SocketIoService.disconnect(sid);
+                } catch (IOException ignored) {
+                    // best-effort — the backend session just sits idle otherwise
+                }
+            }).start();
+        }
+        if (socketIoConnectBtn != null) {
+            socketIoConnectBtn.setText("Connect");
+            socketIoConnectBtn.setDisable(false);
+        }
+        setSocketIoStatus("Not connected");
+    }
+
+    private void setSocketIoStatus(String text) {
+        if (socketIoStatusLabel != null) {
+            socketIoStatusLabel.setText(text);
+        }
+    }
+
     private Map<String, String> parseHeaders(String headersString) {
         Map<String, String> headersMap = new HashMap<>();
         if (headersString != null && !headersString.trim().isEmpty()) {
@@ -5982,7 +6172,7 @@ public class MainController implements Initializable {
         // FIX: every new request used to be hardcoded to GET regardless of
         // what the user actually wanted — this is where that got decided.
         ComboBox<String> methodBox = new ComboBox<>();
-        methodBox.getItems().addAll("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "WS");
+        methodBox.getItems().addAll("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "WS", "SOCKETIO");
         methodBox.getSelectionModel().select("GET");
         methodBox.setPrefWidth(110);
 
