@@ -28,6 +28,12 @@ public class WebSecurityConfig {
         http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/deeplink/**").permitAll()
+                        // The mock server's actual serving endpoint is meant to be hit
+                        // by anything — curl, another app, a teammate without a
+                        // Thundercall account — not just authenticated users. The
+                        // management endpoints (/mock-servers/**, creating/editing
+                        // routes) are NOT covered by this and stay authenticated.
+                        .requestMatchers("/mock/**").permitAll()
                         .anyRequest().authenticated()
 
                 )

@@ -271,6 +271,12 @@ public class MainController implements Initializable {
     @FXML
     private ListView<TeamResponse> teamsList;
     @FXML
+    private VBox mockServersPane;
+    @FXML
+    private ListView<MockServerResponse> mockServersList;
+    @FXML
+    private ToggleButton railMockServersBtn;
+    @FXML
     private ToggleButton railCollectionsBtn;
     @FXML
     private ToggleButton railEnvironmentsBtn;
@@ -316,6 +322,7 @@ public class MainController implements Initializable {
         setupResponseCodeArea();
         setupEnvironmentsList();
         setupTeamsList();
+        setupMockServersList();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -355,6 +362,7 @@ public class MainController implements Initializable {
             loadEnvironments();
             loadHistory();
             loadTeams();
+            loadMockServers();
 
             logger.info("MainController initialized successfully");
         } catch (Exception e) {
@@ -2041,6 +2049,320 @@ public class MainController implements Initializable {
         dialog.showAndWait();
     }
 
+    // ============================================================
+    // Mock Servers
+    // ============================================================
+
+    private void setupMockServersList() {
+        if (mockServersList == null) {
+            return;
+        }
+        mockServersList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(MockServerResponse server, boolean empty) {
+                super.updateItem(server, empty);
+                if (empty || server == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                Label nameLabel = new Label(server.getName() + (server.isEnabled() ? "" : "  (disabled)"));
+                nameLabel.getStyleClass().add("variable-suggestion-name");
+                Label metaLabel = new Label(server.getRouteCount() + " route" + (server.getRouteCount() == 1 ? "" : "s")
+                        + " · " + server.getBaseUrl());
+                metaLabel.getStyleClass().add("variable-suggestion-value");
+                setGraphic(new VBox(1, nameLabel, metaLabel));
+                setText(null);
+            }
+        });
+        mockServersList.setOnMouseClicked(e -> {
+            MockServerResponse selected = mockServersList.getSelectionModel().getSelectedItem();
+            if (e.getClickCount() == 2 && selected != null) {
+                openMockServerDetailDialog(selected);
+            }
+        });
+    }
+
+    private void loadMockServers() {
+        if (mockServersList == null) {
+            return;
+        }
+        new Thread(() -> {
+            Optional<List<MockServerResponse>> servers = MockServerService.getMyMockServers();
+            Platform.runLater(() -> servers.ifPresent(list -> mockServersList.getItems().setAll(list)));
+        }).start();
+    }
+
+    @FXML
+    private void handleCreateMockServer() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Create Mock Server");
+        dialog.setHeaderText("Give it a name — you'll add routes (method + path + canned response) once it's created.");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("Mock server name");
+        TextArea descriptionField = new TextArea();
+        descriptionField.setPromptText("What's this mocking? (optional)");
+        descriptionField.setPrefRowCount(3);
+        descriptionField.setWrapText(true);
+
+        VBox content = new VBox(10, new Label("Name"), nameField, new Label("Description"), descriptionField);
+        content.setPadding(new Insets(10));
+        content.setPrefWidth(360);
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(button -> {
+            if (button != ButtonType.OK) {
+                return;
+            }
+            String name = nameField.getText() == null ? "" : nameField.getText().trim();
+            if (name.isEmpty()) {
+                AlertUtils.showError("Give the mock server a name first.");
+                return;
+            }
+            new Thread(() -> {
+                Optional<MockServerResponse> created = MockServerService.createMockServer(name, descriptionField.getText());
+                Platform.runLater(() -> {
+                    if (created.isPresent()) {
+                        loadMockServers();
+                        updateStatus("Mock server created: " + name);
+                        openMockServerDetailDialog(created.get());
+                    }
+                });
+            }).start();
+        });
+    }
+
+    /** The main mock-server-management surface: base URL (copyable),
+     * enable/disable toggle, routes table with add/edit/delete, and
+     * deleting the server itself. */
+    private void openMockServerDetailDialog(MockServerResponse server) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle(server.getName());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        Label statusLabel = new Label();
+        statusLabel.setWrapText(true);
+        statusLabel.setMaxWidth(560);
+
+        TextField baseUrlField = new TextField(server.getBaseUrl());
+        baseUrlField.setEditable(false);
+        Button copyUrlBtn = new Button("Copy");
+        HBox urlRow = new HBox(8, baseUrlField, copyUrlBtn);
+        HBox.setHgrow(baseUrlField, Priority.ALWAYS);
+        urlRow.setAlignment(Pos.CENTER_LEFT);
+        copyUrlBtn.setOnAction(e -> {
+            ClipboardContent clipContent = new ClipboardContent();
+            clipContent.putString(server.getBaseUrl());
+            Clipboard.getSystemClipboard().setContent(clipContent);
+            statusLabel.setText("Base URL copied to clipboard.");
+        });
+
+        CheckBox enabledCheck = new CheckBox("Enabled — routes only respond while this is checked");
+        enabledCheck.setSelected(server.isEnabled());
+        enabledCheck.selectedProperty().addListener((obs, was, isNow) -> new Thread(() -> {
+            boolean ok = MockServerService.setEnabled(server.getId(), isNow);
+            Platform.runLater(() -> {
+                statusLabel.setText(ok ? (isNow ? "Enabled." : "Disabled — routes will 404 until re-enabled.")
+                        : "Couldn't update.");
+                if (ok) {
+                    loadMockServers();
+                }
+            });
+        }).start());
+
+        TableView<MockRouteResponse> routesTable = new TableView<>();
+        TableColumn<MockRouteResponse, String> methodCol = new TableColumn<>("Method");
+        methodCol.setCellValueFactory(new PropertyValueFactory<>("method"));
+        TableColumn<MockRouteResponse, String> pathCol = new TableColumn<>("Path");
+        pathCol.setCellValueFactory(new PropertyValueFactory<>("path"));
+        TableColumn<MockRouteResponse, Number> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(cellData ->
+                new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getResponseStatus()));
+        routesTable.getColumns().addAll(methodCol, pathCol, statusCol);
+        routesTable.setPrefSize(560, 200);
+        routesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+
+        Runnable[] refreshRoutes = new Runnable[1];
+        refreshRoutes[0] = () -> new Thread(() -> {
+            Optional<List<MockRouteResponse>> routes = MockServerService.getRoutes(server.getId());
+            Platform.runLater(() -> routes.ifPresent(list -> routesTable.getItems().setAll(list)));
+        }).start();
+        refreshRoutes[0].run();
+
+        Button addRouteBtn = new Button("Add Route");
+        Button editRouteBtn = new Button("Edit Route");
+        Button deleteRouteBtn = new Button("Delete Route");
+        HBox routeActions = new HBox(8, addRouteBtn, editRouteBtn, deleteRouteBtn);
+        routeActions.setAlignment(Pos.CENTER_LEFT);
+
+        addRouteBtn.setOnAction(e -> openRouteEditDialog(server.getId(), null, refreshRoutes[0], statusLabel));
+        editRouteBtn.setOnAction(e -> {
+            MockRouteResponse selected = routesTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                statusLabel.setText("Select a route to edit first.");
+                return;
+            }
+            openRouteEditDialog(server.getId(), selected, refreshRoutes[0], statusLabel);
+        });
+        deleteRouteBtn.setOnAction(e -> {
+            MockRouteResponse selected = routesTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                statusLabel.setText("Select a route to delete first.");
+                return;
+            }
+            if (!AlertUtils.showConfirmation("Delete Route",
+                    "Delete " + selected.getMethod() + " " + selected.getPath() + "?")) {
+                return;
+            }
+            new Thread(() -> {
+                boolean ok = MockServerService.deleteRoute(server.getId(), selected.getId());
+                Platform.runLater(() -> {
+                    statusLabel.setText(ok ? "Route deleted." : "Couldn't delete that route.");
+                    if (ok) {
+                        refreshRoutes[0].run();
+                    }
+                });
+            }).start();
+        });
+
+        Button deleteServerBtn = new Button("Delete Mock Server");
+        deleteServerBtn.getStyleClass().add("danger-menu-item");
+        deleteServerBtn.setOnAction(e -> {
+            if (!AlertUtils.showConfirmation("Delete Mock Server",
+                    "Delete \"" + server.getName() + "\" and all its routes? This can't be undone.")) {
+                return;
+            }
+            new Thread(() -> {
+                boolean ok = MockServerService.deleteMockServer(server.getId());
+                Platform.runLater(() -> {
+                    if (ok) {
+                        dialog.close();
+                        loadMockServers();
+                        updateStatus("Mock server deleted: " + server.getName());
+                    } else {
+                        statusLabel.setText("Couldn't delete this mock server.");
+                    }
+                });
+            }).start();
+        });
+
+        VBox content = new VBox(10,
+                new Label("Base URL"), urlRow,
+                enabledCheck,
+                new Separator(),
+                new Label("Routes"), routesTable, routeActions,
+                new Separator(),
+                deleteServerBtn,
+                statusLabel);
+        content.setPadding(new Insets(10));
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefViewportHeight(520);
+        dialog.getDialogPane().setContent(scrollPane);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+        dialog.showAndWait();
+    }
+
+    /** Add/edit a single route — method, path, status, response body,
+     * headers (as JSON), and an optional artificial delay. */
+    private void openRouteEditDialog(Long mockServerId, MockRouteResponse existing, Runnable onSaved, Label parentStatusLabel) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle(existing == null ? "Add Route" : "Edit Route");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
+
+        ComboBox<String> methodCombo = new ComboBox<>();
+        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS");
+        methodCombo.setValue(existing != null ? existing.getMethod() : "GET");
+
+        TextField pathField = new TextField(existing != null ? existing.getPath() : "");
+        pathField.setPromptText("/users/1");
+
+        TextField statusField = new TextField(existing != null ? String.valueOf(existing.getResponseStatus()) : "200");
+
+        TextArea bodyArea = new TextArea(existing != null ? existing.getResponseBody() : "");
+        bodyArea.setPromptText("Response body — e.g. {\"id\": 1, \"name\": \"Jane\"}");
+        bodyArea.setPrefRowCount(6);
+        bodyArea.setWrapText(true);
+
+        TextArea headersArea = new TextArea(existing != null ? existing.getResponseHeaders() : "");
+        headersArea.setPromptText("Response headers as JSON (optional) — e.g. {\"Content-Type\": \"application/json\"}");
+        headersArea.setPrefRowCount(2);
+        headersArea.setWrapText(true);
+
+        TextField delayField = new TextField(existing != null ? String.valueOf(existing.getDelayMs()) : "0");
+
+        VBox content = new VBox(8,
+                new Label("Method"), methodCombo,
+                new Label("Path"), pathField,
+                new Label("Status Code"), statusField,
+                new Label("Response Body"), bodyArea,
+                new Label("Response Headers (JSON, optional)"), headersArea,
+                new Label("Artificial Delay (ms, optional)"), delayField);
+        content.setPadding(new Insets(10));
+        content.setPrefWidth(420);
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefViewportHeight(480);
+        dialog.getDialogPane().setContent(scrollPane);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(button -> {
+            if (button != ButtonType.OK) {
+                return;
+            }
+            String path = pathField.getText() == null ? "" : pathField.getText().trim();
+            if (path.isEmpty()) {
+                AlertUtils.showError("Enter a path first, e.g. /users/1");
+                return;
+            }
+            int status;
+            try {
+                status = Integer.parseInt(statusField.getText().trim());
+            } catch (NumberFormatException ex) {
+                AlertUtils.showError("Status code must be a number, e.g. 200.");
+                return;
+            }
+            int delay;
+            try {
+                delay = delayField.getText() == null || delayField.getText().isBlank()
+                        ? 0 : Integer.parseInt(delayField.getText().trim());
+            } catch (NumberFormatException ex) {
+                AlertUtils.showError("Delay must be a number of milliseconds, e.g. 0 or 500.");
+                return;
+            }
+            String headersText = headersArea.getText();
+            if (headersText != null && !headersText.isBlank()) {
+                try {
+                    new JSONObject(headersText);
+                } catch (Exception ex) {
+                    AlertUtils.showError("Response Headers must be valid JSON, e.g. {\"Content-Type\": \"application/json\"}");
+                    return;
+                }
+            }
+            MockRouteRequest request = new MockRouteRequest(
+                    methodCombo.getValue(), path, status, bodyArea.getText(), headersText, delay);
+            new Thread(() -> {
+                try {
+                    if (existing == null) {
+                        MockServerService.addRoute(mockServerId, request);
+                    } else {
+                        MockServerService.updateRoute(mockServerId, existing.getId(), request);
+                    }
+                    Platform.runLater(() -> {
+                        parentStatusLabel.setText(existing == null ? "Route added." : "Route updated.");
+                        onSaved.run();
+                    });
+                } catch (IOException ex) {
+                    Platform.runLater(() -> AlertUtils.showError(
+                            "Couldn't save that route: " + MockServerService.friendlyMessage(ex)));
+                }
+            }).start();
+        });
+    }
+
     /** Lets the project owner configure the app's own outgoing SMTP
      * server — used for email verification codes and team invitations.
      * The backend rejects this for non-admins, so nothing bad happens if
@@ -2220,6 +2542,12 @@ public class MainController implements Initializable {
         loadTeams();
     }
 
+    @FXML
+    private void handleShowMockServers() {
+        showSidebarPane(mockServersPane);
+        loadMockServers();
+    }
+
     private void showSidebarPane(VBox pane) {
         if (collectionsPane == null || environmentsPane == null || historyPane == null || pane == null) {
             return; // old FXML without the rail
@@ -2229,6 +2557,9 @@ public class MainController implements Initializable {
         historyPane.setVisible(pane == historyPane);
         if (teamsPane != null) {
             teamsPane.setVisible(pane == teamsPane);
+        }
+        if (mockServersPane != null) {
+            mockServersPane.setVisible(pane == mockServersPane);
         }
     }
 
