@@ -477,6 +477,8 @@
                                                       styleClass="body-type-btn"/>
                                         <ToggleButton fx:id="urlEncodedBodyTypeButton" text="x-www-form-urlencoded"
                                                       styleClass="body-type-btn"/>
+                                        <ToggleButton fx:id="graphqlBodyTypeButton" text="GraphQL"
+                                                      styleClass="body-type-btn"/>
                                     </HBox>
                                     <StackPane VBox.vgrow="ALWAYS">
                                         <Label fx:id="bodyPromptLabel" styleClass="body-prompt-label"
@@ -484,6 +486,19 @@
                                         <CodeArea fx:id="bodyTextArea" styleClass="body-textarea"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false"/>
                                         <TableView fx:id="urlEncodedTable" styleClass="key-value-table" visible="false"/>
+                                        <SplitPane fx:id="graphqlPane" orientation="VERTICAL" dividerPositions="0.65"
+                                                   visible="false" styleClass="graphql-split">
+                                            <VBox spacing="4">
+                                                <Label text="Query" styleClass="graphql-section-label"/>
+                                                <CodeArea fx:id="graphqlQueryArea" styleClass="body-textarea"
+                                                          VBox.vgrow="ALWAYS"/>
+                                            </VBox>
+                                            <VBox spacing="4">
+                                                <Label text="Query Variables (JSON)" styleClass="graphql-section-label"/>
+                                                <CodeArea fx:id="graphqlVariablesArea" styleClass="body-textarea"
+                                                          VBox.vgrow="ALWAYS"/>
+                                            </VBox>
+                                        </SplitPane>
                                     </StackPane>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddFormDataRow"

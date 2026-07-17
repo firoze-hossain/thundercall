@@ -95,6 +95,14 @@
     -fx-font-size: 11px;
 }
 
+.graphql-section-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-weight: bold;
+    -fx-font-size: 11px;
+    -fx-padding: 4 0 0 2;
+}
+.graphql-split { -fx-background-color: -bg-base; -fx-padding: 0; }
+
 .icon-button {
     -fx-background-color: transparent;
     -fx-border-color: transparent;

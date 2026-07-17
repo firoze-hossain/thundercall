@@ -225,6 +225,14 @@ public class MainController implements Initializable {
     private ToggleButton formDataBodyTypeButton;
     @FXML
     private ToggleButton urlEncodedBodyTypeButton;
+    @FXML
+    private ToggleButton graphqlBodyTypeButton;
+    @FXML
+    private SplitPane graphqlPane;
+    @FXML
+    private CodeArea graphqlQueryArea;
+    @FXML
+    private CodeArea graphqlVariablesArea;
     // Postman-style sidebar rail (may be null with the old FXML — always null-checked)
     @FXML
     private VBox collectionsPane;
@@ -278,6 +286,7 @@ public class MainController implements Initializable {
         setupRequestTabs();
         setupUrlField();
         setupBodyCodeArea();
+        setupGraphqlCodeAreas();
         setupResponseCodeArea();
         setupEnvironmentsList();
         setupTeamsList();
@@ -292,6 +301,7 @@ public class MainController implements Initializable {
         rawBodyTypeButton.setToggleGroup(bodyTypeGroup);
         formDataBodyTypeButton.setToggleGroup(bodyTypeGroup);
         urlEncodedBodyTypeButton.setToggleGroup(bodyTypeGroup);
+        graphqlBodyTypeButton.setToggleGroup(bodyTypeGroup);
 
         // Select the "None" button by default
         noneBodyTypeButton.setSelected(true);
@@ -401,6 +411,7 @@ public class MainController implements Initializable {
                         formDataTable.setVisible(true);
                         urlEncodedTable.setVisible(false);
                         bodyTextArea.setVisible(false);
+                        graphqlPane.setVisible(false);
                         break;
                     case "x-www-form-urlencoded":
                         // FIX: this used to fall into the same "default"
@@ -411,11 +422,24 @@ public class MainController implements Initializable {
                         formDataTable.setVisible(false);
                         urlEncodedTable.setVisible(true);
                         bodyTextArea.setVisible(false);
+                        graphqlPane.setVisible(false);
+                        break;
+                    case "GraphQL":
+                        formDataTable.setVisible(false);
+                        urlEncodedTable.setVisible(false);
+                        bodyTextArea.setVisible(false);
+                        graphqlPane.setVisible(true);
+                        // GraphQL always goes over POST — matches Postman,
+                        // which doesn't even offer a method choice for it.
+                        if (methodCombo != null) {
+                            methodCombo.setValue("POST");
+                        }
                         break;
                     default:
                         formDataTable.setVisible(false);
                         urlEncodedTable.setVisible(false);
                         bodyTextArea.setVisible(true);
+                        graphqlPane.setVisible(false);
                         break;
                 }
             }
@@ -805,6 +829,22 @@ public class MainController implements Initializable {
                     javafx.beans.binding.Bindings.createBooleanBinding(
                             () -> bodyTextArea.getText().isEmpty(), bodyTextArea.textProperty()));
         }
+    }
+
+    /** GraphQL's query is its own syntax (not JSON), so it doesn't get the
+     * JSON highlighter — but {{variable}} autocomplete still applies since
+     * environment variables are just as usable in a GraphQL query/header
+     * as anywhere else. Variables genuinely IS JSON, so it gets full
+     * highlighting like the Raw body editor does. */
+    private void setupGraphqlCodeAreas() {
+        if (graphqlQueryArea == null || graphqlVariablesArea == null) {
+            return;
+        }
+        VariableAutocomplete.attach(graphqlQueryArea, this::currentEnvironmentVariables);
+        graphqlVariablesArea.plainTextChanges().subscribe(change ->
+                graphqlVariablesArea.setStyleSpans(0,
+                        JsonSyntaxHighlighter.computeHighlighting(graphqlVariablesArea.getText())));
+        VariableAutocomplete.attach(graphqlVariablesArea, this::currentEnvironmentVariables);
     }
 
     /** Response viewer: read-only JSON + {{variable}} coloring, plus a
@@ -4092,6 +4132,9 @@ public class MainController implements Initializable {
                     case "x-www-form-urlencoded":
                         headers.put("Content-Type", "application/x-www-form-urlencoded");
                         break;
+                    case "GraphQL":
+                        headers.put("Content-Type", "application/json");
+                        break;
                     case "Raw":
                         if (bodyText.startsWith("{") || bodyText.startsWith("[")) {
                             headers.put("Content-Type", "application/json");
@@ -4195,6 +4238,25 @@ public class MainController implements Initializable {
             case "x-www-form-urlencoded":
                 String urlEncoded = convertFormDataToUrlEncoded(urlEncodedData);
                 return urlEncoded;
+            case "GraphQL":
+                // Matches how every GraphQL server expects it over HTTP:
+                // a single JSON object with "query" and "variables".
+                String query = graphqlQueryArea.getText();
+                String variablesText = graphqlVariablesArea.getText() == null
+                        ? "" : graphqlVariablesArea.getText().trim();
+                JSONObject graphqlBody = new JSONObject();
+                graphqlBody.put("query", query == null ? "" : query);
+                if (variablesText.isEmpty()) {
+                    graphqlBody.put("variables", new JSONObject());
+                } else {
+                    try {
+                        graphqlBody.put("variables", new JSONObject(variablesText));
+                    } catch (Exception e) {
+                        AlertUtils.showError("Query Variables must be valid JSON");
+                        return "";
+                    }
+                }
+                return graphqlBody.toString();
             case "Raw":
                 String bodyText = bodyTextArea.getText().trim();
                 // Validate JSON if it looks like JSON
