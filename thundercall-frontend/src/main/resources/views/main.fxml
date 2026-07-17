@@ -185,6 +185,16 @@
                         </graphic>
                         <contentDisplay>TOP</contentDisplay>
                     </ToggleButton>
+                    <ToggleButton fx:id="railMonitorsBtn" text="Monitors" styleClass="rail-btn"
+                                  toggleGroup="$sidebarRailGroup"
+                                  onAction="#handleShowMonitors" maxWidth="10000">
+                        <graphic>
+                            <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
+                                <Image url="@../images/send-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <contentDisplay>TOP</contentDisplay>
+                    </ToggleButton>
                 </VBox>
                     <StackPane fx:id="sidebarContentPane" prefWidth="264" minWidth="140" maxWidth="560" styleClass="sidebar">
                     <!-- Collections pane (default) -->
@@ -338,6 +348,30 @@
                         <Label styleClass="sidebar-hint" wrapText="true"
                                text="Double-click a mock server to manage its routes."/>
                         <ListView fx:id="mockServersList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                    </VBox>
+
+                    <!-- Monitors pane -->
+                    <VBox fx:id="monitorsPane" spacing="6" visible="false">
+                        <padding>
+                            <Insets top="8" right="8" bottom="8" left="8"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
+                            <Label text="Monitors" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleCreateMonitor">
+                                <tooltip>
+                                    <Tooltip text="Create a monitor"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/add-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                        <Label styleClass="sidebar-hint" wrapText="true"
+                               text="Double-click a monitor to see run history or run it now."/>
+                        <ListView fx:id="monitorsList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
                 </StackPane>
                     <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
