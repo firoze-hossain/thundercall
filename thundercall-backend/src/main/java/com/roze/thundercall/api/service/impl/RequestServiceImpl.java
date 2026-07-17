@@ -67,6 +67,20 @@ public class RequestServiceImpl implements RequestService {
     @Transactional
     public ApiResponse executeRequest(ApiRequest apiRequest, User user) {
         Instant startTime = Instant.now();
+        // WS is a marker for "this is a WebSocket request", not a real
+        // HTTP verb — the desktop client connects directly for those
+        // rather than sending them here (see the class-level note on
+        // HttpMethod.WS). If one somehow reaches this method anyway,
+        // fail with a clear message instead of an opaque
+        // "No enum constant" crash from Spring's own HttpMethod.
+        if (apiRequest.method() == HttpMethod.WS) {
+            return ApiResponse.builder()
+                    .statusCode(0)
+                    .response("WebSocket requests connect directly from the client and can't be executed here.")
+                    .duration(0)
+                    .success(false)
+                    .build();
+        }
         try {
             HttpHeaders headers = prepareHeaders(apiRequest.headers(), apiRequest.body());
             // FIX: form-data used to be flattened into a JSON string on the

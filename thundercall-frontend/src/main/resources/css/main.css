@@ -148,6 +148,15 @@
     -fx-font-size: 12px;
 }
 .list-cell:hover { -fx-background-color: -bg-hover; -fx-text-fill: -text-primary; }
+.ws-message-log .list-cell {
+    -fx-font-family: "Consolas", "Menlo", "Monaco", monospace;
+    -fx-font-size: 12px;
+}
+.ws-status-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 2 0 2 0;
+}
 .list-cell:selected { -fx-background-color: -accent-soft; -fx-text-fill: -text-primary; }
 .list-cell:empty { -fx-background-color: transparent; }
 
@@ -536,6 +545,7 @@
 .method-delete  { -fx-text-fill: #e5726a; -fx-font-weight: bold; }
 .method-head    { -fx-text-fill: #7ec98f; -fx-font-weight: bold; }
 .method-options { -fx-text-fill: #9aa0a6; -fx-font-weight: bold; }
+.method-ws      { -fx-text-fill: #4dd0e1; -fx-font-weight: bold; }
 
 /* ============================================================
    Auth pages (login.fxml / register.fxml)

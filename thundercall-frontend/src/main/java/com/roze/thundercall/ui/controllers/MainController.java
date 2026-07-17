@@ -50,6 +50,9 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.logging.Logger;
@@ -66,6 +69,22 @@ public class MainController implements Initializable {
     private Label urlPromptLabel;
     @FXML
     private ComboBox<String> methodCombo;
+    @FXML
+    private Button sendBtn;
+    @FXML
+    private Button wsConnectBtn;
+    @FXML
+    private Tab wsMessagesTab;
+    @FXML
+    private Label wsStatusLabel;
+    @FXML
+    private ListView<String> wsMessageLog;
+    @FXML
+    private TextArea wsMessageComposeArea;
+    @FXML
+    private Tab wsMessageTab;
+    @FXML
+    private TabPane requestBuilderTabPane;
     @FXML
     private ComboBox<String> authTypeCombo;
     @FXML
@@ -169,6 +188,13 @@ public class MainController implements Initializable {
 
     private static final Logger logger = Logger.getLogger(MainController.class.getName());
     private boolean isRequestInProgress = false;
+    // Connects DIRECTLY from this desktop client to the target ws://
+    // server — unlike HTTP requests, which proxy through the backend,
+    // a persistent bidirectional connection doesn't fit that one-shot
+    // request/response model, and a desktop app has none of a
+    // browser's cross-origin restrictions stopping a direct connection.
+    private WebSocket activeWebSocket;
+    private volatile boolean wsConnected = false;
     private long requestStartTime;
     private final ObservableList<String> historyData = FXCollections.observableArrayList();
     private final ObservableList<KeyValuePair> paramsData = FXCollections.observableArrayList();
@@ -871,7 +897,7 @@ public class MainController implements Initializable {
 
 
     private void setUpMethodCombo() {
-        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS");
+        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "WS");
         methodCombo.getSelectionModel().select(0);
 
         // Postman-style colored methods — reuses the same .method-xxx
@@ -893,6 +919,31 @@ public class MainController implements Initializable {
                 };
         methodCombo.setCellFactory(methodCellFactory);
         methodCombo.setButtonCell(methodCellFactory.call(null));
+
+        methodCombo.valueProperty().addListener((obs, oldMethod, newMethod) -> {
+            boolean isWs = "WS".equals(newMethod);
+            if (sendBtn != null) {
+                sendBtn.setVisible(!isWs);
+                sendBtn.setManaged(!isWs);
+            }
+            if (wsConnectBtn != null) {
+                wsConnectBtn.setVisible(isWs);
+                wsConnectBtn.setManaged(isWs);
+            }
+            // FIX: the compose box used to be buried in the response
+            // area's Messages tab, easy to miss entirely — it's now the
+            // first tab at the top (matching Postman's own layout), and
+            // switching to WS jumps straight to it so there's no hunting.
+            if (isWs && requestBuilderTabPane != null && wsMessageTab != null) {
+                requestBuilderTabPane.getSelectionModel().select(wsMessageTab);
+            }
+            // Switching away from WS while still connected would leave a
+            // socket open with no way to see or close it from the UI —
+            // disconnect cleanly instead.
+            if (!isWs && wsConnected) {
+                closeActiveWebSocket();
+            }
+        });
     }
 
     private void loadUserData() {
@@ -3730,7 +3781,7 @@ public class MainController implements Initializable {
         updateStatus("Sending request...");
 
         // Disable send button during request
-        Node sendButton = urlField.getScene().lookup(".send-button");
+        Node sendButton = sendBtn;
         if (sendButton != null) {
             sendButton.setDisable(true);
         }
@@ -3812,7 +3863,7 @@ public class MainController implements Initializable {
             isRequestInProgress = false;
 
             // Re-enable send button
-            Node sendButton1 = urlField.getScene().lookup(".send-button");
+            Node sendButton1 = sendBtn;
             if (sendButton1 != null) {
                 sendButton1.setDisable(false);
             }
@@ -3859,7 +3910,7 @@ public class MainController implements Initializable {
             isRequestInProgress = false;
 
             // Re-enable send button
-            Node sendButton2 = urlField.getScene().lookup(".send-button");
+            Node sendButton2 = sendBtn;
             if (sendButton2 != null) {
                 sendButton2.setDisable(false);
             }
@@ -3869,6 +3920,150 @@ public class MainController implements Initializable {
         });
 
         new Thread(requestTask).start();
+    }
+
+    // ============================================================
+    // WebSocket (method = "WS")
+    // ============================================================
+
+    @FXML
+    private void handleWsConnectToggle() {
+        if (wsConnected) {
+            closeActiveWebSocket();
+            return;
+        }
+        String rawUrl = urlField.getText() == null ? "" : urlField.getText().trim();
+        if (rawUrl.isEmpty()) {
+            AlertUtils.showError("Enter a ws:// or wss:// URL first.");
+            return;
+        }
+        Map<String, String> vars = currentEnvironmentVariables();
+        String resolvedUrl = VariableResolver.resolve(rawUrl, vars);
+        if (!resolvedUrl.startsWith("ws://") && !resolvedUrl.startsWith("wss://")) {
+            AlertUtils.showError("A WebSocket URL must start with ws:// or wss:// — got: "
+                    + (resolvedUrl.length() > 60 ? resolvedUrl.substring(0, 57) + "..." : resolvedUrl));
+            return;
+        }
+        if (wsMessageLog != null) {
+            wsMessageLog.getItems().clear();
+        }
+        setWsStatus("Connecting...");
+        wsConnectBtn.setDisable(true);
+
+        HttpClient client = HttpClient.newHttpClient();
+        client.newWebSocketBuilder()
+                .buildAsync(URI.create(resolvedUrl), new WebSocket.Listener() {
+                    private final StringBuilder buffer = new StringBuilder();
+
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        activeWebSocket = webSocket;
+                        wsConnected = true;
+                        Platform.runLater(() -> {
+                            wsConnectBtn.setText("Disconnect");
+                            wsConnectBtn.setDisable(false);
+                            setWsStatus("Connected to " + resolvedUrl);
+                            logWsMessage("— connected —", false);
+                            updateStatus("WebSocket connected");
+                        });
+                        WebSocket.Listener.super.onOpen(webSocket);
+                    }
+
+                    @Override
+                    public java.util.concurrent.CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        buffer.append(data);
+                        if (last) {
+                            String message = buffer.toString();
+                            buffer.setLength(0);
+                            Platform.runLater(() -> logWsMessage(message, false));
+                        }
+                        return WebSocket.Listener.super.onText(webSocket, data, last);
+                    }
+
+                    @Override
+                    public void onError(WebSocket webSocket, Throwable error) {
+                        wsConnected = false;
+                        activeWebSocket = null;
+                        Platform.runLater(() -> {
+                            wsConnectBtn.setText("Connect");
+                            wsConnectBtn.setDisable(false);
+                            setWsStatus("Connection error: " + error.getMessage());
+                            logWsMessage("— error: " + error.getMessage() + " —", false);
+                            updateStatus("WebSocket error");
+                        });
+                        WebSocket.Listener.super.onError(webSocket, error);
+                    }
+
+                    @Override
+                    public java.util.concurrent.CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        wsConnected = false;
+                        activeWebSocket = null;
+                        Platform.runLater(() -> {
+                            wsConnectBtn.setText("Connect");
+                            wsConnectBtn.setDisable(false);
+                            setWsStatus("Disconnected (" + statusCode
+                                    + (reason != null && !reason.isBlank() ? ": " + reason : "") + ")");
+                            logWsMessage("— disconnected —", false);
+                            updateStatus("WebSocket disconnected");
+                        });
+                        return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
+                    }
+                })
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> {
+                        wsConnectBtn.setText("Connect");
+                        wsConnectBtn.setDisable(false);
+                        setWsStatus("Couldn't connect: " + ex.getMessage());
+                        updateStatus("WebSocket connection failed");
+                    });
+                    return null;
+                });
+    }
+
+    @FXML
+    private void handleWsSendMessage() {
+        if (!wsConnected || activeWebSocket == null) {
+            AlertUtils.showError("Not connected — click Connect first.");
+            return;
+        }
+        String text = wsMessageComposeArea.getText();
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        Map<String, String> vars = currentEnvironmentVariables();
+        String resolved = VariableResolver.resolve(text, vars);
+        activeWebSocket.sendText(resolved, true);
+        logWsMessage(resolved, true);
+        wsMessageComposeArea.clear();
+    }
+
+    private void closeActiveWebSocket() {
+        if (activeWebSocket != null) {
+            activeWebSocket.sendClose(WebSocket.NORMAL_CLOSURE, "Client closed");
+        }
+        wsConnected = false;
+        activeWebSocket = null;
+        if (wsConnectBtn != null) {
+            wsConnectBtn.setText("Connect");
+            wsConnectBtn.setDisable(false);
+        }
+        setWsStatus("Not connected");
+    }
+
+    private void setWsStatus(String text) {
+        if (wsStatusLabel != null) {
+            wsStatusLabel.setText(text);
+        }
+    }
+
+    private void logWsMessage(String message, boolean outgoing) {
+        if (wsMessageLog == null) {
+            return;
+        }
+        String time = java.time.LocalTime.now().withNano(0).toString();
+        String prefix = outgoing ? "↑ SENT " : "↓ RECV ";
+        wsMessageLog.getItems().add("[" + time + "] " + prefix + message);
+        wsMessageLog.scrollTo(wsMessageLog.getItems().size() - 1);
     }
 
     private Map<String, String> parseHeaders(String headersString) {
@@ -5456,7 +5651,7 @@ public class MainController implements Initializable {
         // FIX: every new request used to be hardcoded to GET regardless of
         // what the user actually wanted — this is where that got decided.
         ComboBox<String> methodBox = new ComboBox<>();
-        methodBox.getItems().addAll("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD");
+        methodBox.getItems().addAll("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "WS");
         methodBox.getSelectionModel().select("GET");
         methodBox.setPrefWidth(110);
 
