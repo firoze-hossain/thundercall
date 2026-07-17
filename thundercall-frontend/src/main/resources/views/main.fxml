@@ -65,7 +65,7 @@
                     <Region HBox.hgrow="ALWAYS"/>
                     <TextField fx:id="globalSearchField" styleClass="global-search"
                                promptText="Search Thundercall  (Ctrl+K)" prefWidth="300"
-                               onAction="#handleGlobalSearch"/>
+                               onAction="#handleGlobalSearch" onMouseClicked="#handleGlobalSearchFieldClicked"/>
                     <Region HBox.hgrow="ALWAYS"/>
 
                     <HBox alignment="CENTER" spacing="5" styleClass="connection-status">
@@ -119,9 +119,19 @@
         <!-- ============ LEFT: Postman icon rail + switchable sidebar ============ -->
         <!-- ============ CENTER: icon rail + resizable sidebar + request/response ============ -->
         <center>
-            <HBox>
-                <!-- Icon rail (fixed width — navigation only, not resizable) -->
-                <VBox styleClass="icon-rail" spacing="4" alignment="TOP_CENTER" prefWidth="78">
+            <!-- FIX: the icon rail used to be a plain VBox sitting OUTSIDE
+                 the SplitPane entirely — fixed at 78px with no divider,
+                 so on a narrow window its labels ("Collections",
+                 "Environments"...) truncated into "C...", "E...", "H..."
+                 with no way to fix it by dragging anything. It's now the
+                 SplitPane's own first segment: drag its divider to widen
+                 it back out (labels reappear in full) or narrow it down
+                 to icons only — same orange-on-hover divider as the
+                 sidebar/response ones. -->
+            <SplitPane fx:id="sidebarSplitPane" orientation="HORIZONTAL" dividerPositions="0.09, 0.27"
+                       styleClass="sidebar-split-pane">
+                <VBox styleClass="icon-rail" spacing="4" alignment="TOP_CENTER"
+                      prefWidth="78" minWidth="56" maxWidth="160">
                     <padding>
                         <Insets top="8" bottom="8" left="4" right="4"/>
                     </padding>
@@ -166,13 +176,7 @@
                         <contentDisplay>TOP</contentDisplay>
                     </ToggleButton>
                 </VBox>
-                <!-- Sidebar + main content now share ONE SplitPane, so the
-                     sidebar (Collections/Environments/History) can be
-                     dragged wider or narrower — it used to be a fixed
-                     264px BorderPane region with no divider at all. -->
-                <SplitPane orientation="HORIZONTAL" dividerPositions="0.18"
-                           styleClass="sidebar-split-pane" HBox.hgrow="ALWAYS">
-                    <StackPane prefWidth="264" minWidth="200" maxWidth="560" styleClass="sidebar">
+                    <StackPane fx:id="sidebarContentPane" prefWidth="264" minWidth="140" maxWidth="560" styleClass="sidebar">
                     <!-- Collections pane (default) -->
                     <VBox fx:id="collectionsPane" spacing="6">
                         <padding>
@@ -479,6 +483,7 @@
                                                text="Request body content" mouseTransparent="true"/>
                                         <CodeArea fx:id="bodyTextArea" styleClass="body-textarea"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false"/>
+                                        <TableView fx:id="urlEncodedTable" styleClass="key-value-table" visible="false"/>
                                     </StackPane>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddFormDataRow"
@@ -574,7 +579,6 @@
                 </VBox>
             </SplitPane>
                 </SplitPane>
-            </HBox>
         </center>
 
         <!-- ============ BOTTOM: status bar ============ -->

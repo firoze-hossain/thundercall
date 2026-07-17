@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -25,4 +27,6 @@ public class ApiRequest {
     private String authToken;
     private String authUsername;
     private String authPassword;
+    // Present only for the "form-data" body type — see FormDataField.
+    private List<FormDataField> formData;
 }

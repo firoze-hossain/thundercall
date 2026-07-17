@@ -161,6 +161,8 @@ public class MainController implements Initializable {
     @FXML
     private TableView<KeyValuePair> formDataTable;
     @FXML
+    private TableView<KeyValuePair> urlEncodedTable;
+    @FXML
     private MenuButton collectionsMenuBtn;
     @FXML
     private ContextMenu treeContextMenu;
@@ -174,6 +176,16 @@ public class MainController implements Initializable {
     private final ObservableList<KeyValuePair> responseHeadersData = FXCollections.observableArrayList();
     private final ObservableList<KeyValuePair> cookiesData = FXCollections.observableArrayList();
     private final ObservableList<KeyValuePair> formData = FXCollections.observableArrayList();
+    // FIX: x-www-form-urlencoded used to fall through to the generic
+    // "default" case and share the SAME list as Form Data — meaning it
+    // showed the raw text area (wrong widget entirely) and, had it been
+    // wired to a table, would have silently mixed the two body types'
+    // rows together. It gets its own table and its own independent list.
+    private final ObservableList<KeyValuePair> urlEncodedData = FXCollections.observableArrayList();
+    // Holds EnvironmentResponse or TreeItem<String> — whichever kind of
+    // search result was most recently opened, newest first, shown when
+    // global search is opened with an empty query.
+    private final List<Object> recentlyViewedItems = new ArrayList<>();
     private Map<TreeItem<String>, Long> collectionIdMap = new HashMap<>();
     private Map<TreeItem<String>, Long> folderIdMap = new HashMap<>();
     private Map<TreeItem<String>, Long> requestIdMap = new HashMap<>();
@@ -232,6 +244,10 @@ public class MainController implements Initializable {
     private ToggleButton railHistoryBtn;
     @FXML
     private ToggleButton railTeamsBtn;
+    @FXML
+    private SplitPane sidebarSplitPane;
+    @FXML
+    private StackPane sidebarContentPane;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -383,10 +399,22 @@ public class MainController implements Initializable {
                 switch (selectedType) {
                     case "Form Data":
                         formDataTable.setVisible(true);
+                        urlEncodedTable.setVisible(false);
+                        bodyTextArea.setVisible(false);
+                        break;
+                    case "x-www-form-urlencoded":
+                        // FIX: this used to fall into the same "default"
+                        // branch as Raw/None and show the plain text
+                        // area — meaning there was no key/value table at
+                        // all for this body type, unlike every other
+                        // Postman-style client.
+                        formDataTable.setVisible(false);
+                        urlEncodedTable.setVisible(true);
                         bodyTextArea.setVisible(false);
                         break;
                     default:
                         formDataTable.setVisible(false);
+                        urlEncodedTable.setVisible(false);
                         bodyTextArea.setVisible(true);
                         break;
                 }
@@ -394,7 +422,11 @@ public class MainController implements Initializable {
         });
 
         // Initialize form data table
-        setupKeyValueTable(formDataTable, formData, "Key", "Value", "Description");
+        setupFormDataTable();
+        // x-www-form-urlencoded is plain key/value pairs only — no file
+        // attachments make sense here, so the generic table (same as
+        // Params/Headers) is the right fit, not the Form Data one.
+        setupKeyValueTable(urlEncodedTable, urlEncodedData, "Key", "Value", "Description");
 
         // Default to "None" so the state is always visible
         if (bodyTypeGroup.getSelectedToggle() == null && noneBodyTypeButton != null) {
@@ -1239,6 +1271,135 @@ public class MainController implements Initializable {
             }
         };
         return cell;
+    }
+
+    /** Form-data gets its own table (not the generic key/value one) so
+     * each row can be either plain text or a real file attachment —
+     * matching Postman's Text/File toggle, with actual file bytes read
+     * off disk at send time (CSV, Excel, images, anything). */
+    private void setupFormDataTable() {
+        formDataTable.getColumns().clear();
+        formDataTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        formDataTable.setItems(formData);
+        formDataTable.setEditable(true);
+
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> commitOnFocusLossCell());
+        keyCol.setOnEditCommit(event -> event.getRowValue().setKey(event.getNewValue()));
+        keyCol.setPrefWidth(150);
+
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createFormDataValueCell());
+        valueCol.setOnEditCommit(event -> event.getRowValue().setValue(event.getNewValue()));
+        valueCol.setPrefWidth(220);
+
+        TableColumn<KeyValuePair, String> typeCol = new TableColumn<>("Type");
+        typeCol.setCellValueFactory(cellData -> cellData.getValue().typeProperty());
+        typeCol.setCellFactory(javafx.scene.control.cell.ComboBoxTableCell.forTableColumn("Text", "File"));
+        typeCol.setOnEditCommit(event -> {
+            event.getRowValue().setType(event.getNewValue());
+            // The Value column's rendering (text field vs. file picker)
+            // depends on this row's type, and TableView doesn't know to
+            // re-check a SIBLING column on its own — force it to.
+            formDataTable.refresh();
+        });
+        typeCol.setPrefWidth(80);
+
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> commitOnFocusLossCell());
+        descCol.setOnEditCommit(event -> event.getRowValue().setDescription(event.getNewValue()));
+        descCol.setPrefWidth(150);
+
+        formDataTable.getColumns().addAll(keyCol, valueCol, typeCol, descCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> formData.add(new KeyValuePair("", "", "")));
+        deleteItem.setOnAction(e -> {
+            KeyValuePair selected = formDataTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                formData.remove(selected);
+            }
+        });
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        formDataTable.setContextMenu(contextMenu);
+    }
+
+    /** Behaves exactly like the normal editable text cell for "Text"
+     * rows (reuses TextFieldTableCell's own machinery), but for "File"
+     * rows shows the chosen file name plus a "Choose File..." button
+     * instead — clicking it opens a real file picker. */
+    private TableCell<KeyValuePair, String> createFormDataValueCell() {
+        return new TextFieldTableCell<>(new javafx.util.converter.DefaultStringConverter()) {
+            private final Button chooseFileBtn = new Button("Choose File...");
+            private final Label fileLabel = new Label();
+            private final HBox fileBox = new HBox(6, fileLabel, chooseFileBtn);
+
+            {
+                fileBox.setAlignment(Pos.CENTER_LEFT);
+                chooseFileBtn.setOnAction(e -> {
+                    if (!(getTableRow() != null && getTableRow().getItem() instanceof KeyValuePair kv)) {
+                        return;
+                    }
+                    FileChooser chooser = new FileChooser();
+                    chooser.setTitle("Choose File");
+                    chooser.getExtensionFilters().addAll(
+                            new FileChooser.ExtensionFilter("CSV Files", "*.csv"),
+                            new FileChooser.ExtensionFilter("Excel Files", "*.xlsx", "*.xls"),
+                            new FileChooser.ExtensionFilter("All Files", "*.*"));
+                    File file = chooser.showOpenDialog(Main.getPrimaryStage());
+                    if (file != null) {
+                        kv.setFilePath(file.getAbsolutePath());
+                        kv.setFileName(file.getName());
+                        kv.setValue(file.getName());
+                        fileLabel.setText(file.getName());
+                        getTableView().refresh();
+                    }
+                });
+            }
+
+            private boolean isFileRow() {
+                return getTableRow() != null && getTableRow().getItem() instanceof KeyValuePair kv
+                        && "File".equalsIgnoreCase(kv.getType());
+            }
+
+            @Override
+            public void startEdit() {
+                if (isFileRow()) {
+                    return; // file rows use the button, not the normal text editor
+                }
+                super.startEdit();
+                if (getGraphic() instanceof TextField field) {
+                    field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                        if (!isFocused && isEditing()) {
+                            commitEdit(field.getText());
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void updateItem(String value, boolean empty) {
+                super.updateItem(value, empty);
+                if (empty) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                if (isFileRow()) {
+                    KeyValuePair kv = (KeyValuePair) getTableRow().getItem();
+                    fileLabel.setText(kv.getFileName() == null || kv.getFileName().isEmpty()
+                            ? "(no file chosen)" : kv.getFileName());
+                    setGraphic(fileBox);
+                    setText(null);
+                }
+                // else: super.updateItem() above already set the normal text correctly
+            }
+        };
     }
 
     private void setupEnvironmentCombo() {
@@ -2847,59 +3008,101 @@ public class MainController implements Initializable {
         }
     }
 
+    /** FIX: the search bar only opened anything once you'd typed
+     * something and pressed Enter — clicking it did nothing but place a
+     * cursor, unlike Postman where a click opens the full search
+     * overlay immediately (showing recent items before you've typed a
+     * single character). */
+    @FXML
+    private void handleGlobalSearchFieldClicked() {
+        openGlobalSearch("");
+        if (globalSearchField != null) {
+            globalSearchField.clear();
+        }
+    }
+
     private void openGlobalSearch(String initialQuery) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Search Thundercall");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
 
         TextField searchField = new TextField(initialQuery == null ? "" : initialQuery);
-        searchField.setPromptText("Search collections, folders and requests");
-        ListView<TreeItem<String>> results = new ListView<>();
-        results.setPrefSize(480, 320);
-        results.setPlaceholder(new Label("Type to search your workspace"));
+        searchField.setPromptText("Search collections, folders, requests and environments");
+        // FIX: this used to only ever hold TreeItem<String> (collections
+        // tree entries) — environments were entirely out of scope for
+        // "global" search. Object lets both kinds share one results list,
+        // exactly like Postman's single combined result set.
+        ListView<Object> results = new ListView<>();
+        results.setPrefSize(520, 360);
         results.setCellFactory(lv -> new ListCell<>() {
             @Override
-            protected void updateItem(TreeItem<String> item, boolean empty) {
+            protected void updateItem(Object item, boolean empty) {
                 super.updateItem(item, empty);
                 getStyleClass().removeIf(s -> s.startsWith("method-"));
                 if (empty || item == null) {
                     setText(null);
                     return;
                 }
-                String kind;
-                String method = requestMethodMap.get(item);
-                if (method != null) {
-                    kind = method;
-                    getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
-                } else if (collectionIdMap.containsKey(item)) {
-                    kind = "Collection";
-                } else {
-                    kind = "Folder";
+                if (item instanceof EnvironmentResponse env) {
+                    setText("Environment  ·  " + env.getName());
+                } else if (item instanceof TreeItem<?> rawItem) {
+                    @SuppressWarnings("unchecked")
+                    TreeItem<String> treeItem = (TreeItem<String>) rawItem;
+                    String kind;
+                    String method = requestMethodMap.get(treeItem);
+                    if (method != null) {
+                        kind = method;
+                        getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
+                    } else if (collectionIdMap.containsKey(treeItem)) {
+                        kind = "Collection";
+                    } else {
+                        kind = "Folder";
+                    }
+                    setText(kind + "  ·  " + treePath(treeItem));
                 }
-                setText(kind + "  ·  " + treePath(item));
             }
         });
 
+        // FIX: an empty query used to just show a "type to search"
+        // placeholder with nothing else — Postman shows your recently
+        // opened items right away, before you've typed anything, which
+        // is often exactly what you're looking for.
         Runnable refresh = () -> {
             String q = searchField.getText() == null
                     ? "" : searchField.getText().trim().toLowerCase(Locale.ROOT);
-            List<TreeItem<String>> hits = new ArrayList<>();
-            if (!q.isEmpty() && fullCollectionsRoot != null) {
-                collectSearchHits(fullCollectionsRoot, q, hits);
+            if (q.isEmpty()) {
+                results.setPlaceholder(new Label(recentlyViewedItems.isEmpty()
+                        ? "Type to search your workspace" : "Recently viewed"));
+                results.getItems().setAll(recentlyViewedItems);
+                return;
             }
+            List<Object> hits = new ArrayList<>();
+            if (fullCollectionsRoot != null) {
+                List<TreeItem<String>> treeHits = new ArrayList<>();
+                collectSearchHits(fullCollectionsRoot, q, treeHits);
+                hits.addAll(treeHits);
+            }
+            if (environmentsList != null) {
+                for (EnvironmentResponse env : environmentsList.getItems()) {
+                    if (env.getName() != null && env.getName().toLowerCase(Locale.ROOT).contains(q)) {
+                        hits.add(env);
+                    }
+                }
+            }
+            results.setPlaceholder(new Label("No matches"));
             results.getItems().setAll(hits);
         };
         searchField.textProperty().addListener((obs, oldVal, newVal) -> refresh.run());
         searchField.setOnAction(e -> {
             if (!results.getItems().isEmpty()) {
-                revealInTree(results.getItems().get(0));
+                openSearchResult(results.getItems().get(0));
                 dialog.close();
             }
         });
         results.setOnMouseClicked(e -> {
-            TreeItem<String> selected = results.getSelectionModel().getSelectedItem();
+            Object selected = results.getSelectionModel().getSelectedItem();
             if (e.getClickCount() == 2 && selected != null) {
-                revealInTree(selected);
+                openSearchResult(selected);
                 dialog.close();
             }
         });
@@ -2911,6 +3114,32 @@ public class MainController implements Initializable {
         refresh.run();
         Platform.runLater(searchField::requestFocus);
         dialog.showAndWait();
+    }
+
+    /** Opens whichever kind of result was picked, and remembers it so it
+     * shows up under "Recently viewed" next time the search is opened
+     * with an empty query. */
+    private void openSearchResult(Object item) {
+        recentlyViewedItems.remove(item);
+        recentlyViewedItems.add(0, item);
+        while (recentlyViewedItems.size() > 8) {
+            recentlyViewedItems.remove(recentlyViewedItems.size() - 1);
+        }
+        if (item instanceof EnvironmentResponse env) {
+            if (railEnvironmentsBtn != null) {
+                railEnvironmentsBtn.setSelected(true);
+            }
+            showSidebarPane(environmentsPane);
+            environmentsList.getSelectionModel().select(env);
+            int row = environmentsList.getItems().indexOf(env);
+            if (row >= 0) {
+                environmentsList.scrollTo(row);
+            }
+        } else if (item instanceof TreeItem<?> rawItem) {
+            @SuppressWarnings("unchecked")
+            TreeItem<String> treeItem = (TreeItem<String>) rawItem;
+            revealInTree(treeItem);
+        }
     }
 
     private void collectSearchHits(TreeItem<String> node, String q, List<TreeItem<String>> out) {
@@ -3483,6 +3712,16 @@ public class MainController implements Initializable {
         Map<String, String> headers = VariableResolver.resolveMap(buildHeadersForSend(), vars);
         String body = VariableResolver.resolve(buildRequestBody(), vars);
 
+        // Form Data can include real file attachments — read now (FX
+        // thread, same as url/headers/body just above) so the Task below
+        // just carries an already-built, effectively-final list.
+        List<FormDataField> formDataFields = null;
+        if (bodyTypeGroup.getSelectedToggle() != null
+                && "Form Data".equals(((ToggleButton) bodyTypeGroup.getSelectedToggle()).getText())) {
+            formDataFields = buildFormDataFields(vars);
+        }
+        List<FormDataField> finalFormDataFields = formDataFields;
+
         Set<String> unresolved = new LinkedHashSet<>(VariableResolver.findUnresolved(url, vars));
         unresolved.addAll(VariableResolver.findUnresolved(body, vars));
         // Headers (Authorization included) can carry {{Token}} too — check them
@@ -3522,6 +3761,7 @@ public class MainController implements Initializable {
                 apiRequest.setMethod(HttpMethod.valueOf(method));
                 apiRequest.setHeaders(new JSONObject(headers).toString());
                 apiRequest.setBody(body);
+                apiRequest.setFormData(finalFormDataFields);
 
                 return RequestService.executeRequest(apiRequest);
             }
@@ -3910,6 +4150,35 @@ public class MainController implements Initializable {
         return headers;
     }
 
+    /** Builds the real, send-ready form-data list — text values resolved
+     * for {{variables}} same as everywhere else, file rows read straight
+     * off disk and Base64-encoded (a row with "File" selected but no
+     * file chosen yet is just skipped rather than failing the request). */
+    private List<FormDataField> buildFormDataFields(Map<String, String> vars) {
+        List<FormDataField> fields = new ArrayList<>();
+        for (KeyValuePair kv : formData) {
+            if (kv.getKey() == null || kv.getKey().isBlank()) {
+                continue;
+            }
+            String resolvedKey = VariableResolver.resolve(kv.getKey(), vars);
+            if ("File".equalsIgnoreCase(kv.getType())) {
+                if (kv.getFilePath() == null || kv.getFilePath().isBlank()) {
+                    continue;
+                }
+                try {
+                    byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of(kv.getFilePath()));
+                    String base64 = Base64.getEncoder().encodeToString(bytes);
+                    fields.add(new FormDataField(resolvedKey, "file", null, kv.getFileName(), base64));
+                } catch (Exception e) {
+                    AlertUtils.showError("Couldn't read the file for \"" + kv.getKey() + "\": " + e.getMessage());
+                }
+            } else {
+                fields.add(new FormDataField(resolvedKey, "text", VariableResolver.resolve(kv.getValue(), vars), null, null));
+            }
+        }
+        return fields;
+    }
+
     private String buildRequestBody() {
         Toggle selectedToggle = bodyTypeGroup.getSelectedToggle();
 
@@ -3924,7 +4193,7 @@ public class MainController implements Initializable {
                 String formDataJson = convertFormDataToJson(formData);
                 return formDataJson;
             case "x-www-form-urlencoded":
-                String urlEncoded = convertFormDataToUrlEncoded(formData);
+                String urlEncoded = convertFormDataToUrlEncoded(urlEncodedData);
                 return urlEncoded;
             case "Raw":
                 String bodyText = bodyTextArea.getText().trim();
@@ -4051,11 +4320,27 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleAddFormDataRow() {
-        formData.add(new KeyValuePair("", "", ""));
+        // FIX: this button bar is shared between Form Data and
+        // x-www-form-urlencoded (same HBox in the FXML) — it used to
+        // always add to the Form Data list even while looking at the
+        // url-encoded table. It now acts on whichever table is actually
+        // visible.
+        if (urlEncodedTable != null && urlEncodedTable.isVisible()) {
+            urlEncodedData.add(new KeyValuePair("", "", ""));
+        } else {
+            formData.add(new KeyValuePair("", "", ""));
+        }
     }
 
     @FXML
     private void handleDeleteFormDataRow() {
+        if (urlEncodedTable != null && urlEncodedTable.isVisible()) {
+            KeyValuePair selected = urlEncodedTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                urlEncodedData.remove(selected);
+            }
+            return;
+        }
         KeyValuePair selected = formDataTable.getSelectionModel().getSelectedItem();
         if (selected != null) {
             formData.remove(selected);
@@ -5403,6 +5688,12 @@ public class MainController implements Initializable {
         private final SimpleStringProperty key;
         private final SimpleStringProperty value;
         private final SimpleStringProperty description;
+        // Only meaningful for the form-data table — "Text" (default) or
+        // "File". Every other table (params, headers, cookies...) just
+        // never touches these.
+        private final SimpleStringProperty type = new SimpleStringProperty("Text");
+        private final SimpleStringProperty filePath = new SimpleStringProperty("");
+        private final SimpleStringProperty fileName = new SimpleStringProperty("");
 
         public KeyValuePair() {
             this("", "", "");
@@ -5416,6 +5707,42 @@ public class MainController implements Initializable {
             this.key = new SimpleStringProperty(key);
             this.value = new SimpleStringProperty(value);
             this.description = new SimpleStringProperty(description);
+        }
+
+        public String getType() {
+            return type.get();
+        }
+
+        public SimpleStringProperty typeProperty() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type.set(type);
+        }
+
+        public String getFilePath() {
+            return filePath.get();
+        }
+
+        public SimpleStringProperty filePathProperty() {
+            return filePath;
+        }
+
+        public void setFilePath(String filePath) {
+            this.filePath.set(filePath);
+        }
+
+        public String getFileName() {
+            return fileName.get();
+        }
+
+        public SimpleStringProperty fileNameProperty() {
+            return fileName;
+        }
+
+        public void setFileName(String fileName) {
+            this.fileName.set(fileName);
         }
 
         public String getKey() {

@@ -78,11 +78,12 @@ public class Main extends Application {
      * across it. Auth views always get their own correct size now,
      * regardless of what size the previous view left the window at. */
     private static void resetStageToSceneSize(double width, double height) {
-        // Clear the main view's minimum constraints first — otherwise a
-        // stage left at 860x560 minimum (set for the main view) would
-        // clamp this smaller auth window instead of actually shrinking it.
-        primaryStage.setMinWidth(0);
-        primaryStage.setMinHeight(0);
+        // FIX: this used to clear leftover Stage.setMinWidth/setMinHeight
+        // constraints from the main view first — but the main view no
+        // longer calls those APIs at all (they're what triggers the GTK
+        // resize assertion on this platform; see showMainView()), so
+        // there's nothing left to clear, and one less call to that API
+        // is one less chance to hit the same crash.
         primaryStage.setMaximized(false);
         primaryStage.setWidth(width);
         primaryStage.setHeight(height);
@@ -107,15 +108,21 @@ public class Main extends Application {
             Scene scene = new Scene(root, 1200, 800);
             primaryStage.setScene(scene);
             primaryStage.setTitle("Thundercall Client");
-            // FIX: nothing stopped the window being resized down to a
-            // width where the icon rail's labels ("Collections",
-            // "Environments", "History") get clipped mid-word and the
-            // sidebar/request panes overlap. A sane minimum keeps every
-            // panel legible; the window can still be resized freely
-            // above this, and the sidebar/response dividers still work
-            // exactly as before.
-            primaryStage.setMinWidth(860);
-            primaryStage.setMinHeight(560);
+            // FIX: deferring the Stage.setMinWidth/setMinHeight calls to
+            // the next pulse (previous attempt) still hit the same
+            // "gtk_window_resize: assertion 'height > 0' failed" crash —
+            // meaning it's not a timing/ordering issue at all, it's that
+            // Stage-level min-size enforcement itself is broken on this
+            // GTK setup. Constraining the ROOT NODE's own min size
+            // instead achieves the identical "can't shrink the icon rail
+            // into an unreadable mess" protection through ordinary
+            // JavaFX layout — a stage can't be resized smaller than its
+            // scene's root minimum size — without ever calling the
+            // native Stage min-size API that's crashing.
+            if (root instanceof javafx.scene.layout.Region region) {
+                region.setMinWidth(860);
+                region.setMinHeight(560);
+            }
             primaryStage.show();
 
             System.out.println("Main view displayed successfully");

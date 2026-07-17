@@ -695,8 +695,6 @@
 /* Left icon rail (Collections / Environments / History) */
 .icon-rail {
     -fx-background-color: -bg-panel;
-    -fx-border-color: transparent -border-subtle transparent transparent;
-    -fx-border-width: 0 1 0 0;
 }
 .rail-btn {
     -fx-background-color: transparent;

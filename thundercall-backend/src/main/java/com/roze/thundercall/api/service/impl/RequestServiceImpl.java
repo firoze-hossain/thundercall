@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roze.thundercall.api.dto.ApiRequest;
 import com.roze.thundercall.api.dto.ApiResponse;
+import com.roze.thundercall.api.dto.FormDataField;
 import com.roze.thundercall.api.dto.RequestResponse;
 import com.roze.thundercall.api.entity.*;
 import com.roze.thundercall.api.enums.HttpMethod;
@@ -16,12 +17,15 @@ import com.roze.thundercall.api.repository.RequestRepository;
 import com.roze.thundercall.api.service.RequestService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
@@ -31,6 +35,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -64,14 +69,25 @@ public class RequestServiceImpl implements RequestService {
         Instant startTime = Instant.now();
         try {
             HttpHeaders headers = prepareHeaders(apiRequest.headers(), apiRequest.body());
-            HttpEntity<String> entity = new HttpEntity<>(emptyToNull(apiRequest.body()), headers);
-
-            // Fetch as raw bytes — safe for text AND binary payloads alike.
-            ResponseEntity<byte[]> response = restTemplate.exchange(
-                    apiRequest.url(),
-                    toSpringMethod(apiRequest.method()),
-                    entity,
-                    byte[].class);
+            // FIX: form-data used to be flattened into a JSON string on the
+            // frontend and sent as a plain text body — meaning an actual
+            // file attachment was never really possible; the server had
+            // no concept of it. When formData rows are present, this now
+            // builds a genuine multipart/form-data request (real file
+            // bytes included), the same way a browser or Postman would.
+            ResponseEntity<byte[]> response;
+            if (apiRequest.formData() != null && !apiRequest.formData().isEmpty()) {
+                headers.remove(HttpHeaders.CONTENT_TYPE); // let RestTemplate set multipart + boundary itself
+                MultiValueMap<String, Object> multipart = buildMultipartBody(apiRequest.formData());
+                HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(multipart, headers);
+                response = restTemplate.exchange(
+                        apiRequest.url(), toSpringMethod(apiRequest.method()), entity, byte[].class);
+            } else {
+                HttpEntity<String> entity = new HttpEntity<>(emptyToNull(apiRequest.body()), headers);
+                // Fetch as raw bytes — safe for text AND binary payloads alike.
+                response = restTemplate.exchange(
+                        apiRequest.url(), toSpringMethod(apiRequest.method()), entity, byte[].class);
+            }
 
             long duration = Duration.between(startTime, Instant.now()).toMillis();
             boolean success = !response.getStatusCode().isError();
@@ -181,6 +197,33 @@ public class RequestServiceImpl implements RequestService {
 
     private org.springframework.http.HttpMethod toSpringMethod(HttpMethod method) {
         return org.springframework.http.HttpMethod.valueOf(method.name());
+    }
+
+    /** Builds a genuine multipart/form-data body — text fields as plain
+     * strings, file fields with the REAL bytes (decoded from the
+     * Base64 the frontend read off disk) wrapped so RestTemplate sends
+     * a correct filename and part, exactly like a browser file upload. */
+    private MultiValueMap<String, Object> buildMultipartBody(List<FormDataField> formData) {
+        MultiValueMap<String, Object> multipart = new LinkedMultiValueMap<>();
+        for (FormDataField field : formData) {
+            if (field.key() == null || field.key().isBlank()) {
+                continue;
+            }
+            if ("file".equalsIgnoreCase(field.type()) && field.fileBase64() != null && !field.fileBase64().isBlank()) {
+                byte[] fileBytes = Base64.getDecoder().decode(field.fileBase64());
+                String fileName = field.fileName() != null ? field.fileName() : "file";
+                ByteArrayResource resource = new ByteArrayResource(fileBytes) {
+                    @Override
+                    public String getFilename() {
+                        return fileName;
+                    }
+                };
+                multipart.add(field.key(), resource);
+            } else {
+                multipart.add(field.key(), field.value() != null ? field.value() : "");
+            }
+        }
+        return multipart;
     }
 
     private HttpHeaders prepareHeaders(String headersString, String body) {
