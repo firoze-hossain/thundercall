@@ -1,14 +1,9 @@
 package com.roze.thundercall.api.controller;
 
-import com.roze.thundercall.api.dto.AuthResponse;
-import com.roze.thundercall.api.dto.LoginRequest;
-import com.roze.thundercall.api.dto.RegisterRequest;
-import com.roze.thundercall.api.dto.RegisterResponse;
-import com.roze.thundercall.api.dto.ResendVerificationRequest;
-import com.roze.thundercall.api.dto.VerifyEmailRequest;
+import com.roze.thundercall.api.dto.*;
 import com.roze.thundercall.api.service.AuthService;
-import com.roze.thundercall.api.utils.BaseResponse;
 import com.roze.thundercall.api.utils.BaseController;
+import com.roze.thundercall.api.utils.BaseResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

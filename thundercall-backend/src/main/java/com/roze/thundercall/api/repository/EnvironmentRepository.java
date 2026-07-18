@@ -15,8 +15,19 @@ public interface EnvironmentRepository extends JpaRepository<Environment, Long>,
 
     Optional<Environment> findByIdAndWorkspaceOwner(Long id, User user);
 
+    // Used for browsing a workspace shared with the caller — see the
+    // matching note in CollectionRepository.
+    List<Environment> findByWorkspaceId(Long workspaceId);
+
     @Query("SELECT e FROM Environment e WHERE e.workspace.owner = :user AND e.name = :name")
     Optional<Environment> findByNameAndWorkspaceOwner(@Param("name") String name, @Param("user") User user);
+
+    // Scoped to one specific workspace rather than "anywhere this user
+    // owns" — used once access to that workspace has already been
+    // verified via WorkspaceAccessGuard, so this works correctly for a
+    // shared workspace too, not just an owned one.
+    @Query("SELECT e FROM Environment e WHERE e.workspace.id = :workspaceId AND e.name = :name")
+    Optional<Environment> findByNameAndWorkspaceId(@Param("name") String name, @Param("workspaceId") Long workspaceId);
 
     List<Environment> findByWorkspaceOwnerAndIsActive(User user, Boolean isActive);
 }

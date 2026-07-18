@@ -12,9 +12,10 @@ import com.roze.thundercall.api.mapper.CollectionMapper;
 import com.roze.thundercall.api.mapper.FolderMapper;
 import com.roze.thundercall.api.mapper.RequestMapper;
 import com.roze.thundercall.api.repository.CollectionRepository;
-import com.roze.thundercall.api.repository.WorkspaceRepository;
 import com.roze.thundercall.api.repository.FolderRepository;
 import com.roze.thundercall.api.repository.RequestRepository;
+import com.roze.thundercall.api.repository.WorkspaceRepository;
+import com.roze.thundercall.api.security.WorkspaceAccessGuard;
 import com.roze.thundercall.api.service.CollectionService;
 import com.roze.thundercall.api.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,12 @@ import java.util.List;
  * FIX: createCollection() no longer throws "No workspace found".
  * It asks WorkspaceService to get-or-create the user's default workspace,
  * which also heals accounts registered before workspaces were auto-created.
+ *
+ * FIX: every write here now goes through WorkspaceAccessGuard instead of a
+ * strict owner-only lookup — an Editor with shared access to a workspace
+ * can create/edit/delete collections in it exactly like the owner can.
+ * Personal-workspace behavior is unchanged: the guard checks ownership
+ * first, before ever considering shared access.
  */
 @Service
 @RequiredArgsConstructor
@@ -40,6 +47,7 @@ public class CollectionServiceImpl implements CollectionService {
     private final FolderMapper folderMapper;
     private final RequestRepository requestRepository;
     private final RequestMapper requestMapper;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
 
     @Override
     @Transactional
@@ -47,8 +55,7 @@ public class CollectionServiceImpl implements CollectionService {
         // FIX: create the collection in the workspace the UI selected.
         // Falls back to the default workspace when no id is sent.
         Workspace workspace = request.workspaceId() != null
-                ? workspaceRepository.findByIdAndOwner(request.workspaceId(), user)
-                .orElseThrow(() -> new ResourceNotFoundException("Workspace not found"))
+                ? workspaceAccessGuard.resolveForWrite(request.workspaceId(), user)
                 : workspaceService.getOrCreateDefaultWorkspace(user);
         Collection collection = collectionMapper.toEntity(request);
         collection.setWorkspace(workspace);
@@ -65,11 +72,10 @@ public class CollectionServiceImpl implements CollectionService {
 
     @Override
     public CollectionResponse getCollectionWithDetails(Long id, User user) {
-        Collection collection = collectionRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        Collection collection = findCollectionWithAccess(id, user, false);
 
         List<FolderResponse> folderResponses = folderRepository
-                .findByCollectionIdAndCollectionWorkspaceOwner(id, user)
+                .findByCollectionId(id)
                 .stream()
                 .map(folder -> {
                     FolderResponse folderResponse = folderMapper.toResponse(folder);
@@ -102,16 +108,14 @@ public class CollectionServiceImpl implements CollectionService {
 
     @Override
     public CollectionResponse getCollectionById(Long id, User user) {
-        Collection collection = collectionRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        Collection collection = findCollectionWithAccess(id, user, false);
         return collectionMapper.toResponse(collection);
     }
 
     @Override
     @Transactional
     public CollectionResponse updateCollection(Long id, CollectionRequest request, User user) {
-        Collection collection = collectionRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        Collection collection = findCollectionWithAccess(id, user, true);
         collection.setName(request.name());
         collection.setDescription(request.description());
         Collection updatedCollection = collectionRepository.save(collection);
@@ -121,8 +125,23 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional
     public void deleteCollection(Long id, User user) {
-        Collection collection = collectionRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        Collection collection = findCollectionWithAccess(id, user, true);
         collectionRepository.delete(collection);
+    }
+
+    /** Fetches a collection by plain ID (no owner filter baked into the
+     * query itself) and then checks access via the guard — this is what
+     * lets an Editor with shared access reach a collection that isn't
+     * theirs, while still rejecting everyone else. requireWrite=true
+     * for update/delete; false (read-only check) for plain gets. */
+    private Collection findCollectionWithAccess(Long id, User user, boolean requireWrite) {
+        Collection collection = collectionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        if (requireWrite) {
+            workspaceAccessGuard.requireWrite(collection.getWorkspace(), user);
+        } else {
+            workspaceAccessGuard.requireRead(collection.getWorkspace(), user);
+        }
+        return collection;
     }
 }

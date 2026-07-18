@@ -12,4 +12,9 @@ public interface CollectionRepository extends JpaRepository<Collection, Long>, J
     Optional<Collection> findByIdAndWorkspaceOwner(Long id, User user);
 
     List<Collection> findByWorkspaceOwner(User user);
+
+    // Used for browsing a workspace shared with the caller — access is
+    // checked separately (WorkspaceSharingService.hasAccess) before this
+    // is ever called, so no owner check belongs here.
+    List<Collection> findByWorkspaceId(Long workspaceId);
 }

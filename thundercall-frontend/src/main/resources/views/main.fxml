@@ -109,6 +109,7 @@
                         </items>
                     </MenuButton>
                     <Button text="Import" styleClass="workspace-btn" onAction="#handleImportCollections"/>
+                    <Button text="Share" styleClass="workspace-btn" onAction="#handleShareWorkspace"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <ComboBox fx:id="environmentCombo" styleClass="environment-combo"
                               promptText="No Environment" prefWidth="200"/>
@@ -191,6 +192,16 @@
                         <graphic>
                             <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
                                 <Image url="@../images/send-icon.png"/>
+                            </ImageView>
+                        </graphic>
+                        <contentDisplay>TOP</contentDisplay>
+                    </ToggleButton>
+                    <ToggleButton fx:id="railTeamWorkspacesBtn" text="Team Spaces" styleClass="rail-btn"
+                                  toggleGroup="$sidebarRailGroup"
+                                  onAction="#handleShowTeamWorkspaces" maxWidth="10000">
+                        <graphic>
+                            <ImageView fitHeight="18" fitWidth="18" preserveRatio="true">
+                                <Image url="@../images/folder-icon.png"/>
                             </ImageView>
                         </graphic>
                         <contentDisplay>TOP</contentDisplay>
@@ -372,6 +383,40 @@
                         <Label styleClass="sidebar-hint" wrapText="true"
                                text="Double-click a monitor to see run history or run it now."/>
                         <ListView fx:id="monitorsList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                    </VBox>
+
+                    <!-- Team Workspaces pane -->
+                    <VBox fx:id="teamWorkspacesPane" spacing="6" visible="false">
+                        <padding>
+                            <Insets top="8" right="8" bottom="8" left="8"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" styleClass="sidebar-header">
+                            <Label text="Team Workspaces" styleClass="section-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button styleClass="icon-button" onAction="#handleAcceptWorkspaceInvite">
+                                <tooltip>
+                                    <Tooltip text="Enter an invite code"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/add-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                            <Button styleClass="icon-button" onAction="#handleRefreshTeamWorkspaces">
+                                <tooltip>
+                                    <Tooltip text="Refresh"/>
+                                </tooltip>
+                                <graphic>
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                        <Image url="@../images/clear-icon.png"/>
+                                    </ImageView>
+                                </graphic>
+                            </Button>
+                        </HBox>
+                        <Label styleClass="sidebar-hint" wrapText="true"
+                               text="Workspaces shared with you. Double-click to browse. Got an invite code by email? Tap the + above. To share your own, use Share (top bar)."/>
+                        <ListView fx:id="teamWorkspacesList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
                 </StackPane>
                     <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">

@@ -17,4 +17,11 @@ public interface RequestRepository extends JpaRepository<Request, Long>, JpaSpec
     Optional<Request> findByIdAndCollectionWorkspaceOwner(Long id, User user);
 
     List<Request> findByCollectionId(Long id);
+
+    // Used for executing a request from a shared workspace — access is
+    // checked separately (WorkspaceSharingService.hasAccess) before this
+    // is ever called, and this also guards against someone passing a
+    // requestId that belongs to a completely different workspace.
+    @Query("select r from Request r where r.id = :requestId and r.collection.workspace.id = :workspaceId")
+    Optional<Request> findByIdAndWorkspaceId(@Param("requestId") Long requestId, @Param("workspaceId") Long workspaceId);
 }

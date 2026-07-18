@@ -14,6 +14,7 @@ import com.roze.thundercall.api.repository.CollectionRepository;
 import com.roze.thundercall.api.repository.FolderRepository;
 import com.roze.thundercall.api.repository.RequestHistoryRepository;
 import com.roze.thundercall.api.repository.RequestRepository;
+import com.roze.thundercall.api.security.WorkspaceAccessGuard;
 import com.roze.thundercall.api.service.RequestService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +59,7 @@ public class RequestServiceImpl implements RequestService {
     private final CollectionRepository collectionRepository;
     private final RequestMapper requestMapper;
     private final FolderRepository folderRepository;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final Pattern FILENAME_PATTERN =
@@ -151,11 +153,12 @@ public class RequestServiceImpl implements RequestService {
     @Override
     @Transactional
     public RequestResponse saveRequestToCollection(ApiRequest apiRequest, User user) {
-        Collection collection = collectionRepository.findByIdAndWorkspaceOwner(apiRequest.collectionId(), user)
+        Collection collection = collectionRepository.findById(apiRequest.collectionId())
                 .orElseThrow(() -> new ResourceNotFoundException("Collection not found"));
+        workspaceAccessGuard.requireWrite(collection.getWorkspace(), user);
         Folder folder = null;
         if (apiRequest.folderId() != null) {
-            folder = folderRepository.findByIdAndCollectionWorkspaceOwner(apiRequest.folderId(), user)
+            folder = folderRepository.findById(apiRequest.folderId())
                     .orElseThrow(() -> new ResourceNotFoundException("Folder not found or you don't have access"));
             if (!folder.getCollection().getId().equals(collection.getId())) {
                 throw new IllegalArgumentException("Folder does not belong to the specified collection");
@@ -172,16 +175,14 @@ public class RequestServiceImpl implements RequestService {
 
     @Override
     public RequestResponse getRequestById(Long id, User user) {
-        Request request = requestRepository.findByIdAndCollectionWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
+        Request request = findRequestWithAccess(id, user, false);
         return requestMapper.toResponse(request);
     }
 
     @Override
     @Transactional
     public RequestResponse updateRequest(Long id, ApiRequest apiRequest, User user) {
-        Request request = requestRepository.findByIdAndCollectionWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
+        Request request = findRequestWithAccess(id, user, true);
         if (apiRequest.name() != null && !apiRequest.name().isBlank()) {
             request.setName(apiRequest.name());
         }
@@ -202,9 +203,23 @@ public class RequestServiceImpl implements RequestService {
     @Override
     @Transactional
     public void deleteRequest(Long id, User user) {
-        Request request = requestRepository.findByIdAndCollectionWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
+        Request request = findRequestWithAccess(id, user, true);
         requestRepository.delete(request);
+    }
+
+    /** Fetches a request by plain ID and checks access via the guard —
+     * lets an Editor with shared workspace access reach a request that
+     * isn't theirs, while still rejecting everyone else. */
+    private Request findRequestWithAccess(Long id, User user, boolean requireWrite) {
+        Request request = requestRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
+        Workspace workspace = request.getCollection().getWorkspace();
+        if (requireWrite) {
+            workspaceAccessGuard.requireWrite(workspace, user);
+        } else {
+            workspaceAccessGuard.requireRead(workspace, user);
+        }
+        return request;
     }
 
     // ------------------------------------------------------------------

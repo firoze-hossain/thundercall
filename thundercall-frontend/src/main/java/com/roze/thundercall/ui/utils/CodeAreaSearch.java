@@ -12,11 +12,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
 /**
  * Ctrl/Cmd+F find bar for a read-only response viewer — case-insensitive

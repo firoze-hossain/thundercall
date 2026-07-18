@@ -1,8 +1,8 @@
 package com.roze.thundercall.api.controller;
 
 import com.roze.thundercall.api.security.JwtTokenProvider;
-import com.roze.thundercall.api.utils.BaseResponse;
 import com.roze.thundercall.api.utils.BaseController;
+import com.roze.thundercall.api.utils.BaseResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

@@ -5,17 +5,7 @@ import com.roze.thundercall.ui.dialogs.WorkspaceSetupDialog;
 import com.roze.thundercall.ui.enums.HttpMethod;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
-import com.roze.thundercall.ui.models.*;
-import com.roze.thundercall.ui.services.*;
-import com.roze.thundercall.ui.utils.AlertUtils;
-import com.roze.thundercall.ui.utils.CodeAreaSearch;
-import com.roze.thundercall.ui.utils.JsonSyntaxHighlighter;
-import com.roze.thundercall.ui.utils.VariableAutocomplete;
-import org.fxmisc.richtext.CodeArea;
-import com.roze.thundercall.ui.utils.CsvParser;
-import com.roze.thundercall.ui.utils.ScriptRunner;
-import com.roze.thundercall.ui.utils.ThemeManager;
-import com.roze.thundercall.ui.utils.VariableResolver;
+import com.roze.thundercall.ui.utils.*;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -33,14 +23,10 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
+import org.fxmisc.richtext.CodeArea;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.XML;
@@ -48,9 +34,9 @@ import org.json.XML;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
@@ -305,6 +291,12 @@ public class MainController implements Initializable {
     @FXML
     private ToggleButton railMonitorsBtn;
     @FXML
+    private VBox teamWorkspacesPane;
+    @FXML
+    private ListView<WorkspaceAccessResponse> teamWorkspacesList;
+    @FXML
+    private ToggleButton railTeamWorkspacesBtn;
+    @FXML
     private ToggleButton railCollectionsBtn;
     @FXML
     private ToggleButton railEnvironmentsBtn;
@@ -352,6 +344,7 @@ public class MainController implements Initializable {
         setupTeamsList();
         setupMockServersList();
         setupMonitorsList();
+        setupTeamWorkspacesList();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -393,6 +386,7 @@ public class MainController implements Initializable {
             loadTeams();
             loadMockServers();
             loadMonitors();
+            loadTeamWorkspaces();
 
             logger.info("MainController initialized successfully");
         } catch (Exception e) {
@@ -535,6 +529,22 @@ public class MainController implements Initializable {
     }
 
     private void loadCollectionsFromServer() {
+        // Shared workspace context: the owner-scoped list endpoint would
+        // return nothing for a workspace you don't own, so this uses the
+        // same read path the Team Spaces browse view already relies on.
+        if (WorkspaceManager.isViewingSharedWorkspace() && WorkspaceManager.hasWorkspace()) {
+            Long workspaceId = WorkspaceManager.getCurrentWorkspace().getId();
+            new Thread(() -> {
+                Optional<WorkspaceContentsResponse> contents = WorkspaceSharingService.getWorkspaceContents(workspaceId);
+                if (contents.isPresent()) {
+                    populateCollectionsTree(contents.get().getCollections() != null
+                            ? contents.get().getCollections() : new ArrayList<>());
+                } else {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to load this shared workspace's collections"));
+                }
+            }).start();
+            return;
+        }
         new Thread(() -> {
             try {
                 Optional<List<CollectionResponse>> collections = CollectionService.getUserCollections();
@@ -653,35 +663,53 @@ public class MainController implements Initializable {
     }
 
     private void loadEnvironments() {
+        // Shared workspace context: environments are opt-in only, and
+        // getWorkspaceContents() already returns exactly the ones this
+        // user was actually granted — same read path Team Spaces uses.
+        if (WorkspaceManager.isViewingSharedWorkspace() && WorkspaceManager.hasWorkspace()) {
+            Long workspaceId = WorkspaceManager.getCurrentWorkspace().getId();
+            new Thread(() -> {
+                Optional<WorkspaceContentsResponse> contents = WorkspaceSharingService.getWorkspaceContents(workspaceId);
+                if (contents.isPresent()) {
+                    populateEnvironmentsUi(contents.get().getEnvironments() != null
+                            ? contents.get().getEnvironments() : new ArrayList<>());
+                } else {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to load this shared workspace's environments"));
+                }
+            }).start();
+            return;
+        }
         new Thread(() -> {
             try {
                 Optional<List<EnvironmentResponse>> environments = EnvironmentService.getUserEnvironments();
-                if (environments.isPresent()) {
-                    Platform.runLater(() -> {
-                        environmentCombo.getItems().clear();
-                        environmentsMap.clear();
-
-                        for (EnvironmentResponse env : environments.get()) {
-                            if (env.getIsActive()) {
-                                environmentCombo.getItems().add(env.getName());
-                                environmentsMap.put(env.getName(), env);
-                            }
-                        }
-
-                        if (environmentsList != null) {
-                            environmentsList.getItems().setAll(environments.get());
-                        }
-
-                        if (!environmentCombo.getItems().isEmpty()) {
-                            environmentCombo.getSelectionModel().select(0);
-                            updateEnvironmentVariables(environmentCombo.getValue());
-                        }
-                    });
-                }
+                environments.ifPresent(this::populateEnvironmentsUi);
             } catch (Exception e) {
                 Platform.runLater(() -> handleApiError(e, "Loading environments"));
             }
         }).start();
+    }
+
+    private void populateEnvironmentsUi(List<EnvironmentResponse> environments) {
+        Platform.runLater(() -> {
+            environmentCombo.getItems().clear();
+            environmentsMap.clear();
+
+            for (EnvironmentResponse env : environments) {
+                if (env.getIsActive()) {
+                    environmentCombo.getItems().add(env.getName());
+                    environmentsMap.put(env.getName(), env);
+                }
+            }
+
+            if (environmentsList != null) {
+                environmentsList.getItems().setAll(environments);
+            }
+
+            if (!environmentCombo.getItems().isEmpty()) {
+                environmentCombo.getSelectionModel().select(0);
+                updateEnvironmentVariables(environmentCombo.getValue());
+            }
+        });
     }
 
     private void loadHistory() {
@@ -745,7 +773,11 @@ public class MainController implements Initializable {
         }
     }
 
-    /** Rebuilds the Workspaces ▾ menu with the user's real workspaces. */
+    /** Rebuilds the Workspaces ▾ menu with the user's real workspaces,
+     * plus anything shared with them — switching to one of those puts
+     * the whole app (Collections, Environments, creating/editing
+     * things) into that workspace's context instead of your own,
+     * respecting your Editor/Viewer role there. */
     private void refreshWorkspacesMenu(List<Workspace> workspaces) {
         if (workspacesMenuBtn == null) {
             return;
@@ -753,7 +785,7 @@ public class MainController implements Initializable {
         workspacesMenuBtn.getItems().clear();
         for (Workspace ws : workspaces) {
             MenuItem item = new MenuItem(ws.getName());
-            if (WorkspaceManager.getCurrentWorkspace() != null
+            if (!WorkspaceManager.isViewingSharedWorkspace() && WorkspaceManager.getCurrentWorkspace() != null
                     && Objects.equals(WorkspaceManager.getCurrentWorkspace().getId(), ws.getId())) {
                 item.setText("✓ " + ws.getName());
             }
@@ -764,6 +796,30 @@ public class MainController implements Initializable {
         MenuItem create = new MenuItem("Create Workspace…");
         create.setOnAction(e -> handleCreateWorkspace());
         workspacesMenuBtn.getItems().add(create);
+
+        // Shared workspaces get their own section — loaded async since
+        // this menu rebuild itself runs on the FX thread.
+        new Thread(() -> {
+            Optional<List<WorkspaceAccessResponse>> shared = WorkspaceSharingService.getSharedWithMe();
+            Platform.runLater(() -> {
+                List<WorkspaceAccessResponse> sharedList = shared.orElse(List.of());
+                if (sharedList.isEmpty()) {
+                    return;
+                }
+                workspacesMenuBtn.getItems().add(new SeparatorMenuItem());
+                Menu sharedMenu = new Menu("Shared with me");
+                for (WorkspaceAccessResponse access : sharedList) {
+                    MenuItem item = new MenuItem(access.getWorkspaceName() + "  (" + access.getRole() + ")");
+                    if (WorkspaceManager.isViewingSharedWorkspace() && WorkspaceManager.getCurrentWorkspace() != null
+                            && Objects.equals(WorkspaceManager.getCurrentWorkspace().getId(), access.getWorkspaceId())) {
+                        item.setText("✓ " + access.getWorkspaceName() + "  (" + access.getRole() + ")");
+                    }
+                    item.setOnAction(e -> switchToSharedWorkspace(access));
+                    sharedMenu.getItems().add(item);
+                }
+                workspacesMenuBtn.getItems().add(sharedMenu);
+            });
+        }).start();
     }
 
     private void switchWorkspace(Workspace workspace) {
@@ -771,6 +827,25 @@ public class MainController implements Initializable {
         updateWorkspaceLabels();
         reloadWorkspacesAndCollections();
         updateStatus("Workspace: " + workspace.getName());
+    }
+
+    /** Switches the whole app into a workspace someone else shared
+     * with you — same Collections/Environments panels, same
+     * create/save actions, just pointed at their data instead of
+     * yours, and respecting whatever role you were granted. */
+    private void switchToSharedWorkspace(WorkspaceAccessResponse access) {
+        Workspace asWorkspace = new Workspace();
+        asWorkspace.setId(access.getWorkspaceId());
+        asWorkspace.setName(access.getWorkspaceName());
+        WorkspaceManager.setCurrentSharedWorkspace(asWorkspace, access.getRole());
+        updateWorkspaceLabels();
+        if (workspaceNameLabel != null) {
+            workspaceNameLabel.setText(access.getWorkspaceName() + "  (" + access.getRole()
+                    + " · owner: " + access.getWorkspaceOwnerUsername() + ")");
+        }
+        loadCollectionsFromServer();
+        loadEnvironments();
+        updateStatus("Now working in \"" + access.getWorkspaceName() + "\" as " + access.getRole());
     }
 
     private void updateWorkspaceLabels() {
@@ -2688,6 +2763,625 @@ public class MainController implements Initializable {
         dialog.showAndWait();
     }
 
+    // ============================================================
+    // Team Workspaces (shared workspace access)
+    // ============================================================
+
+    private void setupTeamWorkspacesList() {
+        if (teamWorkspacesList == null) {
+            return;
+        }
+        teamWorkspacesList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(WorkspaceAccessResponse access, boolean empty) {
+                super.updateItem(access, empty);
+                if (empty || access == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                Label nameLabel = new Label(access.getWorkspaceName());
+                nameLabel.getStyleClass().add("variable-suggestion-name");
+                // Direct invites have no team at all — showing "via Direct
+                // invite" read oddly, so just omit the "via ..." part
+                // entirely when there's no real team behind this grant.
+                String meta = access.getRole() + " · owner: " + access.getWorkspaceOwnerUsername();
+                if (access.getTeamId() != null) {
+                    meta += " · via " + access.getTeamName();
+                }
+                Label metaLabel = new Label(meta);
+                metaLabel.getStyleClass().add("variable-suggestion-value");
+                setGraphic(new VBox(1, nameLabel, metaLabel));
+                setText(null);
+            }
+        });
+        teamWorkspacesList.setOnMouseClicked(e -> {
+            WorkspaceAccessResponse selected = teamWorkspacesList.getSelectionModel().getSelectedItem();
+            if (e.getClickCount() == 2 && selected != null) {
+                openSharedWorkspaceBrowseDialog(selected);
+            }
+        });
+    }
+
+    private void loadTeamWorkspaces() {
+        if (teamWorkspacesList == null) {
+            return;
+        }
+        new Thread(() -> {
+            Optional<List<WorkspaceAccessResponse>> shared = WorkspaceSharingService.getSharedWithMe();
+            Platform.runLater(() -> shared.ifPresent(list -> teamWorkspacesList.getItems().setAll(list)));
+        }).start();
+    }
+
+    /** Share your current workspace with a team you own/admin, setting
+     * each member's access individually — this doubles as the "manage
+     * access" screen since sharing and managing who has access are the
+     * same underlying action. */
+    @FXML
+    private void handleShareWorkspace() {
+        if (!WorkspaceManager.hasWorkspace()) {
+            AlertUtils.showError("No workspace to share yet.");
+            return;
+        }
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Share Workspace");
+        dialog.setHeaderText("Invite someone by email — no team required, just like sharing a doc.");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        ComboBox<String> workspaceCombo = new ComboBox<>();
+        workspaceCombo.setPromptText("Loading your workspaces...");
+        Map<String, Long> workspaceIds = new LinkedHashMap<>();
+
+        TextField emailField = new TextField();
+        emailField.setPromptText("teammate@example.com");
+        ComboBox<String> roleCombo = new ComboBox<>();
+        roleCombo.getItems().addAll("EDITOR", "VIEWER");
+        roleCombo.setValue("EDITOR");
+        HBox inviteRow = new HBox(8, emailField, roleCombo);
+        HBox.setHgrow(emailField, Priority.ALWAYS);
+
+        // Environments stay opt-in even in the simple flow — checking
+        // one just means "also let them see this environment."
+        List<EnvironmentResponse> workspaceEnvironments = new ArrayList<>();
+        Set<Long> selectedEnvironmentIds = new HashSet<>();
+        Button chooseEnvBtn = new Button("Environments: None");
+        chooseEnvBtn.setOnAction(e -> {
+            if (workspaceEnvironments.isEmpty()) {
+                AlertUtils.showError("This workspace has no environments to choose from.");
+                return;
+            }
+            openEnvironmentPickerPopup(workspaceEnvironments, selectedEnvironmentIds,
+                    () -> chooseEnvBtn.setText("Environments: "
+                            + (selectedEnvironmentIds.isEmpty() ? "None" : selectedEnvironmentIds.size() + " selected")));
+        });
+
+        Button sendInviteBtn = new Button("Send Invite");
+        Label statusLabel = new Label();
+        statusLabel.setWrapText(true);
+        statusLabel.setMaxWidth(520);
+
+        TableView<WorkspaceInvitationResponse> pendingTable = new TableView<>();
+        TableColumn<WorkspaceInvitationResponse, String> pendingEmailCol = new TableColumn<>("Email");
+        pendingEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
+        TableColumn<WorkspaceInvitationResponse, String> pendingRoleCol = new TableColumn<>("Role");
+        pendingRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
+        TableColumn<WorkspaceInvitationResponse, Void> pendingRevokeCol = new TableColumn<>("");
+        pendingRevokeCol.setCellFactory(col -> new TableCell<>() {
+            private final Button revokeBtn = new Button("Cancel");
+            @Override
+            protected void updateItem(Void ignored, boolean empty) {
+                super.updateItem(ignored, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    return;
+                }
+                WorkspaceInvitationResponse invite = (WorkspaceInvitationResponse) getTableRow().getItem();
+                revokeBtn.setOnAction(e -> {
+                    Long wsId = workspaceIds.get(workspaceCombo.getValue());
+                    if (wsId == null) {
+                        return;
+                    }
+                    new Thread(() -> {
+                        boolean ok = WorkspaceInvitationService.revokeInvitation(wsId, invite.getId());
+                        Platform.runLater(() -> {
+                            if (ok) {
+                                pendingTable.getItems().remove(invite);
+                            }
+                        });
+                    }).start();
+                });
+                setGraphic(revokeBtn);
+            }
+        });
+        pendingTable.getColumns().addAll(pendingEmailCol, pendingRoleCol, pendingRevokeCol);
+        pendingTable.setPrefSize(520, 100);
+        pendingTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        pendingTable.setPlaceholder(new Label("No pending invitations."));
+
+        TableView<WorkspaceAccessResponse> accessTable = new TableView<>();
+        TableColumn<WorkspaceAccessResponse, String> accessNameCol = new TableColumn<>("Username");
+        accessNameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+        TableColumn<WorkspaceAccessResponse, Void> accessRoleCol = new TableColumn<>("Role");
+        accessRoleCol.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(Void ignored, boolean empty) {
+                super.updateItem(ignored, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    return;
+                }
+                WorkspaceAccessResponse access = (WorkspaceAccessResponse) getTableRow().getItem();
+                ComboBox<String> roleBox = new ComboBox<>();
+                roleBox.getItems().addAll("EDITOR", "VIEWER");
+                roleBox.setValue(access.getRole());
+                roleBox.valueProperty().addListener((obs, was, isNow) -> {
+                    if (isNow != null && !isNow.equals(was)) {
+                        new Thread(() -> WorkspaceSharingService.updateAccessRole(
+                                access.getWorkspaceId(), access.getUserId(), isNow)).start();
+                    }
+                });
+                setGraphic(roleBox);
+            }
+        });
+        TableColumn<WorkspaceAccessResponse, Void> accessEnvCol = new TableColumn<>("Environments");
+        accessEnvCol.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(Void ignored, boolean empty) {
+                super.updateItem(ignored, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    return;
+                }
+                WorkspaceAccessResponse access = (WorkspaceAccessResponse) getTableRow().getItem();
+                Button editBtn = new Button();
+                int currentCount = access.getAllowedEnvironmentIds() != null ? access.getAllowedEnvironmentIds().size() : 0;
+                editBtn.setText(currentCount == 0 ? "None" : currentCount + " selected");
+                editBtn.setOnAction(e -> {
+                    new Thread(() -> {
+                        Optional<WorkspaceContentsResponse> contents =
+                                WorkspaceSharingService.getWorkspaceContents(access.getWorkspaceId());
+                        Platform.runLater(() -> {
+                            List<EnvironmentResponse> available = contents.map(WorkspaceContentsResponse::getEnvironments)
+                                    .orElse(List.of());
+                            if (available.isEmpty()) {
+                                AlertUtils.showError("This workspace has no environments to choose from.");
+                                return;
+                            }
+                            Set<Long> selected = access.getAllowedEnvironmentIds() != null
+                                    ? new HashSet<>(access.getAllowedEnvironmentIds()) : new HashSet<>();
+                            openEnvironmentPickerPopup(available, selected, () -> {
+                                editBtn.setText(selected.isEmpty() ? "None" : selected.size() + " selected");
+                                new Thread(() -> WorkspaceSharingService.updateAccessEnvironments(
+                                        access.getWorkspaceId(), access.getUserId(), new ArrayList<>(selected))).start();
+                            });
+                        });
+                    }).start();
+                });
+                setGraphic(editBtn);
+            }
+        });
+        TableColumn<WorkspaceAccessResponse, Void> accessRevokeCol = new TableColumn<>("");
+        accessRevokeCol.setCellFactory(col -> new TableCell<>() {
+            private final Button removeBtn = new Button("Remove");
+            @Override
+            protected void updateItem(Void ignored, boolean empty) {
+                super.updateItem(ignored, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    return;
+                }
+                WorkspaceAccessResponse access = (WorkspaceAccessResponse) getTableRow().getItem();
+                removeBtn.setOnAction(e -> new Thread(() -> {
+                    boolean ok = WorkspaceSharingService.revokeAccess(access.getWorkspaceId(), access.getUserId());
+                    Platform.runLater(() -> {
+                        if (ok) {
+                            accessTable.getItems().remove(access);
+                        }
+                    });
+                }).start());
+                setGraphic(removeBtn);
+            }
+        });
+        accessTable.getColumns().addAll(accessNameCol, accessRoleCol, accessEnvCol, accessRevokeCol);
+        accessTable.setPrefSize(520, 100);
+        accessTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        accessTable.setPlaceholder(new Label("Nobody has access to this workspace yet."));
+
+        // Bulk convenience — invite everyone on a team at once instead
+        // of one email at a time. Uses the exact same invitation path
+        // as a single invite (see WorkspaceInvitationService), just
+        // looped over the team's members.
+        ComboBox<String> bulkTeamCombo = new ComboBox<>();
+        bulkTeamCombo.setPromptText("Choose a team");
+        Map<String, Long> bulkTeamIds = new LinkedHashMap<>();
+        ComboBox<String> bulkRoleCombo = new ComboBox<>();
+        bulkRoleCombo.getItems().addAll("EDITOR", "VIEWER");
+        bulkRoleCombo.setValue("EDITOR");
+        Button inviteTeamBtn = new Button("Invite All Members");
+        HBox bulkRow = new HBox(8, bulkTeamCombo, bulkRoleCombo, inviteTeamBtn);
+        Label bulkStatusLabel = new Label();
+        bulkStatusLabel.setWrapText(true);
+        bulkStatusLabel.setMaxWidth(520);
+
+        new Thread(() -> {
+            Optional<List<TeamResponse>> teams = TeamService.getMyTeams();
+            Platform.runLater(() -> teams.ifPresent(list -> list.stream()
+                    .filter(t -> "OWNER".equals(t.getMyRole()) || "ADMIN".equals(t.getMyRole()))
+                    .forEach(t -> {
+                        bulkTeamIds.put(t.getName(), t.getId());
+                        bulkTeamCombo.getItems().add(t.getName());
+                    })));
+        }).start();
+
+        VBox content = new VBox(10,
+                new Label("Workspace"), workspaceCombo,
+                new Label("Invite by email"), inviteRow, chooseEnvBtn, sendInviteBtn, statusLabel,
+                new Separator(),
+                new Label("Or invite a whole team at once"), bulkRow, bulkStatusLabel,
+                new Separator(),
+                new Label("Pending Invitations"), pendingTable,
+                new Label("Current Access"), accessTable);
+        content.setPadding(new Insets(10));
+        content.setPrefWidth(560);
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefViewportHeight(560);
+        dialog.getDialogPane().setContent(scrollPane);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        Runnable[] refreshLists = new Runnable[1];
+        refreshLists[0] = () -> {
+            Long workspaceId = workspaceIds.get(workspaceCombo.getValue());
+            if (workspaceId == null) {
+                return;
+            }
+            new Thread(() -> {
+                Optional<List<WorkspaceInvitationResponse>> pending =
+                        WorkspaceInvitationService.getPendingInvitations(workspaceId);
+                Optional<List<WorkspaceAccessResponse>> access =
+                        WorkspaceSharingService.getWorkspaceAccessList(workspaceId);
+                Optional<WorkspaceContentsResponse> contents =
+                        WorkspaceSharingService.getWorkspaceContents(workspaceId);
+                Platform.runLater(() -> {
+                    pending.ifPresent(list -> pendingTable.getItems().setAll(list));
+                    access.ifPresent(list -> accessTable.getItems().setAll(list));
+                    workspaceEnvironments.clear();
+                    selectedEnvironmentIds.clear();
+                    chooseEnvBtn.setText("Environments: None");
+                    contents.ifPresent(wc -> {
+                        if (wc.getEnvironments() != null) {
+                            workspaceEnvironments.addAll(wc.getEnvironments());
+                        }
+                    });
+                });
+            }).start();
+        };
+        workspaceCombo.valueProperty().addListener((obs, old, val) -> refreshLists[0].run());
+
+        new Thread(() -> {
+            Optional<List<Workspace>> workspaces = WorkspaceService.getUserWorkspaces();
+            Platform.runLater(() -> {
+                workspaceCombo.setPromptText("Choose a workspace");
+                workspaces.ifPresent(list -> list.forEach(w -> {
+                    workspaceIds.put(w.getName(), w.getId());
+                    workspaceCombo.getItems().add(w.getName());
+                }));
+                if (WorkspaceManager.hasWorkspace()) {
+                    String currentName = WorkspaceManager.getCurrentWorkspace().getName();
+                    if (workspaceCombo.getItems().contains(currentName)) {
+                        workspaceCombo.setValue(currentName);
+                    }
+                }
+            });
+        }).start();
+
+        sendInviteBtn.setOnAction(e -> {
+            Long workspaceId = workspaceIds.get(workspaceCombo.getValue());
+            if (workspaceId == null) {
+                statusLabel.setText("Choose a workspace first.");
+                return;
+            }
+            String email = emailField.getText() == null ? "" : emailField.getText().trim();
+            if (email.isEmpty()) {
+                statusLabel.setText("Enter an email address first.");
+                return;
+            }
+            statusLabel.setText("Sending invite...");
+            sendInviteBtn.setDisable(true);
+            InviteToWorkspaceRequest request = new InviteToWorkspaceRequest(
+                    email, roleCombo.getValue(), new ArrayList<>(selectedEnvironmentIds));
+            new Thread(() -> {
+                try {
+                    WorkspaceInvitationService.inviteToWorkspace(workspaceId, request);
+                    Platform.runLater(() -> {
+                        statusLabel.setText("Invite sent to " + email + ".");
+                        sendInviteBtn.setDisable(false);
+                        emailField.clear();
+                        selectedEnvironmentIds.clear();
+                        chooseEnvBtn.setText("Environments: None");
+                        refreshLists[0].run();
+                    });
+                } catch (IOException ex) {
+                    Platform.runLater(() -> {
+                        statusLabel.setText("Couldn't send invite: " + WorkspaceInvitationService.friendlyMessage(ex));
+                        sendInviteBtn.setDisable(false);
+                    });
+                }
+            }).start();
+        });
+
+        inviteTeamBtn.setOnAction(e -> {
+            Long workspaceId = workspaceIds.get(workspaceCombo.getValue());
+            Long teamId = bulkTeamIds.get(bulkTeamCombo.getValue());
+            if (workspaceId == null) {
+                bulkStatusLabel.setText("Choose a workspace first.");
+                return;
+            }
+            if (teamId == null) {
+                bulkStatusLabel.setText("Choose a team first.");
+                return;
+            }
+            bulkStatusLabel.setText("Sending invites...");
+            inviteTeamBtn.setDisable(true);
+            InviteTeamRequest request = new InviteTeamRequest(teamId, bulkRoleCombo.getValue(), List.of());
+            new Thread(() -> {
+                try {
+                    List<WorkspaceInvitationResponse> sent = WorkspaceInvitationService.inviteTeamMembers(workspaceId, request);
+                    Platform.runLater(() -> {
+                        inviteTeamBtn.setDisable(false);
+                        bulkStatusLabel.setText(sent.isEmpty()
+                                ? "Nobody new to invite — everyone on that team already has access or a pending invite."
+                                : "Invited " + sent.size() + " member(s). Adjust their environment access below if needed.");
+                        refreshLists[0].run();
+                    });
+                } catch (IOException ex) {
+                    Platform.runLater(() -> {
+                        inviteTeamBtn.setDisable(false);
+                        bulkStatusLabel.setText("Couldn't invite the team: " + WorkspaceInvitationService.friendlyMessage(ex));
+                    });
+                }
+            }).start();
+        });
+
+        dialog.showAndWait();
+    }
+
+    /** The other half of Share — enter a code you received by email to
+     * get access to someone else's workspace. Mirrors "Join Team"'s
+     * existing code-entry pattern for consistency. */
+    @FXML
+    private void handleAcceptWorkspaceInvite() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Enter Invite Code");
+        dialog.setHeaderText("Paste the invite code from the email you received.");
+        dialog.setContentText("Code:");
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(code -> {
+            String trimmed = code == null ? "" : code.trim();
+            if (trimmed.isEmpty()) {
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    WorkspaceAccessResponse access = WorkspaceInvitationService.acceptInvitation(trimmed);
+                    Platform.runLater(() -> {
+                        updateStatus("You now have " + access.getRole() + " access to \"" + access.getWorkspaceName() + "\".");
+                        loadTeamWorkspaces();
+                    });
+                } catch (IOException ex) {
+                    Platform.runLater(() -> AlertUtils.showError(
+                            "Couldn't accept that invite: " + WorkspaceInvitationService.friendlyMessage(ex)));
+                }
+            }).start();
+        });
+    }
+
+
+    /** Small popup used by the Share dialog's Environments column — a
+     * plain checklist of the workspace's environments, mutating the
+     * passed-in selected set directly and calling onChange so the
+     * button label updates without needing the table to fully refresh. */
+    private void openEnvironmentPickerPopup(List<EnvironmentResponse> available, Set<Long> selected, Runnable onChange) {
+        Dialog<Void> popup = new Dialog<>();
+        popup.setTitle("Choose Environments");
+        popup.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        VBox checklist = new VBox(6);
+        for (EnvironmentResponse env : available) {
+            CheckBox cb = new CheckBox(env.getName());
+            cb.setSelected(selected.contains(env.getId()));
+            cb.selectedProperty().addListener((obs, was, isNow) -> {
+                if (isNow) {
+                    selected.add(env.getId());
+                } else {
+                    selected.remove(env.getId());
+                }
+                onChange.run();
+            });
+            checklist.getChildren().add(cb);
+        }
+        VBox content = new VBox(10, new Label("Visible to this member:"), checklist);
+        content.setPadding(new Insets(10));
+        popup.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(popup.getDialogPane());
+        popup.showAndWait();
+    }
+
+    /** Read-only browse of a workspace shared with you — collections,
+     * folders, requests, and environments. Editing/sending requests
+     * in-place here is a natural next step; this establishes the
+     * access-controlled viewing experience first. */
+    private void openSharedWorkspaceBrowseDialog(WorkspaceAccessResponse access) {
+        boolean canSend = "EDITOR".equals(access.getRole());
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle(access.getWorkspaceName());
+        dialog.setHeaderText("Owner: " + access.getWorkspaceOwnerUsername() + "  ·  Your access: " + access.getRole()
+                + (canSend ? "  ·  double-click a request to send it" : ""));
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        TreeItem<String> root = new TreeItem<>(access.getWorkspaceName());
+        root.setExpanded(true);
+        TreeView<String> tree = new TreeView<>(root);
+        tree.setShowRoot(false);
+        tree.setPrefSize(500, 320);
+
+        // Maps a tree node back to the real request it represents, so a
+        // double-click knows exactly what to send — the tree itself only
+        // ever displays plain text.
+        Map<TreeItem<String>, RequestResponse> requestByNode = new HashMap<>();
+
+        ListView<String> environmentsList = new ListView<>();
+        environmentsList.setPrefSize(500, 100);
+        environmentsList.setPlaceholder(new Label("No environments in this workspace."));
+
+        Label statusLabel = new Label("Loading...");
+
+        VBox content = new VBox(10,
+                new Label("Collections"), tree,
+                new Label("Environments"), environmentsList,
+                statusLabel);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        if (canSend) {
+            tree.setOnMouseClicked(e -> {
+                if (e.getClickCount() != 2) {
+                    return;
+                }
+                TreeItem<String> selected = tree.getSelectionModel().getSelectedItem();
+                RequestResponse request = selected != null ? requestByNode.get(selected) : null;
+                if (request != null) {
+                    openSendSharedRequestDialog(access.getWorkspaceId(), request);
+                }
+            });
+        }
+
+        new Thread(() -> {
+            Optional<WorkspaceContentsResponse> contents = WorkspaceSharingService.getWorkspaceContents(access.getWorkspaceId());
+            Platform.runLater(() -> {
+                statusLabel.setText("");
+                contents.ifPresent(wc -> {
+                    if (wc.getCollections() != null) {
+                        for (CollectionResponse collection : wc.getCollections()) {
+                            TreeItem<String> collectionNode = new TreeItem<>(collection.getName());
+                            if (collection.getFolderResponses() != null) {
+                                for (FolderResponse folder : collection.getFolderResponses()) {
+                                    if (folder.getParentFolderId() == null) {
+                                        collectionNode.getChildren().add(new TreeItem<>(folder.getName() + " (folder)"));
+                                    }
+                                }
+                            }
+                            if (collection.getRequestResponses() != null) {
+                                for (RequestResponse request : collection.getRequestResponses()) {
+                                    if (request.getFolderId() == null) {
+                                        TreeItem<String> requestNode =
+                                                new TreeItem<>(request.getMethod() + "  " + request.getName());
+                                        requestByNode.put(requestNode, request);
+                                        collectionNode.getChildren().add(requestNode);
+                                    }
+                                }
+                            }
+                            root.getChildren().add(collectionNode);
+                        }
+                    }
+                    if (wc.getEnvironments() != null) {
+                        for (EnvironmentResponse env : wc.getEnvironments()) {
+                            int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
+                            environmentsList.getItems().add(env.getName() + "  (" + varCount + " variables)");
+                        }
+                    }
+                });
+                if (contents.isEmpty()) {
+                    statusLabel.setText("Couldn't load this workspace — you may no longer have access.");
+                }
+            });
+        }).start();
+
+        dialog.showAndWait();
+    }
+
+    /** Lets an Editor actually send a request that lives in someone
+     * else's shared workspace — the request's saved URL/headers/body
+     * are editable here for this one send, but nothing is written back
+     * to the owner's saved copy; only the response comes back. */
+    private void openSendSharedRequestDialog(Long workspaceId, RequestResponse request) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle(request.getMethod() + "  " + request.getName());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        Label methodLabel = new Label(String.valueOf(request.getMethod()));
+        methodLabel.getStyleClass().add("method-" + request.getMethod().toString().toLowerCase(Locale.ROOT));
+        TextField urlField = new TextField(request.getUrl());
+        HBox urlRow = new HBox(8, methodLabel, urlField);
+        HBox.setHgrow(urlField, Priority.ALWAYS);
+        urlRow.setAlignment(Pos.CENTER_LEFT);
+
+        TextArea headersArea = new TextArea(request.getHeaders());
+        headersArea.setPromptText("Headers as JSON, e.g. {\"Content-Type\": \"application/json\"}");
+        headersArea.setPrefRowCount(3);
+        headersArea.setWrapText(true);
+
+        TextArea bodyArea = new TextArea(request.getBody());
+        bodyArea.setPromptText("Request body (if any)");
+        bodyArea.setPrefRowCount(5);
+        bodyArea.setWrapText(true);
+
+        Button sendBtn = new Button("Send");
+        Label statusLabel = new Label();
+        statusLabel.setWrapText(true);
+
+        TextArea responseArea = new TextArea();
+        responseArea.setEditable(false);
+        responseArea.setPromptText("Response will show here after you send.");
+        responseArea.setPrefRowCount(10);
+        responseArea.setWrapText(true);
+
+        VBox content = new VBox(8,
+                urlRow,
+                new Label("Headers"), headersArea,
+                new Label("Body"), bodyArea,
+                sendBtn, statusLabel,
+                new Label("Response"), responseArea);
+        content.setPadding(new Insets(10));
+        content.setPrefWidth(560);
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        sendBtn.setOnAction(e -> {
+            statusLabel.setText("Sending...");
+            sendBtn.setDisable(true);
+            ApiRequest overrides = ApiRequest.builder()
+                    .url(urlField.getText())
+                    .headers(headersArea.getText())
+                    .body(bodyArea.getText())
+                    .build();
+            new Thread(() -> {
+                try {
+                    ApiResponse response = WorkspaceSharingService.executeSharedRequest(
+                            workspaceId, request.getId(), overrides);
+                    Platform.runLater(() -> {
+                        sendBtn.setDisable(false);
+                        statusLabel.setText("Status: " + response.getStatusCode()
+                                + "  ·  " + response.getDuration() + " ms"
+                                + "  ·  " + (response.isSuccess() ? "Success" : "Failed"));
+                        responseArea.setText(response.getResponse());
+                    });
+                } catch (IOException ex) {
+                    Platform.runLater(() -> {
+                        sendBtn.setDisable(false);
+                        statusLabel.setText("Couldn't send: " + WorkspaceSharingService.friendlyMessage(ex));
+                    });
+                }
+            }).start();
+        });
+
+        dialog.showAndWait();
+    }
+
     /** Lets the project owner configure the app's own outgoing SMTP
      * server — used for email verification codes and team invitations.
      * The backend rejects this for non-admins, so nothing bad happens if
@@ -2879,6 +3573,17 @@ public class MainController implements Initializable {
         loadMonitors();
     }
 
+    @FXML
+    private void handleShowTeamWorkspaces() {
+        showSidebarPane(teamWorkspacesPane);
+        loadTeamWorkspaces();
+    }
+
+    @FXML
+    private void handleRefreshTeamWorkspaces() {
+        loadTeamWorkspaces();
+    }
+
     private void showSidebarPane(VBox pane) {
         if (collectionsPane == null || environmentsPane == null || historyPane == null || pane == null) {
             return; // old FXML without the rail
@@ -2894,6 +3599,9 @@ public class MainController implements Initializable {
         }
         if (monitorsPane != null) {
             monitorsPane.setVisible(pane == monitorsPane);
+        }
+        if (teamWorkspacesPane != null) {
+            teamWorkspacesPane.setVisible(pane == teamWorkspacesPane);
         }
     }
 
@@ -3954,6 +4662,10 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleNewCollection() {
+        if (!WorkspaceManager.canEditCurrentWorkspace()) {
+            AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
+            return;
+        }
         TextInputDialog nameDialog = new TextInputDialog();
         nameDialog.setTitle("New Collection");
         nameDialog.setHeaderText("Create a new Collection");
@@ -3971,6 +4683,7 @@ public class MainController implements Initializable {
                     CollectionRequest request = CollectionRequest.builder()
                             .name(name)
                             .description(description)
+                            .workspaceId(WorkspaceManager.hasWorkspace() ? WorkspaceManager.getCurrentWorkspace().getId() : null)
                             .build();
                     createNewCollection(request);
                 });
@@ -4005,6 +4718,10 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleNewEnvironment() {
+        if (!WorkspaceManager.canEditCurrentWorkspace()) {
+            AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
+            return;
+        }
         // Create a custom dialog for environment creation
         Dialog<EnvironmentCreationData> dialog = new Dialog<>();
         dialog.setTitle("Create New Environment");
@@ -4149,6 +4866,10 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSaveRequest() {
+        if (!WorkspaceManager.canEditCurrentWorkspace()) {
+            AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to save changes in it.");
+            return;
+        }
         // FIX: Ctrl+S is a scene-level shortcut, so it can fire while a
         // Params/Headers table cell is still mid-edit (focus never left
         // the cell's text field) — without this, whatever you were
@@ -5439,6 +6160,10 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleNewFolder() {
+        if (!WorkspaceManager.canEditCurrentWorkspace()) {
+            AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
+            return;
+        }
         TreeItem<String> selectedItem = collectionsTree.getSelectionModel().getSelectedItem();
 
         Long collectionId = selectedItem != null ? getCollectionIdFromTreeItem(selectedItem) : null;
@@ -5518,6 +6243,10 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleDeleteItem() {
+        if (!WorkspaceManager.canEditCurrentWorkspace()) {
+            AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to delete things in it.");
+            return;
+        }
         TreeItem<String> selectedItem = collectionsTree.getSelectionModel().getSelectedItem();
         if (selectedItem != null && selectedItem != collectionsTree.getRoot()) {
             if (AlertUtils.showConfirmation("Delete", "Are you sure you want to delete this item?")) {

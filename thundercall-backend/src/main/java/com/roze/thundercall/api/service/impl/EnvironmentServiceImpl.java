@@ -8,6 +8,7 @@ import com.roze.thundercall.api.entity.Workspace;
 import com.roze.thundercall.api.exception.ResourceNotFoundException;
 import com.roze.thundercall.api.mapper.EnvironmentMapper;
 import com.roze.thundercall.api.repository.EnvironmentRepository;
+import com.roze.thundercall.api.security.WorkspaceAccessGuard;
 import com.roze.thundercall.api.service.EnvironmentService;
 import com.roze.thundercall.api.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,12 @@ import java.util.List;
 /**
  * FIX: createEnvironment() no longer throws "No workspace found".
  * The user's default workspace is created on demand via WorkspaceService.
+ *
+ * FIX: every write here now goes through WorkspaceAccessGuard, and
+ * createEnvironment() now accepts an explicit workspaceId — an Editor
+ * with shared access to a workspace can create/edit/delete
+ * environments in it exactly like the owner can. See
+ * CollectionServiceImpl for the same pattern applied there.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,13 +33,16 @@ public class EnvironmentServiceImpl implements EnvironmentService {
     private final EnvironmentRepository environmentRepository;
     private final EnvironmentMapper environmentMapper;
     private final WorkspaceService workspaceService;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
 
     @Override
     @Transactional
     public EnvironmentResponse createEnvironment(EnvironmentRequest request, User user) {
-        Workspace workspace = workspaceService.getOrCreateDefaultWorkspace(user);
+        Workspace workspace = request.workspaceId() != null
+                ? workspaceAccessGuard.resolveForWrite(request.workspaceId(), user)
+                : workspaceService.getOrCreateDefaultWorkspace(user);
 
-        environmentRepository.findByNameAndWorkspaceOwner(request.name(), user)
+        environmentRepository.findByNameAndWorkspaceId(request.name(), workspace.getId())
                 .ifPresent(env -> {
                     throw new IllegalArgumentException(
                             "Environment with name '" + request.name() + "' already exists");
@@ -55,18 +65,16 @@ public class EnvironmentServiceImpl implements EnvironmentService {
 
     @Override
     public EnvironmentResponse getEnvironmentById(Long id, User user) {
-        Environment environment = environmentRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
+        Environment environment = findEnvironmentWithAccess(id, user, false);
         return environmentMapper.toResponse(environment);
     }
 
     @Override
     @Transactional
     public EnvironmentResponse updateEnvironment(Long id, EnvironmentRequest request, User user) {
-        Environment environment = environmentRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
+        Environment environment = findEnvironmentWithAccess(id, user, true);
 
-        environmentRepository.findByNameAndWorkspaceOwner(request.name(), user)
+        environmentRepository.findByNameAndWorkspaceId(request.name(), environment.getWorkspace().getId())
                 .ifPresent(existingEnv -> {
                     if (!existingEnv.getId().equals(id)) {
                         throw new IllegalArgumentException(
@@ -88,8 +96,7 @@ public class EnvironmentServiceImpl implements EnvironmentService {
     @Override
     @Transactional
     public void deleteEnvironment(Long id, User user) {
-        Environment environment = environmentRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
+        Environment environment = findEnvironmentWithAccess(id, user, true);
         environmentRepository.delete(environment);
     }
 
@@ -104,11 +111,20 @@ public class EnvironmentServiceImpl implements EnvironmentService {
     @Override
     @Transactional
     public EnvironmentResponse toggleEnvironmentStatus(Long id, User user, Boolean isActive) {
-        Environment environment = environmentRepository.findByIdAndWorkspaceOwner(id, user)
-                .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
-
+        Environment environment = findEnvironmentWithAccess(id, user, true);
         environment.setIsActive(isActive);
         Environment updatedEnvironment = environmentRepository.save(environment);
         return environmentMapper.toResponse(updatedEnvironment);
+    }
+
+    private Environment findEnvironmentWithAccess(Long id, User user, boolean requireWrite) {
+        Environment environment = environmentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Environment not found"));
+        if (requireWrite) {
+            workspaceAccessGuard.requireWrite(environment.getWorkspace(), user);
+        } else {
+            workspaceAccessGuard.requireRead(environment.getWorkspace(), user);
+        }
+        return environment;
     }
 }

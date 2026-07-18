@@ -8,7 +8,6 @@ import com.roze.thundercall.ui.utils.AlertUtils;
 import javafx.application.Platform;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,6 +18,12 @@ public class EnvironmentService {
     public static Optional<EnvironmentResponse> createEnvironment(String name, String description, Map<String, String> variables) {
         try {
             EnvironmentRequest request = new EnvironmentRequest(name, description, variables, true);
+            // Picks up whatever workspace is currently active — including a
+            // shared one you've switched into — without every call site
+            // needing to know or pass this explicitly.
+            if (WorkspaceManager.hasWorkspace()) {
+                request.setWorkspaceId(WorkspaceManager.getCurrentWorkspace().getId());
+            }
             BaseResponse<EnvironmentResponse> response = ApiClient.post(BASE_URL, request, new TypeReference<BaseResponse<EnvironmentResponse>>() {
             });
             if (response != null && response.isSuccess()) {

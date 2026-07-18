@@ -4,11 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.roze.thundercall.ui.models.AuthResponse;
-import com.roze.thundercall.ui.models.BaseResponse;
-import com.roze.thundercall.ui.models.LoginRequest;
-import com.roze.thundercall.ui.models.RegisterRequest;
-import com.roze.thundercall.ui.models.RegisterResponse;
+import com.roze.thundercall.ui.models.*;
 
 import java.io.IOException;
 import java.io.InputStream;

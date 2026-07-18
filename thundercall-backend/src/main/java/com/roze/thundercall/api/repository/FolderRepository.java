@@ -15,6 +15,10 @@ public interface FolderRepository extends JpaRepository<Folder, Long>, JpaSpecif
 
     List<Folder> findByCollectionIdAndCollectionWorkspaceOwner(Long collectionId, User user);
 
+    // Used for browsing a workspace shared with the caller — access is
+    // checked separately before this is ever called.
+    List<Folder> findByCollectionId(Long collectionId);
+
     Optional<Folder> findByIdAndCollectionWorkspaceOwner(Long id, User user);
 
     @Query("SELECT f FROM Folder f WHERE f.collection.workspace.owner = :user AND f.name = :name AND f.collection.id = :collectionId")
@@ -48,4 +52,28 @@ public interface FolderRepository extends JpaRepository<Folder, Long>, JpaSpecif
 
     @Query("SELECT COUNT(r) FROM Request r WHERE r.folder.id = :folderId")
     Long countRequestsByFolderId(@Param("folderId") Long folderId);
+
+    // Owner-agnostic versions of the duplicate-name checks above — used
+    // when the caller's access to the collection has already been
+    // verified via WorkspaceAccessGuard, so scoping strictly to the
+    // collection ID is correct here (an Editor's duplicate folder name
+    // should be rejected exactly like the owner's would be).
+    @Query("SELECT f FROM Folder f WHERE f.name = :name AND f.collection.id = :collectionId AND f.parentFolder.id = :parentFolderId")
+    Optional<Folder> findByNameAndCollectionIdAndParentFolderId(
+            @Param("name") String name,
+            @Param("collectionId") Long collectionId,
+            @Param("parentFolderId") Long parentFolderId
+    );
+
+    @Query("SELECT f FROM Folder f WHERE f.name = :name AND f.collection.id = :collectionId AND f.parentFolder IS NULL")
+    Optional<Folder> findByNameAndCollectionIdAndParentFolderIsNull(
+            @Param("name") String name,
+            @Param("collectionId") Long collectionId
+    );
+
+    @Query("SELECT f FROM Folder f WHERE f.name = :name AND f.collection.id = :collectionId")
+    Optional<Folder> findByNameAndCollectionId(
+            @Param("name") String name,
+            @Param("collectionId") Long collectionId
+    );
 }
