@@ -166,39 +166,66 @@ public class WorkspaceSharingServiceImpl implements WorkspaceSharingService {
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found"));
 
-        List<com.roze.thundercall.api.dto.CollectionResponse> collectionResponses =
-                collectionRepository.findByWorkspaceId(workspaceId).stream()
-                        .map(collection -> {
-                            List<com.roze.thundercall.api.dto.FolderResponse> folderResponses =
-                                    folderRepository.findByCollectionId(collection.getId()).stream()
-                                            .map(folder -> {
-                                                com.roze.thundercall.api.dto.FolderResponse fr = folderMapper.toResponse(folder);
-                                                Long count = folderRepository.countRequestsByFolderId(folder.getId());
-                                                fr.setRequestCount(count != null ? count.intValue() : 0);
-                                                return fr;
-                                            })
-                                            .toList();
-                            List<com.roze.thundercall.api.dto.RequestResponse> requestResponses =
-                                    requestRepository.findByCollectionId(collection.getId()).stream()
-                                            .map(request -> com.roze.thundercall.api.dto.RequestResponse.builder()
-                                                    .id(request.getId())
-                                                    .name(request.getName())
-                                                    .description(request.getDescription())
-                                                    .method(request.getMethod())
-                                                    .url(request.getUrl())
-                                                    .headers(request.getHeaders())
-                                                    .body(request.getBody())
-                                                    .collectionId(collection.getId())
-                                                    .collectionName(collection.getName())
-                                                    .folderId(request.getFolder() != null ? request.getFolder().getId() : null)
-                                                    .folderName(request.getFolder() != null ? request.getFolder().getName() : null)
-                                                    .createdAt(request.getCreatedAt())
-                                                    .updatedAt(request.getUpdatedAt())
-                                                    .build())
-                                            .toList();
-                            return collectionMapper.toDetailedResponse(collection, folderResponses, requestResponses);
-                        })
-                        .toList();
+        // FIX: this used to fetch folders and requests ONE COLLECTION AT
+        // A TIME in a loop, plus a separate COUNT query per folder for
+        // its request count — a classic N+1 problem. A workspace with 5
+        // collections and 10 folders each was firing 60+ separate
+        // database round-trips just to open the browse dialog, which is
+        // exactly why it felt slow. Everything below is now 4 bulk
+        // queries total, regardless of how many collections/folders/
+        // requests actually exist, with the grouping done in memory.
+        List<Collection> collections = collectionRepository.findByWorkspaceId(workspaceId);
+        List<Long> collectionIds = collections.stream().map(Collection::getId).toList();
+
+        List<Folder> allFolders = collectionIds.isEmpty()
+                ? List.of() : folderRepository.findByCollectionIdIn(collectionIds);
+        List<Request> allRequests = collectionIds.isEmpty()
+                ? List.of() : requestRepository.findByCollectionIdIn(collectionIds);
+
+        List<Long> folderIds = allFolders.stream().map(Folder::getId).toList();
+        Map<Long, Long> requestCountByFolderId = new java.util.HashMap<>();
+        if (!folderIds.isEmpty()) {
+            for (Object[] row : folderRepository.countRequestsByFolderIds(folderIds)) {
+                requestCountByFolderId.put((Long) row[0], (Long) row[1]);
+            }
+        }
+
+        Map<Long, List<Folder>> foldersByCollectionId = allFolders.stream()
+                .collect(java.util.stream.Collectors.groupingBy(f -> f.getCollection().getId()));
+        Map<Long, List<Request>> requestsByCollectionId = allRequests.stream()
+                .collect(java.util.stream.Collectors.groupingBy(r -> r.getCollection().getId()));
+
+        List<com.roze.thundercall.api.dto.CollectionResponse> collectionResponses = collections.stream()
+                .map(collection -> {
+                    List<com.roze.thundercall.api.dto.FolderResponse> folderResponses =
+                            foldersByCollectionId.getOrDefault(collection.getId(), List.of()).stream()
+                                    .map(folder -> {
+                                        com.roze.thundercall.api.dto.FolderResponse fr = folderMapper.toResponse(folder);
+                                        fr.setRequestCount(requestCountByFolderId.getOrDefault(folder.getId(), 0L).intValue());
+                                        return fr;
+                                    })
+                                    .toList();
+                    List<com.roze.thundercall.api.dto.RequestResponse> requestResponses =
+                            requestsByCollectionId.getOrDefault(collection.getId(), List.of()).stream()
+                                    .map(request -> com.roze.thundercall.api.dto.RequestResponse.builder()
+                                            .id(request.getId())
+                                            .name(request.getName())
+                                            .description(request.getDescription())
+                                            .method(request.getMethod())
+                                            .url(request.getUrl())
+                                            .headers(request.getHeaders())
+                                            .body(request.getBody())
+                                            .collectionId(collection.getId())
+                                            .collectionName(collection.getName())
+                                            .folderId(request.getFolder() != null ? request.getFolder().getId() : null)
+                                            .folderName(request.getFolder() != null ? request.getFolder().getName() : null)
+                                            .createdAt(request.getCreatedAt())
+                                            .updatedAt(request.getUpdatedAt())
+                                            .build())
+                                    .toList();
+                    return collectionMapper.toDetailedResponse(collection, folderResponses, requestResponses);
+                })
+                .toList();
 
         // Environments are opt-in only, unlike collections — the owner
         // sees everything, but anyone else only sees the specific

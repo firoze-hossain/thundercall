@@ -18,6 +18,10 @@ public interface RequestRepository extends JpaRepository<Request, Long>, JpaSpec
 
     List<Request> findByCollectionId(Long id);
 
+    // Bulk variant — one query for every collection at once, same
+    // reasoning as FolderRepository.findByCollectionIdIn().
+    List<Request> findByCollectionIdIn(List<Long> collectionIds);
+
     // Used for executing a request from a shared workspace — access is
     // checked separately (WorkspaceSharingService.hasAccess) before this
     // is ever called, and this also guards against someone passing a

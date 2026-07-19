@@ -21,6 +21,8 @@ import javafx.scene.Parent;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.control.cell.TextFieldTableCell;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
@@ -239,12 +241,12 @@ public class MainController implements Initializable {
     private ListView<EnvironmentResponse> environmentsList;
     private final Map<Tab, RequestTabState> tabStates = new HashMap<>();
     private boolean switchingTabs = false;
-    private final javafx.scene.image.Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
-    private final javafx.scene.image.Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
+    private final Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
+    private final Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
 
-    private static javafx.scene.image.Image loadTreeIcon(String path) {
+    private static Image loadTreeIcon(String path) {
         try {
-            return new javafx.scene.image.Image(
+            return new Image(
                     Objects.requireNonNull(MainController.class.getResourceAsStream(path)));
         } catch (Exception e) {
             return null;
@@ -3218,32 +3220,104 @@ public class MainController implements Initializable {
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(access.getWorkspaceName());
-        dialog.setHeaderText("Owner: " + access.getWorkspaceOwnerUsername() + "  ·  Your access: " + access.getRole()
-                + (canSend ? "  ·  double-click a request to send it" : ""));
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
+
+        Label ownerBadge = new Label("Owner: " + access.getWorkspaceOwnerUsername());
+        ownerBadge.getStyleClass().add("shared-workspace-badge");
+        Label roleBadge = new Label(access.getRole());
+        roleBadge.getStyleClass().addAll("shared-workspace-badge",
+                canSend ? "shared-workspace-badge-editor" : "shared-workspace-badge-viewer");
+        HBox badgeRow = new HBox(8, ownerBadge, roleBadge);
+        badgeRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label hintLabel = new Label(canSend
+                ? "Double-click any request to send it."
+                : "Viewer access — browse only.");
+        hintLabel.getStyleClass().add("shared-workspace-hint");
+
+        VBox headerBox = new VBox(4, badgeRow, hintLabel);
+        headerBox.setPadding(new Insets(0, 0, 12, 0));
+
+        // Tracks which node is a request (and which real request it maps
+        // to) vs. a folder vs. a collection, so the cell factory below can
+        // render each differently, and so double-click knows exactly what
+        // it's looking at.
+        Map<TreeItem<String>, RequestResponse> requestByNode = new HashMap<>();
+        Set<TreeItem<String>> folderNodes = new HashSet<>();
 
         TreeItem<String> root = new TreeItem<>(access.getWorkspaceName());
         root.setExpanded(true);
         TreeView<String> tree = new TreeView<>(root);
         tree.setShowRoot(false);
-        tree.setPrefSize(500, 320);
-
-        // Maps a tree node back to the real request it represents, so a
-        // double-click knows exactly what to send — the tree itself only
-        // ever displays plain text.
-        Map<TreeItem<String>, RequestResponse> requestByNode = new HashMap<>();
+        tree.setPrefSize(520, 340);
+        tree.getStyleClass().add("shared-workspace-tree");
+        tree.setCellFactory(tv -> new TreeCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                TreeItem<String> treeItem = getTreeItem();
+                RequestResponse req = requestByNode.get(treeItem);
+                if (req != null) {
+                    Label methodLabel = new Label(String.valueOf(req.getMethod()));
+                    methodLabel.getStyleClass().add("method-" + req.getMethod().toString().toLowerCase(Locale.ROOT));
+                    methodLabel.setMinWidth(52);
+                    Label nameLabel = new Label(item);
+                    HBox row = new HBox(8, methodLabel, nameLabel);
+                    row.setAlignment(Pos.CENTER_LEFT);
+                    setGraphic(row);
+                    setText(null);
+                } else if (folderNodes.contains(treeItem)) {
+                    ImageView icon = new ImageView(new Image(
+                            getClass().getResourceAsStream("/images/folder-icon.png")));
+                    icon.setFitHeight(13);
+                    icon.setFitWidth(13);
+                    icon.setPreserveRatio(true);
+                    setGraphic(icon);
+                    setText(item);
+                    getStyleClass().removeAll("shared-workspace-collection-cell");
+                } else {
+                    ImageView icon = new ImageView(new Image(
+                            getClass().getResourceAsStream("/images/collection-icon.png")));
+                    icon.setFitHeight(14);
+                    icon.setFitWidth(14);
+                    icon.setPreserveRatio(true);
+                    setGraphic(icon);
+                    setText(item);
+                    if (!getStyleClass().contains("shared-workspace-collection-cell")) {
+                        getStyleClass().add("shared-workspace-collection-cell");
+                    }
+                }
+            }
+        });
 
         ListView<String> environmentsList = new ListView<>();
-        environmentsList.setPrefSize(500, 100);
-        environmentsList.setPlaceholder(new Label("No environments in this workspace."));
+        environmentsList.setPrefSize(520, 90);
+        environmentsList.setPlaceholder(new Label("No environments shared with you in this workspace."));
 
-        Label statusLabel = new Label("Loading...");
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setMaxSize(28, 28);
+        Label statusLabel = new Label("Loading workspace…");
+        HBox loadingRow = new HBox(8, spinner, statusLabel);
+        loadingRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label collectionsHeader = new Label("Collections");
+        collectionsHeader.getStyleClass().add("shared-workspace-section-title");
+        Label environmentsHeader = new Label("Environments");
+        environmentsHeader.getStyleClass().add("shared-workspace-section-title");
 
         VBox content = new VBox(10,
-                new Label("Collections"), tree,
-                new Label("Environments"), environmentsList,
-                statusLabel);
-        content.setPadding(new Insets(10));
+                headerBox,
+                loadingRow,
+                collectionsHeader, tree,
+                environmentsHeader, environmentsList);
+        content.setPadding(new Insets(16));
+        content.setPrefWidth(560);
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
 
@@ -3263,27 +3337,46 @@ public class MainController implements Initializable {
         new Thread(() -> {
             Optional<WorkspaceContentsResponse> contents = WorkspaceSharingService.getWorkspaceContents(access.getWorkspaceId());
             Platform.runLater(() -> {
-                statusLabel.setText("");
+                loadingRow.setVisible(false);
+                loadingRow.setManaged(false);
                 contents.ifPresent(wc -> {
                     if (wc.getCollections() != null) {
                         for (CollectionResponse collection : wc.getCollections()) {
                             TreeItem<String> collectionNode = new TreeItem<>(collection.getName());
-                            if (collection.getFolderResponses() != null) {
-                                for (FolderResponse folder : collection.getFolderResponses()) {
-                                    if (folder.getParentFolderId() == null) {
-                                        collectionNode.getChildren().add(new TreeItem<>(folder.getName() + " (folder)"));
-                                    }
-                                }
+
+                            List<FolderResponse> folders = collection.getFolderResponses() != null
+                                    ? collection.getFolderResponses() : List.of();
+                            List<RequestResponse> requests = collection.getRequestResponses() != null
+                                    ? collection.getRequestResponses() : List.of();
+
+                            // FIX: this used to only ever attach TOP-LEVEL
+                            // requests directly under the collection —
+                            // anything organized into a folder (the normal
+                            // case for any real collection) never got
+                            // attached anywhere, so folders always looked
+                            // empty and there was nothing to double-click.
+                            // Building this in two passes (create every
+                            // folder node first, then attach by parent)
+                            // handles nested folders correctly regardless
+                            // of what order they come back from the server.
+                            Map<Long, TreeItem<String>> folderNodeById = new HashMap<>();
+                            for (FolderResponse folder : folders) {
+                                TreeItem<String> folderNode = new TreeItem<>(folder.getName());
+                                folderNodes.add(folderNode);
+                                folderNodeById.put(folder.getId(), folderNode);
                             }
-                            if (collection.getRequestResponses() != null) {
-                                for (RequestResponse request : collection.getRequestResponses()) {
-                                    if (request.getFolderId() == null) {
-                                        TreeItem<String> requestNode =
-                                                new TreeItem<>(request.getMethod() + "  " + request.getName());
-                                        requestByNode.put(requestNode, request);
-                                        collectionNode.getChildren().add(requestNode);
-                                    }
-                                }
+                            for (FolderResponse folder : folders) {
+                                TreeItem<String> folderNode = folderNodeById.get(folder.getId());
+                                TreeItem<String> parentNode = folder.getParentFolderId() != null
+                                        ? folderNodeById.get(folder.getParentFolderId()) : null;
+                                (parentNode != null ? parentNode : collectionNode).getChildren().add(folderNode);
+                            }
+                            for (RequestResponse request : requests) {
+                                TreeItem<String> requestNode = new TreeItem<>(request.getName());
+                                requestByNode.put(requestNode, request);
+                                TreeItem<String> parentNode = request.getFolderId() != null
+                                        ? folderNodeById.get(request.getFolderId()) : null;
+                                (parentNode != null ? parentNode : collectionNode).getChildren().add(requestNode);
                             }
                             root.getChildren().add(collectionNode);
                         }
@@ -3291,12 +3384,16 @@ public class MainController implements Initializable {
                     if (wc.getEnvironments() != null) {
                         for (EnvironmentResponse env : wc.getEnvironments()) {
                             int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
-                            environmentsList.getItems().add(env.getName() + "  (" + varCount + " variables)");
+                            environmentsList.getItems().add(env.getName() + "  ·  " + varCount
+                                    + (varCount == 1 ? " variable" : " variables"));
                         }
                     }
                 });
                 if (contents.isEmpty()) {
                     statusLabel.setText("Couldn't load this workspace — you may no longer have access.");
+                    loadingRow.setVisible(true);
+                    loadingRow.setManaged(true);
+                    spinner.setVisible(false);
                 }
             });
         }).start();
@@ -3310,12 +3407,15 @@ public class MainController implements Initializable {
      * to the owner's saved copy; only the response comes back. */
     private void openSendSharedRequestDialog(Long workspaceId, RequestResponse request) {
         Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle(request.getMethod() + "  " + request.getName());
+        dialog.setTitle(request.getName());
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
 
         Label methodLabel = new Label(String.valueOf(request.getMethod()));
         methodLabel.getStyleClass().add("method-" + request.getMethod().toString().toLowerCase(Locale.ROOT));
+        methodLabel.setMinWidth(60);
         TextField urlField = new TextField(request.getUrl());
+        urlField.getStyleClass().add("shared-workspace-url-field");
         HBox urlRow = new HBox(8, methodLabel, urlField);
         HBox.setHgrow(urlField, Priority.ALWAYS);
         urlRow.setAlignment(Pos.CENTER_LEFT);
@@ -3331,28 +3431,40 @@ public class MainController implements Initializable {
         bodyArea.setWrapText(true);
 
         Button sendBtn = new Button("Send");
+        sendBtn.getStyleClass().add("send-button");
         Label statusLabel = new Label();
+        statusLabel.getStyleClass().add("shared-workspace-hint");
         statusLabel.setWrapText(true);
+        HBox sendRow = new HBox(12, sendBtn, statusLabel);
+        sendRow.setAlignment(Pos.CENTER_LEFT);
 
         TextArea responseArea = new TextArea();
         responseArea.setEditable(false);
+        responseArea.getStyleClass().add("shared-workspace-response-area");
         responseArea.setPromptText("Response will show here after you send.");
         responseArea.setPrefRowCount(10);
         responseArea.setWrapText(true);
 
-        VBox content = new VBox(8,
+        Label headersLabel = new Label("Headers");
+        headersLabel.getStyleClass().add("shared-workspace-section-title");
+        Label bodyLabel = new Label("Body");
+        bodyLabel.getStyleClass().add("shared-workspace-section-title");
+        Label responseLabel = new Label("Response");
+        responseLabel.getStyleClass().add("shared-workspace-section-title");
+
+        VBox content = new VBox(10,
                 urlRow,
-                new Label("Headers"), headersArea,
-                new Label("Body"), bodyArea,
-                sendBtn, statusLabel,
-                new Label("Response"), responseArea);
-        content.setPadding(new Insets(10));
-        content.setPrefWidth(560);
+                headersLabel, headersArea,
+                bodyLabel, bodyArea,
+                sendRow,
+                responseLabel, responseArea);
+        content.setPadding(new Insets(16));
+        content.setPrefWidth(580);
         dialog.getDialogPane().setContent(content);
         ThemeManager.styleDialog(dialog.getDialogPane());
 
         sendBtn.setOnAction(e -> {
-            statusLabel.setText("Sending...");
+            statusLabel.setText("Sending…");
             sendBtn.setDisable(true);
             ApiRequest overrides = ApiRequest.builder()
                     .url(urlField.getText())
@@ -3365,14 +3477,19 @@ public class MainController implements Initializable {
                             workspaceId, request.getId(), overrides);
                     Platform.runLater(() -> {
                         sendBtn.setDisable(false);
-                        statusLabel.setText("Status: " + response.getStatusCode()
+                        statusLabel.setText("Status " + response.getStatusCode()
                                 + "  ·  " + response.getDuration() + " ms"
                                 + "  ·  " + (response.isSuccess() ? "Success" : "Failed"));
+                        statusLabel.getStyleClass().removeAll("shared-workspace-status-ok", "shared-workspace-status-error");
+                        statusLabel.getStyleClass().add(response.isSuccess()
+                                ? "shared-workspace-status-ok" : "shared-workspace-status-error");
                         responseArea.setText(response.getResponse());
                     });
                 } catch (IOException ex) {
                     Platform.runLater(() -> {
                         sendBtn.setDisable(false);
+                        statusLabel.getStyleClass().removeAll("shared-workspace-status-ok");
+                        statusLabel.getStyleClass().add("shared-workspace-status-error");
                         statusLabel.setText("Couldn't send: " + WorkspaceSharingService.friendlyMessage(ex));
                     });
                 }
@@ -4383,11 +4500,11 @@ public class MainController implements Initializable {
                     box.getChildren().addAll(methodLabel, nameLabel);
                 } else {
                     // Collection/folder row: icon + name + hover actions
-                    javafx.scene.image.Image icon =
+                    Image icon =
                             (treeItem != null && collectionIdMap.containsKey(treeItem))
                                     ? collectionIconImg : folderIconImg;
                     if (icon != null) {
-                        javafx.scene.image.ImageView iv = new javafx.scene.image.ImageView(icon);
+                        ImageView iv = new ImageView(icon);
                         iv.setFitWidth(14);
                         iv.setFitHeight(14);
                         iv.setPreserveRatio(true);
