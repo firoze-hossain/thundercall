@@ -972,3 +972,66 @@
 }
 .text.search-match { -rtfx-background-color: #5a5320; }
 .text.search-match-current { -rtfx-background-color: -accent; -fx-fill: #1d1f24; }
+
+/* Shared workspace dialogs — browse and send-request views */
+.shared-workspace-dialog .dialog-pane,
+.shared-workspace-dialog {
+    -fx-background-color: -bg-panel;
+}
+.shared-workspace-badge {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 10 4 10;
+    -fx-background-radius: 12;
+}
+.shared-workspace-badge-editor {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -accent;
+}
+.shared-workspace-badge-viewer {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-secondary;
+}
+.shared-workspace-hint {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+}
+.shared-workspace-section-title {
+    -fx-text-fill: -text-secondary;
+    -fx-font-weight: bold;
+    -fx-font-size: 11px;
+    -fx-padding: 6 0 2 0;
+}
+.shared-workspace-tree {
+    -fx-background-color: -bg-elevated;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 6;
+}
+.shared-workspace-tree .tree-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 4 6 4 6;
+}
+.shared-workspace-tree .tree-cell:selected {
+    -fx-background-color: -accent-soft;
+    -fx-background-radius: 4;
+}
+.shared-workspace-collection-cell {
+    -fx-font-weight: bold;
+}
+.shared-workspace-url-field {
+    -fx-font-family: "Consolas", "Monaco", monospace;
+}
+.shared-workspace-response-area {
+    -fx-font-family: "Consolas", "Monaco", monospace;
+}
+.shared-workspace-status-ok {
+    -fx-text-fill: #56c99f;
+    -fx-font-weight: bold;
+}
+.shared-workspace-status-error {
+    -fx-text-fill: #e5726a;
+    -fx-font-weight: bold;
+}

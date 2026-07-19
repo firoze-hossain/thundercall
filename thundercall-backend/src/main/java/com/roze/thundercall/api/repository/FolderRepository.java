@@ -19,6 +19,21 @@ public interface FolderRepository extends JpaRepository<Folder, Long>, JpaSpecif
     // checked separately before this is ever called.
     List<Folder> findByCollectionId(Long collectionId);
 
+    // Bulk variant — fetches folders for EVERY collection in one query
+    // instead of one query per collection. Used by
+    // WorkspaceSharingService.getWorkspaceContents(), which used to
+    // call findByCollectionId() in a loop — a classic N+1 that made
+    // browsing a shared workspace with several collections noticeably
+    // slow (one round-trip to the DB per collection, plus one more per
+    // folder for its request count).
+    List<Folder> findByCollectionIdIn(List<Long> collectionIds);
+
+    // Bulk request-count — one GROUP BY query covering every folder at
+    // once, instead of countRequestsByFolderId() called once per
+    // folder in a loop. Returns [folderId, count] pairs.
+    @Query("SELECT f.id, COUNT(r) FROM Folder f LEFT JOIN Request r ON r.folder = f WHERE f.id IN :folderIds GROUP BY f.id")
+    List<Object[]> countRequestsByFolderIds(@Param("folderIds") List<Long> folderIds);
+
     Optional<Folder> findByIdAndCollectionWorkspaceOwner(Long id, User user);
 
     @Query("SELECT f FROM Folder f WHERE f.collection.workspace.owner = :user AND f.name = :name AND f.collection.id = :collectionId")
