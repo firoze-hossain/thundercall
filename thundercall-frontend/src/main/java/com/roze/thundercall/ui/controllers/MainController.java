@@ -3265,11 +3265,13 @@ public class MainController implements Initializable {
                 RequestResponse req = requestByNode.get(treeItem);
                 if (req != null) {
                     Label methodLabel = new Label(String.valueOf(req.getMethod()));
-                    methodLabel.getStyleClass().add("method-" + req.getMethod().toString().toLowerCase(Locale.ROOT));
-                    methodLabel.setMinWidth(52);
+                    methodLabel.getStyleClass().addAll("method-chip",
+                            "method-chip-" + req.getMethod().toString().toLowerCase(Locale.ROOT));
+                    methodLabel.setMinWidth(48);
                     Label nameLabel = new Label(item);
                     HBox row = new HBox(8, methodLabel, nameLabel);
                     row.setAlignment(Pos.CENTER_LEFT);
+                    row.getStyleClass().add("shared-workspace-request-row");
                     setGraphic(row);
                     setText(null);
                 } else if (folderNodes.contains(treeItem)) {
@@ -3296,9 +3298,42 @@ public class MainController implements Initializable {
             }
         });
 
-        ListView<String> environmentsList = new ListView<>();
+        // Environments are shown as real cards you can double-click —
+        // Editors can update the values, Viewers can look but not save.
+        List<EnvironmentResponse> loadedEnvironments = new ArrayList<>();
+        ListView<EnvironmentResponse> environmentsList = new ListView<>();
         environmentsList.setPrefSize(520, 90);
         environmentsList.setPlaceholder(new Label("No environments shared with you in this workspace."));
+        environmentsList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(EnvironmentResponse env, boolean empty) {
+                super.updateItem(env, empty);
+                if (empty || env == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
+                Label nameLabel = new Label(env.getName());
+                nameLabel.getStyleClass().add("shared-workspace-env-name");
+                Label countLabel = new Label(varCount + (varCount == 1 ? " variable" : " variables")
+                        + (canSend ? "  ·  double-click to view or edit" : "  ·  double-click to view"));
+                countLabel.getStyleClass().add("shared-workspace-env-count");
+                VBox box = new VBox(2, nameLabel, countLabel);
+                box.getStyleClass().add("shared-workspace-env-row");
+                setGraphic(box);
+                setText(null);
+            }
+        });
+        environmentsList.setOnMouseClicked(e -> {
+            if (e.getClickCount() != 2) {
+                return;
+            }
+            EnvironmentResponse selected = environmentsList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                openSharedEnvironmentDialog(selected, canSend);
+            }
+        });
 
         ProgressIndicator spinner = new ProgressIndicator();
         spinner.setMaxSize(28, 28);
@@ -3329,7 +3364,7 @@ public class MainController implements Initializable {
                 TreeItem<String> selected = tree.getSelectionModel().getSelectedItem();
                 RequestResponse request = selected != null ? requestByNode.get(selected) : null;
                 if (request != null) {
-                    openSendSharedRequestDialog(access.getWorkspaceId(), request);
+                    openSendSharedRequestDialog(access.getWorkspaceId(), request, loadedEnvironments);
                 }
             });
         }
@@ -3382,11 +3417,8 @@ public class MainController implements Initializable {
                         }
                     }
                     if (wc.getEnvironments() != null) {
-                        for (EnvironmentResponse env : wc.getEnvironments()) {
-                            int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
-                            environmentsList.getItems().add(env.getName() + "  ·  " + varCount
-                                    + (varCount == 1 ? " variable" : " variables"));
-                        }
+                        loadedEnvironments.addAll(wc.getEnvironments());
+                        environmentsList.getItems().setAll(wc.getEnvironments());
                     }
                 });
                 if (contents.isEmpty()) {
@@ -3401,11 +3433,101 @@ public class MainController implements Initializable {
         dialog.showAndWait();
     }
 
+    /** Shows one shared workspace's environment variables — Editors can
+     * change and save them (reusing the exact same update endpoint the
+     * main Environments panel uses; the backend's access guard already
+     * allows this for a shared environment, not just an owned one),
+     * Viewers get a clean read-only view. */
+    private void openSharedEnvironmentDialog(EnvironmentResponse env, boolean canEdit) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle(env.getName());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
+
+        Label hintLabel = new Label(canEdit
+                ? "You can edit these values — Save writes back to the real environment."
+                : "Viewer access — values shown read-only.");
+        hintLabel.getStyleClass().add("shared-workspace-hint");
+
+        TableView<KeyValuePair> varsTable = new TableView<>();
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Variable");
+        keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
+        if (canEdit) {
+            keyCol.setCellFactory(TextFieldTableCell.forTableColumn());
+            keyCol.setOnEditCommit(e -> e.getRowValue().setKey(e.getNewValue()));
+            valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
+            valueCol.setOnEditCommit(e -> e.getRowValue().setValue(e.getNewValue()));
+            varsTable.setEditable(true);
+        }
+        varsTable.getColumns().addAll(keyCol, valueCol);
+        varsTable.getStyleClass().add("shared-workspace-tree");
+        varsTable.setPrefSize(480, 260);
+        varsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        varsTable.setPlaceholder(new Label("No variables in this environment."));
+
+        if (env.getVariables() != null) {
+            env.getVariables().forEach((k, v) -> varsTable.getItems().add(new KeyValuePair(k, v)));
+        }
+
+        Label statusLabel = new Label();
+        statusLabel.getStyleClass().add("shared-workspace-hint");
+        statusLabel.setWrapText(true);
+
+        VBox content = new VBox(10, hintLabel, varsTable, statusLabel);
+
+        if (canEdit) {
+            Button addRowBtn = new Button("Add Variable");
+            Button deleteRowBtn = new Button("Delete Selected");
+            Button saveBtn = new Button("Save");
+            saveBtn.getStyleClass().add("send-button");
+            HBox actions = new HBox(8, addRowBtn, deleteRowBtn, saveBtn);
+            actions.setAlignment(Pos.CENTER_LEFT);
+            content.getChildren().add(actions);
+
+            addRowBtn.setOnAction(e -> varsTable.getItems().add(new KeyValuePair("", "")));
+            deleteRowBtn.setOnAction(e -> {
+                KeyValuePair selected = varsTable.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    varsTable.getItems().remove(selected);
+                }
+            });
+            saveBtn.setOnAction(e -> {
+                Map<String, String> updated = new LinkedHashMap<>();
+                for (KeyValuePair pair : varsTable.getItems()) {
+                    if (pair.getKey() != null && !pair.getKey().isBlank()) {
+                        updated.put(pair.getKey().trim(), pair.getValue() == null ? "" : pair.getValue());
+                    }
+                }
+                statusLabel.setText("Saving...");
+                saveBtn.setDisable(true);
+                new Thread(() -> {
+                    Optional<EnvironmentResponse> saved = EnvironmentService.updateEnvironmentVariables(env.getId(), updated);
+                    Platform.runLater(() -> {
+                        saveBtn.setDisable(false);
+                        statusLabel.setText(saved.isPresent() ? "Saved." : "Couldn't save — check your access and try again.");
+                    });
+                }).start();
+            });
+        }
+
+        content.setPadding(new Insets(16));
+        content.setPrefWidth(520);
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+        dialog.showAndWait();
+    }
+
     /** Lets an Editor actually send a request that lives in someone
      * else's shared workspace — the request's saved URL/headers/body
      * are editable here for this one send, but nothing is written back
-     * to the owner's saved copy; only the response comes back. */
-    private void openSendSharedRequestDialog(Long workspaceId, RequestResponse request) {
+     * to the owner's saved copy; only the response comes back.
+     * environments is whatever this viewer has been granted for this
+     * workspace — used to resolve {{variables}} before sending, since
+     * without that, any request using a variable (which is most real
+     * requests) would fail outright rather than actually running. */
+    private void openSendSharedRequestDialog(Long workspaceId, RequestResponse request, List<EnvironmentResponse> environments) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(request.getName());
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
@@ -3419,6 +3541,33 @@ public class MainController implements Initializable {
         HBox urlRow = new HBox(8, methodLabel, urlField);
         HBox.setHgrow(urlField, Priority.ALWAYS);
         urlRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Resolving {{variables}} matters here — without it, any request
+        // that uses one (which is most real requests) fails outright
+        // rather than actually running.
+        ComboBox<String> envCombo = new ComboBox<>();
+        Map<String, EnvironmentResponse> envByName = new LinkedHashMap<>();
+        for (EnvironmentResponse env : environments) {
+            envByName.put(env.getName(), env);
+            envCombo.getItems().add(env.getName());
+        }
+        Label envHintLabel = new Label();
+        envHintLabel.getStyleClass().add("shared-workspace-hint");
+        envHintLabel.setWrapText(true);
+        HBox envRow;
+        if (environments.isEmpty()) {
+            envHintLabel.setText("No environment access granted for this workspace — {{variables}} won't "
+                    + "resolve here. If you have your own access to this workspace, switch to it from the "
+                    + "Workspaces ▾ menu to run this with full variable support, or ask the owner to grant "
+                    + "you an environment.");
+            envRow = new HBox(envHintLabel);
+        } else {
+            Label envLabel = new Label("Environment");
+            envLabel.getStyleClass().add("shared-workspace-hint");
+            envCombo.getSelectionModel().selectFirst();
+            envRow = new HBox(8, envLabel, envCombo);
+            envRow.setAlignment(Pos.CENTER_LEFT);
+        }
 
         TextArea headersArea = new TextArea(request.getHeaders());
         headersArea.setPromptText("Headers as JSON, e.g. {\"Content-Type\": \"application/json\"}");
@@ -3445,6 +3594,13 @@ public class MainController implements Initializable {
         responseArea.setPrefRowCount(10);
         responseArea.setWrapText(true);
 
+        // Hidden until an actual binary response (PDF/Excel/image/zip)
+        // arrives — a real download action instead of dumping Base64
+        // text into the response area, which is unreadable and useless.
+        Button saveFileBtn = new Button("Save File");
+        saveFileBtn.setVisible(false);
+        saveFileBtn.setManaged(false);
+
         Label headersLabel = new Label("Headers");
         headersLabel.getStyleClass().add("shared-workspace-section-title");
         Label bodyLabel = new Label("Body");
@@ -3454,10 +3610,11 @@ public class MainController implements Initializable {
 
         VBox content = new VBox(10,
                 urlRow,
+                envRow,
                 headersLabel, headersArea,
                 bodyLabel, bodyArea,
                 sendRow,
-                responseLabel, responseArea);
+                responseLabel, responseArea, saveFileBtn);
         content.setPadding(new Insets(16));
         content.setPrefWidth(580);
         dialog.getDialogPane().setContent(content);
@@ -3466,10 +3623,51 @@ public class MainController implements Initializable {
         sendBtn.setOnAction(e -> {
             statusLabel.setText("Sending…");
             sendBtn.setDisable(true);
+            Map<String, String> vars = Map.of();
+            if (!environments.isEmpty() && envCombo.getValue() != null) {
+                EnvironmentResponse selectedEnv = envByName.get(envCombo.getValue());
+                if (selectedEnv != null && selectedEnv.getVariables() != null) {
+                    vars = selectedEnv.getVariables();
+                }
+            }
+            final Map<String, String> resolveVars = vars;
+            String resolvedHeadersJson = VariableResolver.resolve(headersArea.getText(), resolveVars);
+            // FIX: a request whose Bearer token (or Basic username/
+            // password) is itself a variable — {{access_token}}, the
+            // normal pattern after a login call — needs that resolved
+            // here, with the right environment context, before being
+            // merged in. The backend also has a fallback for
+            // unresolved saved auth, but it can't resolve a variable
+            // it never sees the value of.
+            try {
+                String authType = request.getAuthType();
+                String authHeaderValue = null;
+                if ("Bearer Token".equals(authType) && request.getAuthToken() != null && !request.getAuthToken().isBlank()) {
+                    authHeaderValue = "Bearer " + VariableResolver.resolve(request.getAuthToken(), resolveVars);
+                } else if ("Basic Auth".equals(authType)
+                        && request.getAuthUsername() != null && !request.getAuthUsername().isBlank()) {
+                    String user = VariableResolver.resolve(request.getAuthUsername(), resolveVars);
+                    String pass = VariableResolver.resolve(
+                            request.getAuthPassword() != null ? request.getAuthPassword() : "", resolveVars);
+                    authHeaderValue = "Basic " + Base64.getEncoder().encodeToString((user + ":" + pass).getBytes());
+                }
+                if (authHeaderValue != null) {
+                    JSONObject headersObj = (resolvedHeadersJson == null || resolvedHeadersJson.isBlank())
+                            ? new JSONObject() : new JSONObject(resolvedHeadersJson);
+                    if (!headersObj.has("Authorization")) {
+                        headersObj.put("Authorization", authHeaderValue);
+                    }
+                    resolvedHeadersJson = headersObj.toString();
+                }
+            } catch (Exception ignored) {
+                // malformed headers JSON in the text area — leave it as
+                // typed rather than silently rewriting something the
+                // user is mid-editing
+            }
             ApiRequest overrides = ApiRequest.builder()
-                    .url(urlField.getText())
-                    .headers(headersArea.getText())
-                    .body(bodyArea.getText())
+                    .url(VariableResolver.resolve(urlField.getText(), resolveVars))
+                    .headers(resolvedHeadersJson)
+                    .body(VariableResolver.resolve(bodyArea.getText(), resolveVars))
                     .build();
             new Thread(() -> {
                 try {
@@ -3483,7 +3681,66 @@ public class MainController implements Initializable {
                         statusLabel.getStyleClass().removeAll("shared-workspace-status-ok", "shared-workspace-status-error");
                         statusLabel.getStyleClass().add(response.isSuccess()
                                 ? "shared-workspace-status-ok" : "shared-workspace-status-error");
-                        responseArea.setText(response.getResponse());
+                        if (response.isBinary()) {
+                            responseArea.setText("\uD83D\uDCC4  Binary response\n\n"
+                                    + "Content-Type: " + (response.getContentType() != null ? response.getContentType() : "unknown") + "\n"
+                                    + "Size: " + response.getSizeBytes() + " bytes\n"
+                                    + "Suggested file name: " + response.getFileName() + "\n\n"
+                                    + "Click Save File below to download it.");
+                            saveFileBtn.setVisible(true);
+                            saveFileBtn.setManaged(true);
+                            saveFileBtn.setOnAction(saveEvent -> {
+                                FileChooser fileChooser = new FileChooser();
+                                fileChooser.setTitle("Save Response");
+                                String suggested = response.getFileName() != null ? response.getFileName() : "response.bin";
+                                fileChooser.setInitialFileName(suggested);
+                                File file = fileChooser.showSaveDialog(dialog.getDialogPane().getScene().getWindow());
+                                if (file == null) {
+                                    return;
+                                }
+                                try {
+                                    byte[] bytes = Base64.getDecoder().decode(response.getResponse());
+                                    java.nio.file.Files.write(file.toPath(), bytes);
+                                    statusLabel.setText("Saved " + bytes.length + " bytes to " + file.getName());
+                                } catch (Exception saveEx) {
+                                    statusLabel.setText("Couldn't save the file: " + saveEx.getMessage());
+                                }
+                            });
+                        } else {
+                            saveFileBtn.setVisible(false);
+                            saveFileBtn.setManaged(false);
+                            responseArea.setText(response.getResponse());
+                        }
+
+                        // FIX: this is what actually completes a login-then-
+                        // use-the-token workflow — without running the saved
+                        // Tests script, a login request could return a fresh
+                        // token but nothing would ever capture it into the
+                        // environment, leaving every later request that
+                        // depends on it using a stale value. Mirrors
+                        // runScriptsAndApply()'s logic, adapted to this
+                        // dialog's own selected-environment state instead of
+                        // the main app's environmentCombo/environmentsMap.
+                        String script = request.getTestsScript();
+                        if (script != null && !script.isBlank() && !environments.isEmpty() && envCombo.getValue() != null) {
+                            EnvironmentResponse selectedEnv = envByName.get(envCombo.getValue());
+                            if (selectedEnv != null) {
+                                Map<String, String> current = new LinkedHashMap<>(
+                                        selectedEnv.getVariables() != null ? selectedEnv.getVariables() : Map.of());
+                                ScriptRunner.Result result = ScriptRunner.run(
+                                        script, response.getResponse(), response.getStatusCode(), current);
+                                if (!result.setVariables.isEmpty() || !result.unsetVariables.isEmpty()) {
+                                    Map<String, String> merged = new LinkedHashMap<>(current);
+                                    merged.putAll(result.setVariables);
+                                    result.unsetVariables.forEach(merged::remove);
+                                    selectedEnv.setVariables(merged); // effective immediately for the next send in this session
+                                    statusLabel.setText(statusLabel.getText() + "  ·  set "
+                                            + String.join(", ", result.setVariables.keySet()));
+                                    new Thread(() -> EnvironmentService.updateEnvironmentVariables(
+                                            selectedEnv.getId(), merged)).start();
+                                }
+                            }
+                        }
                     });
                 } catch (IOException ex) {
                     Platform.runLater(() -> {

@@ -215,6 +215,12 @@ public class WorkspaceSharingServiceImpl implements WorkspaceSharingService {
                                             .url(request.getUrl())
                                             .headers(request.getHeaders())
                                             .body(request.getBody())
+                                            .authType(request.getAuthType())
+                                            .authToken(request.getAuthToken())
+                                            .authUsername(request.getAuthUsername())
+                                            .authPassword(request.getAuthPassword())
+                                            .preRequestScript(request.getPreRequestScript())
+                                            .testsScript(request.getTestsScript())
                                             .collectionId(collection.getId())
                                             .collectionName(collection.getName())
                                             .folderId(request.getFolder() != null ? request.getFolder().getId() : null)
@@ -287,20 +293,79 @@ public class WorkspaceSharingServiceImpl implements WorkspaceSharingService {
                 // malformed headers JSON — send without them rather than failing outright
             }
         }
+        // FIX: without this, a request with no explicit Content-Type
+        // header (very common — most people don't bother setting it by
+        // hand) but a JSON-shaped body would get sent with no
+        // Content-Type at all, which RestTemplate/many real servers
+        // then default or reject in ways that have nothing to do with
+        // the actual request — e.g. a Spring Boot target server
+        // rejecting it outright with "Content-Type 'text/plain;
+        // charset=UTF-8' is not supported". The main app's own
+        // executeRequest() already defaults to JSON here; this was
+        // missing that exact same fallback.
+        if (headers.getContentType() == null && body != null && !body.isBlank()) {
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        }
+        // FIX: this used to only ever build headers from the raw headers
+        // JSON — a request configured via Thundercall's own Authorization
+        // tab (Bearer Token / Basic Auth), rather than a manually-typed
+        // "Authorization" header, had that configuration silently
+        // dropped entirely, sending with no auth at all and getting a
+        // 403 back from anything that actually requires it. This
+        // mirrors buildHeadersForSend()'s frontend logic for the same
+        // two auth types, applied here from the request's saved config
+        // instead of live UI fields.
+        if (!headers.containsKey("Authorization")) {
+            String authType = request.getAuthType();
+            if ("Bearer Token".equals(authType) && request.getAuthToken() != null && !request.getAuthToken().isBlank()) {
+                headers.add("Authorization", "Bearer " + request.getAuthToken());
+            } else if ("Basic Auth".equals(authType)
+                    && request.getAuthUsername() != null && !request.getAuthUsername().isBlank()
+                    && request.getAuthPassword() != null && !request.getAuthPassword().isBlank()) {
+                String raw = request.getAuthUsername() + ":" + request.getAuthPassword();
+                String encoded = java.util.Base64.getEncoder().encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                headers.add("Authorization", "Basic " + encoded);
+            }
+        }
         try {
             org.springframework.http.HttpEntity<String> entity =
                     new org.springframework.http.HttpEntity<>(body != null && !body.isBlank() ? body : null, headers);
+            // FIX: passing url as a plain String here made RestTemplate
+            // treat any leftover {something} in it as ITS OWN URI
+            // template syntax (Spring's exchange(String, ...) overload
+            // does that automatically) — so an unresolved {{DBASE_URL}}
+            // wasn't just "sent literally and failed naturally," it
+            // crashed immediately with a confusing "Not enough variable
+            // values available to expand" error instead of actually
+            // attempting the request. URI.create() bypasses that
+            // entirely; the URL is used exactly as given.
             org.springframework.http.ResponseEntity<byte[]> response = restTemplate.exchange(
-                    url, org.springframework.http.HttpMethod.valueOf(request.getMethod().name()), entity, byte[].class);
+                    java.net.URI.create(url), org.springframework.http.HttpMethod.valueOf(request.getMethod().name()),
+                    entity, byte[].class);
             long duration = Duration.between(startTime, Instant.now()).toMillis();
             byte[] responseBody = response.getBody() != null ? response.getBody() : new byte[0];
+            // FIX: this used to always treat the response as text —
+            // new String(bytes, UTF_8) on a real PDF/Excel file produces
+            // garbled, useless content, and there was no way to actually
+            // save the file. Now matches RequestServiceImpl's own proven
+            // handling exactly (same shared helper), including detecting
+            // binary content types and Base64-encoding them instead.
+            String responseContentType = response.getHeaders().getContentType() != null
+                    ? response.getHeaders().getContentType().toString() : null;
+            boolean isBinaryResponse = com.roze.thundercall.api.utils.BinaryResponseHelper.isBinary(responseContentType);
             return com.roze.thundercall.api.dto.ApiResponse.builder()
                     .statusCode(response.getStatusCode().value())
-                    .response(new String(responseBody, java.nio.charset.StandardCharsets.UTF_8))
+                    .response(isBinaryResponse
+                            ? java.util.Base64.getEncoder().encodeToString(responseBody)
+                            : com.roze.thundercall.api.utils.BinaryResponseHelper.decodeText(responseBody, responseContentType))
                     .responseHeaders(response.getHeaders().toString())
                     .duration(duration)
                     .success(!response.getStatusCode().isError())
-                    .binary(false)
+                    .binary(isBinaryResponse)
+                    .contentType(responseContentType)
+                    .fileName(isBinaryResponse
+                            ? com.roze.thundercall.api.utils.BinaryResponseHelper.guessFileName(response.getHeaders(), url, responseContentType)
+                            : null)
                     .sizeBytes(responseBody.length)
                     .build();
         } catch (Exception e) {
