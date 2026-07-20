@@ -1035,3 +1035,40 @@
     -fx-text-fill: #e5726a;
     -fx-font-weight: bold;
 }
+
+/* Method chips inside the shared-workspace request tree — filled
+   pills, distinct from the plain colored-text .method-* classes used
+   in the main request builder, so this doesn't change that look. */
+.shared-workspace-tree .method-chip {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-padding: 2 7 2 7;
+    -fx-background-radius: 4;
+    -fx-alignment: CENTER;
+}
+.shared-workspace-tree .method-chip-get     { -fx-background-color: #56c99f; }
+.shared-workspace-tree .method-chip-post    { -fx-background-color: #d9a83e; }
+.shared-workspace-tree .method-chip-put     { -fx-background-color: #6aa8f0; }
+.shared-workspace-tree .method-chip-patch   { -fx-background-color: #b98af0; }
+.shared-workspace-tree .method-chip-delete  { -fx-background-color: #e5726a; }
+.shared-workspace-tree .method-chip-head    { -fx-background-color: #7ec98f; }
+.shared-workspace-tree .method-chip-options { -fx-background-color: #9aa0a6; }
+
+.shared-workspace-env-row {
+    -fx-padding: 8 10 8 10;
+    -fx-background-color: -bg-elevated;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.shared-workspace-env-row:hover {
+    -fx-background-color: -bg-hover;
+}
+.shared-workspace-env-name {
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-primary;
+}
+.shared-workspace-env-count {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+}
