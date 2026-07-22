@@ -233,6 +233,19 @@ public class MainController implements Initializable {
     private TextField globalSearchField;
     @FXML
     private MenuButton workspacesMenuBtn;
+    // ---- Profile & presence ----
+    @FXML
+    private MenuButton userMenuBtn;
+    @FXML
+    private ImageView userAvatarView;
+    @FXML
+    private FlowPane onlineUsersBox;
+    /** The logged-in user's profile as last fetched from /users/me. */
+    private UserProfile currentUserProfile;
+    /** User ids currently online (teammates / workspace collaborators) —
+     * shared by the sidebar bubbles and the team-members dialog dots. */
+    private final Set<Long> onlineUserIds = Collections.synchronizedSet(new HashSet<>());
+    private javafx.animation.Timeline presenceRefreshTimeline;
     @FXML
     private Label workspaceNameLabel;
     @FXML
@@ -378,6 +391,8 @@ public class MainController implements Initializable {
             setUpMethodCombo();
             setupBodyTypeHandling();
             loadUserData();
+            loadUserProfile();
+            startPresenceUpdates();
             updateStatus("Ready");
             checkUserOnboarding();
 
@@ -1771,9 +1786,276 @@ public class MainController implements Initializable {
         });
     }
 
+    // ============================================================
+    // User profile (header menu + Profile dialog)
+    // ============================================================
+
+    /** Puts the real person in the header immediately (username from the
+     * stored login), then upgrades to their full name + avatar once
+     * /users/me answers. */
+    private void loadUserProfile() {
+        if (userMenuBtn != null) {
+            String username = TokenManager.getUsername();
+            if (username != null && !username.isBlank()) {
+                userMenuBtn.setText(username);
+            }
+        }
+        new Thread(() -> UserService.getMe().ifPresent(profile ->
+                Platform.runLater(() -> applyProfileToHeader(profile)))).start();
+    }
+
+    private void applyProfileToHeader(UserProfile profile) {
+        currentUserProfile = profile;
+        if (userMenuBtn != null) {
+            userMenuBtn.setText(profile.displayName());
+        }
+        if (userAvatarView != null) {
+            Image avatar = decodeAvatarImage(profile.getAvatarBase64());
+            if (avatar != null) {
+                userAvatarView.setImage(avatar);
+                userAvatarView.setPreserveRatio(false);
+                userAvatarView.setFitWidth(20);
+                userAvatarView.setFitHeight(20);
+                userAvatarView.setClip(new javafx.scene.shape.Circle(10, 10, 10));
+            } else {
+                // Back to the stock icon (e.g. after "Remove image")
+                userAvatarView.setClip(null);
+                userAvatarView.setPreserveRatio(true);
+                try {
+                    userAvatarView.setImage(new Image(Objects.requireNonNull(
+                            getClass().getResourceAsStream("/images/user-icon.png"))));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private Image decodeAvatarImage(String base64) {
+        if (base64 == null || base64.isBlank()) {
+            return null;
+        }
+        try {
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            Image image = new Image(new java.io.ByteArrayInputStream(bytes));
+            return image.isError() ? null : image;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     @FXML
     private void handleProfile() {
-        AlertUtils.showInfo("Profile feature coming soon!");
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("My Profile");
+        dialog.setHeaderText("Your profile");
+        ButtonType saveType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
+
+        // Editable state for this dialog session. avatarBase64[0] == null
+        // means "unchanged"; removeAvatar[0] wins over everything.
+        final String[] newAvatarBase64 = {null};
+        final boolean[] removeAvatar = {false};
+
+        ImageView avatarPreview = new ImageView();
+        avatarPreview.setFitWidth(72);
+        avatarPreview.setFitHeight(72);
+        avatarPreview.setPreserveRatio(false);
+        Runnable refreshPreview = () -> {
+            Image img = null;
+            if (!removeAvatar[0]) {
+                img = decodeAvatarImage(newAvatarBase64[0] != null
+                        ? newAvatarBase64[0]
+                        : (currentUserProfile != null ? currentUserProfile.getAvatarBase64() : null));
+            }
+            if (img != null) {
+                avatarPreview.setImage(img);
+                avatarPreview.setClip(new javafx.scene.shape.Circle(36, 36, 36));
+            } else {
+                avatarPreview.setClip(null);
+                try {
+                    avatarPreview.setImage(new Image(Objects.requireNonNull(
+                            getClass().getResourceAsStream("/images/user-icon.png"))));
+                } catch (Exception ignored) {
+                }
+            }
+        };
+        refreshPreview.run();
+
+        Label statusLabel = new Label();
+        statusLabel.setWrapText(true);
+        statusLabel.setMaxWidth(360);
+
+        Button chooseImageBtn = new Button("Choose Image…");
+        chooseImageBtn.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose a profile image");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
+                    "Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
+            File file = chooser.showOpenDialog(dialog.getDialogPane().getScene().getWindow());
+            if (file == null) {
+                return;
+            }
+            try {
+                newAvatarBase64[0] = encodeAvatarFile(file);
+                removeAvatar[0] = false;
+                statusLabel.setText("");
+                refreshPreview.run();
+            } catch (IOException ex) {
+                statusLabel.setText("Couldn't use that image: " + ex.getMessage());
+            }
+        });
+
+        Button removeImageBtn = new Button("Remove");
+        removeImageBtn.setOnAction(e -> {
+            removeAvatar[0] = true;
+            newAvatarBase64[0] = null;
+            refreshPreview.run();
+        });
+
+        TextField fullNameField = new TextField(
+                currentUserProfile != null && currentUserProfile.getFullName() != null
+                        ? currentUserProfile.getFullName() : "");
+        fullNameField.setPromptText("Your full name");
+        fullNameField.setPrefWidth(240);
+
+        String username = currentUserProfile != null
+                ? currentUserProfile.getUsername() : TokenManager.getUsername();
+        String email = currentUserProfile != null ? currentUserProfile.getEmail() : null;
+
+        GridPane grid = new GridPane();
+        grid.setHgap(12);
+        grid.setVgap(10);
+        grid.add(new Label("Full name"), 0, 0);
+        grid.add(fullNameField, 1, 0);
+        grid.add(new Label("Username"), 0, 1);
+        grid.add(new Label(username != null ? username : "—"), 1, 1);
+        grid.add(new Label("Email"), 0, 2);
+        grid.add(new Label(email != null ? email : "—"), 1, 2);
+
+        HBox avatarButtons = new HBox(8, chooseImageBtn, removeImageBtn);
+        avatarButtons.setAlignment(Pos.CENTER_LEFT);
+        VBox avatarBox = new VBox(8, avatarPreview, avatarButtons);
+        avatarBox.setAlignment(Pos.TOP_CENTER);
+
+        HBox mainRow = new HBox(20, avatarBox, grid);
+        VBox content = new VBox(12, mainRow, statusLabel);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        // Save asynchronously and only close on success — consuming the
+        // event keeps the dialog open so an error is actually visible.
+        Button saveBtn = (Button) dialog.getDialogPane().lookupButton(saveType);
+        saveBtn.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            event.consume();
+            saveBtn.setDisable(true);
+            statusLabel.setText("Saving…");
+            UpdateProfileRequest request = new UpdateProfileRequest(
+                    fullNameField.getText(), newAvatarBase64[0], removeAvatar[0]);
+            new Thread(() -> {
+                try {
+                    Optional<UserProfile> updated = UserService.updateMe(request);
+                    Platform.runLater(() -> {
+                        updated.ifPresent(this::applyProfileToHeader);
+                        updateStatus("Profile updated");
+                        dialog.close();
+                    });
+                } catch (IOException ex) {
+                    Platform.runLater(() -> {
+                        statusLabel.setText("Couldn't save: " + ex.getMessage());
+                        saveBtn.setDisable(false);
+                    });
+                }
+            }).start();
+        });
+
+        dialog.showAndWait();
+    }
+
+    /** Reads an image file, scales it down to at most 256px on its longest
+     * side, and returns it base64-encoded as PNG — keeps the payload tiny
+     * no matter what the person picked (a raw photo would otherwise be
+     * megabytes of base64). */
+    private String encodeAvatarFile(File file) throws IOException {
+        java.awt.image.BufferedImage source = javax.imageio.ImageIO.read(file);
+        if (source == null) {
+            throw new IOException("that file doesn't look like an image");
+        }
+        int max = 256;
+        double scale = Math.min(1.0, (double) max / Math.max(source.getWidth(), source.getHeight()));
+        int width = Math.max(1, (int) Math.round(source.getWidth() * scale));
+        int height = Math.max(1, (int) Math.round(source.getHeight() * scale));
+        java.awt.image.BufferedImage scaled =
+                new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics2D g = scaled.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(source, 0, 0, width, height, null);
+        g.dispose();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(scaled, "png", out);
+        return Base64.getEncoder().encodeToString(out.toByteArray());
+    }
+
+    // ============================================================
+    // Presence (online teammates / collaborators)
+    // ============================================================
+
+    /** Starts the heartbeat (marks THIS user online) and refreshes the
+     * "Online now" bubbles every 30 seconds. */
+    private void startPresenceUpdates() {
+        PresenceService.startHeartbeat();
+        refreshOnlineUsers();
+        if (presenceRefreshTimeline != null) {
+            presenceRefreshTimeline.stop();
+        }
+        presenceRefreshTimeline = new javafx.animation.Timeline(new javafx.animation.KeyFrame(
+                javafx.util.Duration.seconds(30), e -> refreshOnlineUsers()));
+        presenceRefreshTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        presenceRefreshTimeline.play();
+    }
+
+    private void stopPresenceUpdates() {
+        PresenceService.stopHeartbeat();
+        if (presenceRefreshTimeline != null) {
+            presenceRefreshTimeline.stop();
+            presenceRefreshTimeline = null;
+        }
+    }
+
+    private void refreshOnlineUsers() {
+        new Thread(() -> {
+            List<OnlineUser> online = PresenceService.getOnlineUsers();
+            Platform.runLater(() -> {
+                onlineUserIds.clear();
+                online.forEach(u -> onlineUserIds.add(u.getUserId()));
+                renderOnlineUsers(online);
+            });
+        }).start();
+    }
+
+    private void renderOnlineUsers(List<OnlineUser> online) {
+        if (onlineUsersBox == null) {
+            return;
+        }
+        onlineUsersBox.getChildren().clear();
+        if (online.isEmpty()) {
+            Label none = new Label("No one else is online");
+            none.getStyleClass().add("online-empty-label");
+            onlineUsersBox.getChildren().add(none);
+            return;
+        }
+        for (OnlineUser user : online) {
+            javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
+            dot.getStyleClass().add("online-dot");
+            Label name = new Label(user.displayName());
+            name.getStyleClass().add("online-user-name");
+            HBox chip = new HBox(5, dot, name);
+            chip.setAlignment(Pos.CENTER_LEFT);
+            chip.getStyleClass().add("online-user-chip");
+            Tooltip.install(chip, new Tooltip(user.getUsername() + " is online now"));
+            onlineUsersBox.getChildren().add(chip);
+        }
     }
 
     @FXML
@@ -1957,6 +2239,29 @@ public class MainController implements Initializable {
         TableView<TeamMemberResponse> membersTable = new TableView<>();
         TableColumn<TeamMemberResponse, String> memberNameCol = new TableColumn<>("Username");
         memberNameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+        // Presence: green dot = online right now, gray dot = offline.
+        // onlineUserIds is refreshed alongside the member list below.
+        memberNameCol.setCellFactory(col -> new TableCell<TeamMemberResponse, String>() {
+            @Override
+            protected void updateItem(String username, boolean empty) {
+                super.updateItem(username, empty);
+                if (empty || username == null || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                TeamMemberResponse member = getTableRow().getItem();
+                boolean online = member.getUserId() != null && onlineUserIds.contains(member.getUserId());
+                javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
+                dot.getStyleClass().add(online ? "online-dot" : "offline-dot");
+                Label nameLabel = new Label(username);
+                HBox row = new HBox(6, dot, nameLabel);
+                row.setAlignment(Pos.CENTER_LEFT);
+                Tooltip.install(row, new Tooltip(username + (online ? " is online" : " is offline")));
+                setGraphic(row);
+                setText(null);
+            }
+        });
         TableColumn<TeamMemberResponse, String> memberEmailCol = new TableColumn<>("Email");
         memberEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
         TableColumn<TeamMemberResponse, String> memberRoleCol = new TableColumn<>("Role");
@@ -1968,8 +2273,16 @@ public class MainController implements Initializable {
 
         Runnable[] refreshMembers = new Runnable[1];
         refreshMembers[0] = () -> new Thread(() -> {
+            // Fetch presence FIRST so the dots are accurate the moment the
+            // member rows render (both calls are cheap).
+            List<OnlineUser> online = PresenceService.getOnlineUsers();
             Optional<List<TeamMemberResponse>> members = TeamService.getMembers(team.getId());
-            Platform.runLater(() -> members.ifPresent(list -> membersTable.getItems().setAll(list)));
+            Platform.runLater(() -> {
+                onlineUserIds.clear();
+                online.forEach(u -> onlineUserIds.add(u.getUserId()));
+                renderOnlineUsers(online);
+                members.ifPresent(list -> membersTable.getItems().setAll(list));
+            });
         }).start();
         refreshMembers[0].run();
 
@@ -5025,6 +5338,9 @@ public class MainController implements Initializable {
     private void handleLogout() {
         if (AlertUtils.showConfirmation("Logout", "Are you sure you want to logout?")) {
             try {
+                // Stop reporting this client as online BEFORE clearing the
+                // session — a signed-out app shouldn't show a green dot.
+                stopPresenceUpdates();
                 ApiClient.logout();
                 TokenManager.clearTokens();
                 Main.showLoginView();

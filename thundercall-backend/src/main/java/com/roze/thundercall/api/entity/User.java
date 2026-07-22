@@ -34,6 +34,16 @@ public class User {
     @Enumerated(EnumType.STRING)
     private Role role;
 
+    // ---- Profile fields (editable by the user in the Profile dialog) ----
+    @Column(name = "full_name", length = 100)
+    private String fullName;
+
+    /** Base64-encoded avatar image (PNG/JPEG). Stored as TEXT — avatars
+     * are resized client-side to a small square before upload, so the
+     * payload stays tiny. Null means "no avatar set". */
+    @Column(columnDefinition = "TEXT")
+    private String avatar;
+
     private Boolean enabled;
 
     // Email verification (separate from "enabled", which is for admin

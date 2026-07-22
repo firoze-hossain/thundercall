@@ -2,6 +2,8 @@ package com.roze.thundercall.ui.utils;
 
 import javafx.scene.Scene;
 import javafx.scene.control.DialogPane;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 
 import java.util.Objects;
 import java.util.prefs.Preferences;
@@ -64,6 +66,53 @@ public final class ThemeManager {
         pane.getStylesheets().remove(lightCss);
         if (isLight()) {
             pane.getStylesheets().add(lightCss);
+        }
+        anchorToMainWindow(pane);
+    }
+
+    /**
+     * macOS FIX: dialogs and alerts created without an owner open as their
+     * own top-level window. When the app is in macOS fullscreen mode, that
+     * ownerless window gets promoted to its own fullscreen Space — so a
+     * tiny "Profile feature coming soon!" info alert suddenly covers the
+     * entire screen. Giving every dialog the primary stage as its owner
+     * makes it appear as a normal-sized modal ON TOP of the app window
+     * instead. Since every dialog in the app already routes through
+     * styleDialog(), hooking it here fixes all of them at once.
+     */
+    private static void anchorToMainWindow(DialogPane pane) {
+        if (pane.getScene() != null) {
+            setOwner(pane.getScene().getWindow());
+        } else {
+            // Dialog implementations create their Scene lazily — attach as
+            // soon as it exists, which is still before the dialog is shown.
+            pane.sceneProperty().addListener((obs, oldScene, newScene) -> {
+                if (newScene != null) {
+                    setOwner(newScene.getWindow());
+                }
+            });
+        }
+    }
+
+    private static void setOwner(Window window) {
+        Stage owner;
+        try {
+            owner = com.roze.thundercall.ui.Main.getPrimaryStage();
+        } catch (Throwable t) {
+            return; // e.g. running a controller in isolation in tests
+        }
+        if (!(window instanceof Stage stage) || owner == null || stage == owner) {
+            return;
+        }
+        // initOwner throws if the dialog is already showing or already
+        // owned — both mean there's nothing left to do.
+        if (stage.isShowing() || stage.getOwner() != null) {
+            return;
+        }
+        try {
+            stage.initOwner(owner);
+        } catch (IllegalStateException ignored) {
+            // Shown between our check and the call — harmless.
         }
     }
 
