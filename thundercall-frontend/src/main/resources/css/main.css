@@ -1072,3 +1072,41 @@
     -fx-text-fill: -text-muted;
     -fx-font-size: 11px;
 }
+
+/* ============================================================
+   Presence: "Online now" chips under Team Workspaces + status
+   dots next to member names in the team dialog. Colors come
+   from the theme tokens, so light mode works automatically.
+   ============================================================ */
+.online-section-label {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.online-users-box {
+    -fx-padding: 4 0 6 0;
+}
+
+.online-user-chip {
+    -fx-background-color: -success-soft;
+    -fx-background-radius: 12;
+    -fx-padding: 3 10 3 8;
+}
+
+.online-user-name {
+    -fx-font-size: 11px;
+}
+
+.online-dot {
+    -fx-fill: -success;
+}
+
+.offline-dot {
+    -fx-fill: -text-muted;
+}
+
+.online-empty-label {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+}

@@ -80,9 +80,9 @@
                             <Label text="⚙" styleClass="gear-icon"/>
                         </graphic>
                     </Button>
-                    <MenuButton text="User" styleClass="user-menu">
+                    <MenuButton fx:id="userMenuBtn" text="User" styleClass="user-menu">
                         <graphic>
-                            <ImageView fitHeight="20" fitWidth="20" preserveRatio="true">
+                            <ImageView fx:id="userAvatarView" fitHeight="20" fitWidth="20" preserveRatio="true">
                                 <Image url="@../images/user-icon.png"/>
                             </ImageView>
                         </graphic>
@@ -417,6 +417,14 @@
                         <Label styleClass="sidebar-hint" wrapText="true"
                                text="Workspaces shared with you. Double-click to browse. Got an invite code by email? Tap the + above. To share your own, use Share (top bar)."/>
                         <ListView fx:id="teamWorkspacesList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                        <!-- Presence: teammates / workspace collaborators online right now.
+                             Refreshed every 30s; each chip is a green dot + display name. -->
+                        <Label text="Online now" styleClass="online-section-label">
+                            <VBox.margin>
+                                <Insets top="8"/>
+                            </VBox.margin>
+                        </Label>
+                        <FlowPane fx:id="onlineUsersBox" hgap="6" vgap="6" styleClass="online-users-box"/>
                     </VBox>
                 </StackPane>
                     <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
