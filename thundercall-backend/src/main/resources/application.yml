@@ -2,14 +2,14 @@ server:
   port: 9084
   servlet:
     context-path: /api/v1
+
 spring:
+  profiles:
+    active: prod
+
   liquibase:
     enabled: false
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/thunder_db
-    password: ${DB_PASSWORD}
-    username: ${DB_USERNAME}
+
   jpa:
     show-sql: true
     hibernate:
