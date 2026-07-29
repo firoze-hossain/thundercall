@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://172.16.0.161:5432/thunder_db
+    username: uhldev
+    password: Dev@10666
