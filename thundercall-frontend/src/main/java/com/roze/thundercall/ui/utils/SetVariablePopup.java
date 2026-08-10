@@ -96,7 +96,7 @@ public final class SetVariablePopup {
                 labeled(valueLabel, valueField),
                 labeled(scopeLabel, scopeCombo),
                 setButton);
-        box.getStyleClass().add("set-variable-popup");
+        box.getStyleClass().addAll("root", "set-variable-popup");
         box.setPadding(new Insets(12));
         box.setPrefWidth(280);
         if (anchor.getScene() != null) {
