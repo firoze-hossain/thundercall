@@ -1051,6 +1051,49 @@
 }
 .comment-delete-item .label { -fx-text-fill: -danger; }
 
+/* ---- Package Library dialogs (Save to Package Library) ---- */
+.package-library-dialog {
+    -fx-background-color: -bg-base;
+}
+.package-library-sidebar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-color;
+    -fx-border-width: 0 1 0 0;
+}
+.package-editor-pane {
+    -fx-background-color: -bg-base;
+}
+.package-name-field {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+.package-code-area {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 12px;
+}
+.package-code-area .content {
+    -fx-background-color: -bg-panel;
+}
+.package-editor-pane .hyperlink {
+    -fx-text-fill: -accent;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+.package-editor-pane .hyperlink:visited { -fx-text-fill: -accent; }
+.package-picker-dialog {
+    -fx-background-color: -bg-elevated;
+}
+.secondary-button {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+    -fx-padding: 6 14 6 14;
+}
+.secondary-button:hover { -fx-background-color: -bg-hover; }
+
 /* Shared workspace dialogs — browse and send-request views */
 .shared-workspace-dialog .dialog-pane,
 .shared-workspace-dialog {
