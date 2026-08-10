@@ -1055,10 +1055,13 @@
 .package-library-dialog {
     -fx-background-color: -bg-base;
 }
+.package-library-dialog > .split-pane-divider {
+    -fx-background-color: -border-color;
+    -fx-padding: 0 1 0 1;
+}
 .package-library-sidebar {
     -fx-background-color: -bg-panel;
-    -fx-border-color: -border-color;
-    -fx-border-width: 0 1 0 0;
+    -fx-border-color: transparent;
 }
 .package-editor-pane {
     -fx-background-color: -bg-base;
