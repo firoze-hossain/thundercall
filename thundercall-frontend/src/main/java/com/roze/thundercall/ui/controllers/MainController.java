@@ -344,6 +344,25 @@ public class MainController implements Initializable {
                                 javafx.scene.input.KeyCode.S,
                                 javafx.scene.input.KeyCombination.CONTROL_DOWN),
                         this::handleSaveRequest);
+                // New request tab: Ctrl+T, like Postman
+                urlField.getScene().getAccelerators().put(
+                        new javafx.scene.input.KeyCodeCombination(
+                                javafx.scene.input.KeyCode.T,
+                                javafx.scene.input.KeyCombination.CONTROL_DOWN),
+                        () -> openRequestTab("Untitled Request", null));
+                // Close active tab: Ctrl+W, like Postman
+                urlField.getScene().getAccelerators().put(
+                        new javafx.scene.input.KeyCodeCombination(
+                                javafx.scene.input.KeyCode.W,
+                                javafx.scene.input.KeyCombination.CONTROL_DOWN),
+                        () -> closeTabSafely(activeRequestTab(), false));
+                // Force-close active tab: Alt+Ctrl+W, like Postman
+                urlField.getScene().getAccelerators().put(
+                        new javafx.scene.input.KeyCodeCombination(
+                                javafx.scene.input.KeyCode.W,
+                                javafx.scene.input.KeyCombination.CONTROL_DOWN,
+                                javafx.scene.input.KeyCombination.ALT_DOWN),
+                        () -> closeTabSafely(activeRequestTab(), true));
             }
         });
         if (collectionsSearchField != null) {
@@ -355,6 +374,7 @@ public class MainController implements Initializable {
         setupBodyCodeArea();
         setupGraphqlCodeAreas();
         setupResponseCodeArea();
+        setupScriptEditorsContextMenu();
         setupEnvironmentsList();
         setupTeamsList();
         setupMockServersList();
@@ -999,6 +1019,9 @@ public class MainController implements Initializable {
                     javafx.beans.binding.Bindings.createBooleanBinding(
                             () -> bodyTextArea.getText().isEmpty(), bodyTextArea.textProperty()));
         }
+        // Postman-style right-click menu: Comment, Set as variable, Cut/Copy/
+        // Paste, EncodeURIComponent/DecodeURIComponent, Find.
+        EditorContextMenu.attach(TextEditTarget.of(bodyTextArea), true, false, bodyMenuExtensions());
     }
 
     /** GraphQL's query is its own syntax (not JSON), so it doesn't get the
@@ -1015,6 +1038,145 @@ public class MainController implements Initializable {
                 graphqlVariablesArea.setStyleSpans(0,
                         JsonSyntaxHighlighter.computeHighlighting(graphqlVariablesArea.getText())));
         VariableAutocomplete.attach(graphqlVariablesArea, this::currentEnvironmentVariables);
+
+        // Same Postman-style body menu — GraphQL query/variables are just
+        // another "Body" tab.
+        EditorContextMenu.attach(TextEditTarget.of(graphqlQueryArea), true, false, bodyMenuExtensions());
+        EditorContextMenu.attach(TextEditTarget.of(graphqlVariablesArea), true, false, bodyMenuExtensions());
+    }
+
+    /** Postman-style right-click menu for the Pre-request/Tests script
+     * editors: Set as variable, Save to Package Library, Cut/Copy/Paste,
+     * EncodeURIComponent/DecodeURIComponent, Find — replaces the plain
+     * TextArea's default OS context menu. */
+    private void setupScriptEditorsContextMenu() {
+        if (preRequestScriptsArea != null) {
+            EditorContextMenu.attach(TextEditTarget.of(preRequestScriptsArea), false, true, scriptMenuExtensions());
+        }
+        if (postRequestScriptsArea != null) {
+            EditorContextMenu.attach(TextEditTarget.of(postRequestScriptsArea), false, true, scriptMenuExtensions());
+        }
+    }
+
+    /** "Set as variable" extension shared by every body-style editor. */
+    private EditorContextMenu.Extensions bodyMenuExtensions() {
+        return this::handleSetAsVariable;
+    }
+
+    /** "Set as variable" + "Save to Package Library" extensions shared by
+     * the pre-request/tests script editors. */
+    private EditorContextMenu.Extensions scriptMenuExtensions() {
+        return new EditorContextMenu.Extensions() {
+            @Override
+            public void onSetAsVariable(TextEditTarget target) {
+                handleSetAsVariable(target);
+            }
+
+            @Override
+            public void onSaveToExistingPackage(TextEditTarget target) {
+                handleSaveToPackage(target, false);
+            }
+
+            @Override
+            public void onSaveToNewPackage(TextEditTarget target) {
+                handleSaveToPackage(target, true);
+            }
+        };
+    }
+
+    /** Postman's "Set as variable": saves the selected text into the
+     * currently active environment and replaces the selection with a
+     * {{variableName}} reference to it. */
+    private void handleSetAsVariable(TextEditTarget target) {
+        String selected = target.getSelectedText();
+        if (selected == null || selected.isEmpty()) {
+            AlertUtils.showError("Select some text first to turn it into a variable.");
+            return;
+        }
+        String envName = environmentCombo != null ? environmentCombo.getValue() : null;
+        if (envName == null || "No Environment".equals(envName)) {
+            AlertUtils.showError("Select (or create) an environment first, then try again.");
+            return;
+        }
+        EnvironmentResponse env = environmentsMap.get(envName);
+        if (env == null) {
+            AlertUtils.showError("Couldn't find the active environment.");
+            return;
+        }
+
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Set as Variable");
+        String preview = selected.length() > 40 ? selected.substring(0, 40) + "..." : selected;
+        dialog.setHeaderText("Save \"" + preview + "\" as a variable in \"" + envName + "\"");
+        dialog.setContentText("Variable name:");
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        dialog.showAndWait().ifPresent(nameInput -> {
+            String varName = nameInput == null ? "" : nameInput.trim();
+            if (varName.isEmpty()) {
+                return;
+            }
+            IndexRange range = target.getSelection();
+            target.replaceText(range.getStart(), range.getEnd(), "{{" + varName + "}}");
+
+            Map<String, String> updated = new LinkedHashMap<>(
+                    env.getVariables() != null ? env.getVariables() : Collections.emptyMap());
+            updated.put(varName, selected);
+            env.setVariables(updated);
+
+            new Thread(() -> {
+                EnvironmentService.updateEnvironmentVariables(env.getId(), updated);
+                Platform.runLater(() -> updateStatus("Variable \"" + varName + "\" saved to " + envName));
+            }).start();
+        });
+    }
+
+    /** Postman's "Save to Package Library" — persists the selected script
+     * as a reusable local snippet, either under a brand-new package or
+     * appended to one that already exists. */
+    private void handleSaveToPackage(TextEditTarget target, boolean createNew) {
+        String selected = target.getSelectedText();
+        if (selected == null || selected.isEmpty()) {
+            AlertUtils.showError("Select the script code you want to save first.");
+            return;
+        }
+        if (createNew) {
+            TextInputDialog nameDialog = new TextInputDialog();
+            nameDialog.setTitle("New Package");
+            nameDialog.setHeaderText("Save selected script as a new Package Library entry");
+            nameDialog.setContentText("Package name:");
+            ThemeManager.styleDialog(nameDialog.getDialogPane());
+            nameDialog.showAndWait().ifPresent(nameInput -> {
+                String pkgName = nameInput == null ? "" : nameInput.trim();
+                if (pkgName.isEmpty()) {
+                    return;
+                }
+                TextInputDialog descDialog = new TextInputDialog();
+                descDialog.setTitle("New Package");
+                descDialog.setHeaderText("Description (optional)");
+                descDialog.setContentText("Description:");
+                ThemeManager.styleDialog(descDialog.getDialogPane());
+                String desc = descDialog.showAndWait().map(String::trim).orElse("");
+
+                PackageLibraryService.createPackage(pkgName, desc, selected);
+                updateStatus("Saved to new package \"" + pkgName + "\"");
+            });
+        } else {
+            List<ScriptPackage> packages = PackageLibraryService.listPackages();
+            if (packages.isEmpty()) {
+                AlertUtils.showError("No packages yet — use \"New Package\" to create one first.");
+                return;
+            }
+            ChoiceDialog<ScriptPackage> dialog = new ChoiceDialog<>(packages.get(0), packages);
+            dialog.setTitle("Save to Package Library");
+            dialog.setHeaderText("Add selected script to an existing package");
+            dialog.setContentText("Package:");
+            ThemeManager.styleDialog(dialog.getDialogPane());
+            dialog.showAndWait().ifPresent(pkg -> {
+                PackageLibraryService.appendToPackage(pkg.getId(), selected);
+                updateStatus("Added to package \"" + pkg.getName() + "\"");
+            });
+        }
     }
 
     /** Response viewer: read-only JSON + {{variable}} coloring, plus a
@@ -4705,6 +4867,34 @@ public class MainController implements Initializable {
         // tab's response — each tab now keeps its own last response.
         ApiResponse lastApiResponse;
         Map<String, String> lastResponseHeaders;
+
+        /** Postman's "Duplicate Tab": an independent, unsaved copy of this
+         * tab's editor contents — never linked back to the same saved
+         * request, so editing/saving the copy can't clobber the original. */
+        RequestTabState copyForDuplicate() {
+            RequestTabState copy = new RequestTabState();
+            copy.name = this.name;
+            copy.requestId = null;
+            copy.method = this.method;
+            copy.url = this.url;
+            copy.body = this.body;
+            copy.preScript = this.preScript;
+            copy.testsScript = this.testsScript;
+            copy.authType = this.authType;
+            copy.authToken = this.authToken;
+            copy.authUsername = this.authUsername;
+            copy.authPassword = this.authPassword;
+            copy.params = new ArrayList<>();
+            for (KeyValuePair kv : this.params) {
+                copy.params.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+            }
+            copy.headers = new ArrayList<>();
+            for (KeyValuePair kv : this.headers) {
+                copy.headers.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+            }
+            copy.dirty = true; // an unsaved copy always starts dirty
+            return copy;
+        }
     }
 
     /** True while we're programmatically loading a tab's state into the
@@ -4895,15 +5085,7 @@ public class MainController implements Initializable {
         state.requestId = requestId;
         state.method = method == null ? "GET" : method;
 
-        Tab tab = new Tab();
-        tab.setClosable(true);
-        tabStates.put(tab, state);
-        tab.setOnClosed(e -> {
-            tabStates.remove(tab);
-            if (requestTabPane.getTabs().isEmpty()) {
-                openRequestTab("Untitled Request", null);
-            }
-        });
+        Tab tab = createManagedTab(state);
 
         switchingTabs = true;
         Tab previous = requestTabPane.getSelectionModel().getSelectedItem();
@@ -4917,6 +5099,154 @@ public class MainController implements Initializable {
         restoreTabState(tab); // blank editor for a fresh tab
         refreshTabGraphic(tab);
         return tab;
+    }
+
+    /** The tab currently showing in the editor, or null if there isn't one
+     * (e.g. an old FXML without the tab bar). */
+    private Tab activeRequestTab() {
+        return requestTabPane != null ? requestTabPane.getSelectionModel().getSelectedItem() : null;
+    }
+
+    /** Builds a new Tab wired up with its state, close cleanup, and the
+     * Postman-style right-click menu — shared by openRequestTab() and
+     * duplicateTab() so both kinds of tab behave identically. */
+    private Tab createManagedTab(RequestTabState state) {
+        Tab tab = new Tab();
+        tab.setClosable(true);
+        tabStates.put(tab, state);
+        tab.setOnClosed(e -> {
+            tabStates.remove(tab);
+            if (requestTabPane.getTabs().isEmpty()) {
+                openRequestTab("Untitled Request", null);
+            }
+        });
+        setupTabContextMenu(tab);
+        return tab;
+    }
+
+    /** Postman's tab-bar right-click menu: New Request, Duplicate Tab,
+     * Close Tab / Force Close Tab, Close Other Tabs, Close All Tabs,
+     * Force Close All Tabs. */
+    private void setupTabContextMenu(Tab tab) {
+        ContextMenu menu = new ContextMenu();
+
+        MenuItem newRequestItem = new MenuItem("New Request");
+        newRequestItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+T"));
+        newRequestItem.setOnAction(e -> openRequestTab("Untitled Request", null));
+
+        MenuItem duplicateItem = new MenuItem("Duplicate Tab");
+        duplicateItem.setOnAction(e -> duplicateTab(tab));
+
+        MenuItem closeItem = new MenuItem("Close Tab");
+        closeItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+W"));
+        closeItem.setOnAction(e -> closeTabSafely(tab, false));
+
+        MenuItem forceCloseItem = new MenuItem("Force Close Tab");
+        forceCloseItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Alt+Ctrl+W"));
+        forceCloseItem.setOnAction(e -> closeTabSafely(tab, true));
+
+        MenuItem closeOthersItem = new MenuItem("Close Other Tabs");
+        closeOthersItem.setOnAction(e -> closeTabsMatching(t -> t != tab, false));
+
+        MenuItem closeAllItem = new MenuItem("Close All Tabs");
+        closeAllItem.setOnAction(e -> closeTabsMatching(t -> true, false));
+
+        MenuItem forceCloseAllItem = new MenuItem("Force Close All Tabs");
+        forceCloseAllItem.setOnAction(e -> closeTabsMatching(t -> true, true));
+
+        menu.getItems().addAll(
+                newRequestItem, duplicateItem,
+                new SeparatorMenuItem(),
+                closeItem, forceCloseItem, closeOthersItem, closeAllItem, forceCloseAllItem);
+        tab.setContextMenu(menu);
+    }
+
+    /** Postman's "Duplicate Tab" — opens an independent, unsaved copy of
+     * the right-clicked tab's editor contents right next to it. */
+    private void duplicateTab(Tab source) {
+        if (source == null || requestTabPane == null) {
+            return;
+        }
+        if (source == requestTabPane.getSelectionModel().getSelectedItem()) {
+            captureTabState(source); // sync latest, unsaved edits before copying
+        }
+        RequestTabState original = tabStates.get(source);
+        if (original == null) {
+            return;
+        }
+        RequestTabState copy = original.copyForDuplicate();
+        Tab newTab = createManagedTab(copy);
+
+        switchingTabs = true;
+        int index = requestTabPane.getTabs().indexOf(source);
+        requestTabPane.getTabs().add(index + 1, newTab);
+        requestTabPane.getSelectionModel().select(newTab);
+        switchingTabs = false;
+
+        restoreTabState(newTab);
+        refreshTabGraphic(newTab);
+    }
+
+    /** Closes a single tab. Unless {@code force} is true, a tab with
+     * unsaved changes asks for confirmation first. Always keeps at least
+     * one tab open, matching Postman. */
+    private void closeTabSafely(Tab tab, boolean force) {
+        if (tab == null || requestTabPane == null) {
+            return;
+        }
+        RequestTabState state = tabStates.get(tab);
+        if (!force && state != null && state.dirty) {
+            boolean confirmed = AlertUtils.showConfirmation("Unsaved Changes",
+                    "\"" + state.name + "\" has unsaved changes. Close this tab anyway?");
+            if (!confirmed) {
+                return;
+            }
+        }
+        tabStates.remove(tab);
+        requestTabPane.getTabs().remove(tab);
+        if (requestTabPane.getTabs().isEmpty()) {
+            openRequestTab("Untitled Request", null);
+        }
+    }
+
+    /** Closes every tab matched by {@code which} — backs "Close Other
+     * Tabs", "Close All Tabs" and their Force variants. Unless
+     * {@code force} is true, asks once (for the whole batch) if any
+     * matched tab has unsaved changes. */
+    private void closeTabsMatching(java.util.function.Predicate<Tab> which, boolean force) {
+        if (requestTabPane == null) {
+            return;
+        }
+        List<Tab> targets = new ArrayList<>();
+        for (Tab t : requestTabPane.getTabs()) {
+            if (which.test(t)) {
+                targets.add(t);
+            }
+        }
+        if (targets.isEmpty()) {
+            return;
+        }
+        if (!force) {
+            long dirtyCount = targets.stream()
+                    .map(tabStates::get)
+                    .filter(s -> s != null && s.dirty)
+                    .count();
+            if (dirtyCount > 0) {
+                boolean confirmed = AlertUtils.showConfirmation("Unsaved Changes",
+                        dirtyCount + (dirtyCount == 1 ? " tab has" : " tabs have")
+                                + " unsaved changes. Close anyway?");
+                if (!confirmed) {
+                    return;
+                }
+            }
+        }
+        for (Tab t : targets) {
+            tabStates.remove(t);
+        }
+        requestTabPane.getTabs().removeAll(targets);
+        if (requestTabPane.getTabs().isEmpty()) {
+            openRequestTab("Untitled Request", null);
+        }
     }
 
     /** Postman-style tab label: colored method badge + name + unsaved dot. */
