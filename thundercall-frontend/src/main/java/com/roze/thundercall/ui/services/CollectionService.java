@@ -95,4 +95,20 @@ public class CollectionService {
             return false;
         }
     }
+
+    /** Postman's "Set as variable" > Collection scope writes here — full
+     * replace, same convention as EnvironmentService.updateEnvironmentVariables. */
+    public static Optional<CollectionResponse> updateCollectionVariables(Long id, java.util.Map<String, String> variables) {
+        try {
+            BaseResponse<CollectionResponse> response = ApiClient.patch(BASE_URL + "/" + id + "/variables", variables,
+                    new TypeReference<BaseResponse<CollectionResponse>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to update collection variables: " + e.getMessage()));
+        }
+        return Optional.empty();
+    }
 }

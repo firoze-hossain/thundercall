@@ -65,4 +65,16 @@ public class CollectionController extends BaseController {
         collectionService.deleteCollection(id, user);
         return noContent("Collection deleted successfully");
     }
+
+    /** Postman's "Set as variable" > Collection scope writes here — full
+     * replace, same convention as PUT /environments/{id}. */
+    @PatchMapping("/{id}/variables")
+    public ResponseEntity<BaseResponse<CollectionResponse>> updateCollectionVariables(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> variables,
+            Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        CollectionResponse response = collectionService.updateCollectionVariables(id, variables, user);
+        return ok(response, "Collection variables updated");
+    }
 }

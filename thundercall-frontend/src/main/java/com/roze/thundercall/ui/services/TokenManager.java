@@ -61,6 +61,14 @@ public class TokenManager {
         return prefs.get(USERNAME_KEY, null);
     }
 
+    /** The logged-in user's id, or null if never stored (e.g. logged out).
+     * Used to tell "my own comment" apart from someone else's, so only the
+     * author sees Edit/Delete on a comment — matching Postman. */
+    public static Long getUserId() {
+        long id = prefs.getLong(USER_ID_KEY, -1L);
+        return id == -1L ? null : id;
+    }
+
     public static void clearTokens() {
         prefs.remove(TOKEN_KEY);
         prefs.remove(REFRESH_TOKEN_KEY);

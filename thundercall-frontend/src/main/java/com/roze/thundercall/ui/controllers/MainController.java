@@ -266,6 +266,20 @@ public class MainController implements Initializable {
         }
     }
     private Map<String, EnvironmentResponse> environmentsMap = new HashMap<>();
+    // Postman-style Global scope: a reserved, hidden "Globals" environment
+    // per workspace — reuses all the existing Environment CRUD/backend
+    // instead of a whole separate global-variables concept. Never shown in
+    // environmentCombo/environmentsList (see populateEnvironmentsUi).
+    private EnvironmentResponse globalsEnvironment;
+    // Collection-scoped variables, fetched lazily the first time a request
+    // from that collection is opened (see ensureCollectionVariablesLoaded).
+    private final Map<Long, Map<String, String>> collectionVariablesCache = new HashMap<>();
+    // Postman-style inline body comments, keyed by requestId — root
+    // threads only, each carrying its own replies (see CommentResponse).
+    private final Map<Long, List<CommentResponse>> commentThreadsCache = new HashMap<>();
+    // Paints the yellow "has a comment" highlight on top of the body
+    // editor's JSON syntax highlighting, and reopens a thread on click.
+    private CommentHighlighter bodyCommentHighlighter;
     @FXML
     private ToggleButton noneBodyTypeButton;
     @FXML
@@ -741,6 +755,12 @@ public class MainController implements Initializable {
 
             environmentCombo.getItems().add("No Environment");
             for (EnvironmentResponse env : environments) {
+                // The reserved Globals store (Postman's Global scope) is
+                // real data but never appears as a switchable environment.
+                if ("Globals".equals(env.getName())) {
+                    globalsEnvironment = env;
+                    continue;
+                }
                 if (env.getIsActive()) {
                     environmentCombo.getItems().add(env.getName());
                     environmentsMap.put(env.getName(), env);
@@ -748,7 +768,8 @@ public class MainController implements Initializable {
             }
 
             if (environmentsList != null) {
-                environmentsList.getItems().setAll(environments);
+                environmentsList.getItems().setAll(
+                        environments.stream().filter(e -> !"Globals".equals(e.getName())).toList());
             }
 
             // Keep whatever was selected before if it still exists (e.g.
@@ -1011,8 +1032,8 @@ public class MainController implements Initializable {
     /** Request body editor: full JSON + {{variable}} coloring, autocomplete,
      * and auto-closing braces. */
     private void setupBodyCodeArea() {
-        bodyTextArea.plainTextChanges().subscribe(change ->
-                bodyTextArea.setStyleSpans(0, JsonSyntaxHighlighter.computeHighlighting(bodyTextArea.getText())));
+        bodyCommentHighlighter = new CommentHighlighter(bodyTextArea, this::handleOpenCommentThread);
+        bodyTextArea.plainTextChanges().subscribe(change -> bodyCommentHighlighter.refresh());
         VariableAutocomplete.attach(bodyTextArea, this::currentEnvironmentVariables);
         if (bodyPromptLabel != null) {
             bodyPromptLabel.visibleProperty().bind(
@@ -1022,6 +1043,9 @@ public class MainController implements Initializable {
         // Postman-style right-click menu: Comment, Set as variable, Cut/Copy/
         // Paste, EncodeURIComponent/DecodeURIComponent, Find.
         EditorContextMenu.attach(TextEditTarget.of(bodyTextArea), true, false, bodyMenuExtensions());
+        // Ctrl+/ toggles "//" line-comments — independent of the "Comment"
+        // annotation feature above, exactly like Postman.
+        attachCommentToggleShortcut(bodyTextArea, TextEditTarget.of(bodyTextArea));
     }
 
     /** GraphQL's query is its own syntax (not JSON), so it doesn't get the
@@ -1039,10 +1063,13 @@ public class MainController implements Initializable {
                         JsonSyntaxHighlighter.computeHighlighting(graphqlVariablesArea.getText())));
         VariableAutocomplete.attach(graphqlVariablesArea, this::currentEnvironmentVariables);
 
-        // Same Postman-style body menu — GraphQL query/variables are just
-        // another "Body" tab.
-        EditorContextMenu.attach(TextEditTarget.of(graphqlQueryArea), true, false, bodyMenuExtensions());
-        EditorContextMenu.attach(TextEditTarget.of(graphqlVariablesArea), true, false, bodyMenuExtensions());
+        // Set as variable / Cut/Copy/Paste/Encode/Decode/Find — the inline
+        // "Comment" annotation thread feature is body-only for now (see
+        // handleAddComment), so these two don't get that particular item.
+        EditorContextMenu.attach(TextEditTarget.of(graphqlQueryArea), false, false, bodyMenuExtensions());
+        EditorContextMenu.attach(TextEditTarget.of(graphqlVariablesArea), false, false, bodyMenuExtensions());
+        attachCommentToggleShortcut(graphqlQueryArea, TextEditTarget.of(graphqlQueryArea));
+        attachCommentToggleShortcut(graphqlVariablesArea, TextEditTarget.of(graphqlVariablesArea));
     }
 
     /** Postman-style right-click menu for the Pre-request/Tests script
@@ -1052,15 +1079,40 @@ public class MainController implements Initializable {
     private void setupScriptEditorsContextMenu() {
         if (preRequestScriptsArea != null) {
             EditorContextMenu.attach(TextEditTarget.of(preRequestScriptsArea), false, true, scriptMenuExtensions());
+            attachCommentToggleShortcut(preRequestScriptsArea, TextEditTarget.of(preRequestScriptsArea));
         }
         if (postRequestScriptsArea != null) {
             EditorContextMenu.attach(TextEditTarget.of(postRequestScriptsArea), false, true, scriptMenuExtensions());
+            attachCommentToggleShortcut(postRequestScriptsArea, TextEditTarget.of(postRequestScriptsArea));
         }
     }
 
-    /** "Set as variable" extension shared by every body-style editor. */
+    /** Ctrl+/ toggles "//" line-comments in the given editor — press once
+     * to comment the selected/current line(s), press again to uncomment.
+     * Independent of the "Comment" annotation-thread feature. */
+    private void attachCommentToggleShortcut(Node node, TextEditTarget target) {
+        node.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.SLASH && e.isControlDown()) {
+                EditorContextMenu.toggleLineComment(target);
+                e.consume();
+            }
+        });
+    }
+
+    /** "Set as variable" (+ "Comment" for the body editor) extensions
+     * shared by every body-style editor. */
     private EditorContextMenu.Extensions bodyMenuExtensions() {
-        return this::handleSetAsVariable;
+        return new EditorContextMenu.Extensions() {
+            @Override
+            public void onSetAsVariable(TextEditTarget target) {
+                handleSetAsVariable(target);
+            }
+
+            @Override
+            public void onComment(TextEditTarget target) {
+                handleAddComment(target);
+            }
+        };
     }
 
     /** "Set as variable" + "Save to Package Library" extensions shared by
@@ -1084,51 +1136,197 @@ public class MainController implements Initializable {
         };
     }
 
-    /** Postman's "Set as variable": saves the selected text into the
-     * currently active environment and replaces the selection with a
-     * {{variableName}} reference to it. */
+    /** Postman's "Set as new variable" card: Name / Value (read-only
+     * preview) / Scope — Environment, Collection, Global or Vault. Saving
+     * always replaces the selection with a {{name}} (or {{vault:name}}
+     * for Vault) reference, then persists to whichever scope was chosen. */
     private void handleSetAsVariable(TextEditTarget target) {
         String selected = target.getSelectedText();
         if (selected == null || selected.isEmpty()) {
             AlertUtils.showError("Select some text first to turn it into a variable.");
             return;
         }
-        String envName = environmentCombo != null ? environmentCombo.getValue() : null;
-        if (envName == null || "No Environment".equals(envName)) {
-            AlertUtils.showError("Select (or create) an environment first, then try again.");
-            return;
-        }
-        EnvironmentResponse env = environmentsMap.get(envName);
-        if (env == null) {
-            AlertUtils.showError("Couldn't find the active environment.");
-            return;
-        }
-
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Set as Variable");
-        String preview = selected.length() > 40 ? selected.substring(0, 40) + "..." : selected;
-        dialog.setHeaderText("Save \"" + preview + "\" as a variable in \"" + envName + "\"");
-        dialog.setContentText("Variable name:");
-        ThemeManager.styleDialog(dialog.getDialogPane());
-
-        dialog.showAndWait().ifPresent(nameInput -> {
-            String varName = nameInput == null ? "" : nameInput.trim();
-            if (varName.isEmpty()) {
-                return;
+        IndexRange range = target.getSelection();
+        SetVariablePopup.show(target.getNode(), selected, (scope, name, value) -> {
+            String reference = "Vault".equals(scope) ? "{{vault:" + name + "}}" : "{{" + name + "}}";
+            target.replaceText(range.getStart(), range.getEnd(), reference);
+            switch (scope) {
+                case "Environment" -> saveEnvironmentVariable(name, value);
+                case "Global" -> saveGlobalVariable(name, value);
+                case "Vault" -> saveVaultVariable(name, value);
+                case "Collection" -> {
+                    Tab active = activeRequestTab();
+                    RequestTabState state = active != null ? tabStates.get(active) : null;
+                    saveCollectionVariable(state != null ? state.collectionId : null, name, value);
+                }
+                default -> { /* unreachable — SetVariablePopup only offers the four scopes above */ }
             }
-            IndexRange range = target.getSelection();
-            target.replaceText(range.getStart(), range.getEnd(), "{{" + varName + "}}");
-
-            Map<String, String> updated = new LinkedHashMap<>(
-                    env.getVariables() != null ? env.getVariables() : Collections.emptyMap());
-            updated.put(varName, selected);
-            env.setVariables(updated);
-
-            new Thread(() -> {
-                EnvironmentService.updateEnvironmentVariables(env.getId(), updated);
-                Platform.runLater(() -> updateStatus("Variable \"" + varName + "\" saved to " + envName));
-            }).start();
         });
+    }
+
+    /** Postman's right-click "Comment" on selected body text — opens the
+     * "Ask questions or provide feedback..." composer, then persists the
+     * new thread and repaints the yellow highlight once the server
+     * confirms it. Comments are attached to a saved request, so this
+     * needs the active tab to already have one. */
+    private void handleAddComment(TextEditTarget target) {
+        String selected = target.getSelectedText();
+        if (selected == null || selected.isEmpty()) {
+            AlertUtils.showError("Select some text first to leave a comment on it.");
+            return;
+        }
+        Tab active = activeRequestTab();
+        RequestTabState state = active != null ? tabStates.get(active) : null;
+        if (state == null || state.requestId == null) {
+            AlertUtils.showError("Save this request first — comments are attached to a saved request.");
+            return;
+        }
+        IndexRange range = target.getSelection();
+        int start = range.getStart();
+        int end = range.getEnd();
+        Long requestId = state.requestId;
+
+        CommentThreadPopup.showComposer(target.getNode(), message -> new Thread(() -> {
+            Optional<CommentResponse> created = CommentService.createThread(
+                    requestId, message, start, end, selected, "body");
+            created.ifPresent(thread -> Platform.runLater(() -> {
+                List<CommentResponse> threads = new ArrayList<>(
+                        commentThreadsCache.getOrDefault(requestId, new ArrayList<>()));
+                threads.add(thread);
+                commentThreadsCache.put(requestId, threads);
+                refreshBodyCommentHighlights();
+                updateStatus("Comment added");
+            }));
+        }).start());
+    }
+
+    /** Reopens an existing thread (clicked via its yellow highlight in the
+     * body editor) as the breadcrumb + messages + reply popup. */
+    private void handleOpenCommentThread(CommentResponse thread) {
+        Tab active = activeRequestTab();
+        RequestTabState state = active != null ? tabStates.get(active) : null;
+        Long requestId = state != null && state.requestId != null ? state.requestId : thread.getRequestId();
+
+        String preview = thread.getSnippet() != null ? thread.getSnippet() : "";
+        String flatPreview = preview.replace("\n", " ").trim();
+        if (flatPreview.length() > 40) {
+            flatPreview = flatPreview.substring(0, 40) + "...";
+        }
+        String breadcrumb = "Body > raw > " + flatPreview;
+        Long currentUserId = TokenManager.getUserId();
+
+        CommentThreadPopup.showThread(bodyTextArea, thread, breadcrumb, currentUserId,
+                new CommentThreadPopup.ThreadCallback() {
+                    @Override
+                    public void onReply(String message) {
+                        new Thread(() -> {
+                            Optional<CommentResponse> updated = CommentService.addReply(thread.getId(), message);
+                            updated.ifPresent(t -> Platform.runLater(() -> replaceThreadInCache(requestId, t)));
+                        }).start();
+                    }
+
+                    @Override
+                    public void onEdit(Long commentId, String newMessage) {
+                        new Thread(() -> {
+                            Optional<CommentResponse> updated = CommentService.editMessage(commentId, newMessage);
+                            updated.ifPresent(t -> Platform.runLater(() -> replaceThreadInCache(requestId, t)));
+                        }).start();
+                    }
+
+                    @Override
+                    public void onDelete(Long commentId) {
+                        boolean isRoot = commentId.equals(thread.getId());
+                        boolean confirmed = AlertUtils.showConfirmation("Delete Comment",
+                                isRoot ? "Delete this comment and its replies?" : "Delete this reply?");
+                        if (!confirmed) {
+                            return;
+                        }
+                        new Thread(() -> {
+                            boolean ok = CommentService.deleteMessage(commentId);
+                            if (!ok) {
+                                return;
+                            }
+                            Platform.runLater(() -> {
+                                if (isRoot) {
+                                    removeThreadFromCache(requestId, thread.getId());
+                                } else {
+                                    // A reply doesn't hand back an updated parent —
+                                    // simplest correct fix is to reload the thread.
+                                    reloadCommentThreads(requestId);
+                                }
+                            });
+                        }).start();
+                    }
+
+                    @Override
+                    public void onToggleResolve(boolean resolve) {
+                        new Thread(() -> {
+                            Optional<CommentResponse> updated = CommentService.setResolved(thread.getId(), resolve);
+                            updated.ifPresent(t -> Platform.runLater(() -> replaceThreadInCache(requestId, t)));
+                        }).start();
+                    }
+                });
+    }
+
+    private void replaceThreadInCache(Long requestId, CommentResponse updated) {
+        List<CommentResponse> threads = new ArrayList<>(commentThreadsCache.getOrDefault(requestId, new ArrayList<>()));
+        threads.removeIf(t -> t.getId().equals(updated.getId()));
+        threads.add(updated);
+        commentThreadsCache.put(requestId, threads);
+        refreshBodyCommentHighlights();
+    }
+
+    private void removeThreadFromCache(Long requestId, Long threadId) {
+        List<CommentResponse> threads = new ArrayList<>(commentThreadsCache.getOrDefault(requestId, new ArrayList<>()));
+        threads.removeIf(t -> t.getId().equals(threadId));
+        commentThreadsCache.put(requestId, threads);
+        refreshBodyCommentHighlights();
+    }
+
+    private void reloadCommentThreads(Long requestId) {
+        if (requestId == null) {
+            return;
+        }
+        new Thread(() -> {
+            Optional<List<CommentResponse>> threads = CommentService.getThreadsForRequest(requestId);
+            commentThreadsCache.put(requestId, new ArrayList<>(threads.orElse(new ArrayList<>())));
+            Platform.runLater(this::refreshBodyCommentHighlights);
+        }).start();
+    }
+
+    /** Loads a request's comment threads once (best-effort, cached
+     * afterward) and paints the body editor's highlights for whichever of
+     * them are still the active tab's — called both right after a request
+     * loads and whenever the active tab switches. */
+    private void ensureCommentThreadsLoaded(Long requestId) {
+        if (requestId == null) {
+            return;
+        }
+        if (commentThreadsCache.containsKey(requestId)) {
+            refreshBodyCommentHighlights();
+            return;
+        }
+        new Thread(() -> {
+            Optional<List<CommentResponse>> threads = CommentService.getThreadsForRequest(requestId);
+            commentThreadsCache.put(requestId, new ArrayList<>(threads.orElse(new ArrayList<>())));
+            Platform.runLater(this::refreshBodyCommentHighlights);
+        }).start();
+    }
+
+    /** Repaints the body editor's yellow "has a comment" highlights from
+     * whatever's cached for the currently active tab's request. */
+    private void refreshBodyCommentHighlights() {
+        if (bodyCommentHighlighter == null) {
+            return;
+        }
+        Tab active = activeRequestTab();
+        RequestTabState state = active != null ? tabStates.get(active) : null;
+        if (state == null || state.requestId == null) {
+            bodyCommentHighlighter.setThreads(Collections.emptyList());
+            return;
+        }
+        List<CommentResponse> all = commentThreadsCache.getOrDefault(state.requestId, Collections.emptyList());
+        bodyCommentHighlighter.setThreads(all.stream().filter(t -> "body".equals(t.getFieldName())).toList());
     }
 
     /** Postman's "Save to Package Library" — persists the selected script
@@ -1818,6 +2016,132 @@ public class MainController implements Initializable {
         });
     }
 
+    /** Every variable in scope for the currently active tab, merged with
+     * Postman's real precedence (later entries win): Vault < Collection <
+     * Global < Environment. Used for both {{var}} autocomplete and actual
+     * send-time resolution (see VariableResolver), so saving a variable to
+     * any scope from "Set as variable" takes effect everywhere immediately. */
+    private Map<String, String> currentEnvironmentVariables() {
+        Map<String, String> merged = new LinkedHashMap<>(VaultService.asPrefixedVariables());
+
+        Tab active = activeRequestTab();
+        RequestTabState state = active != null ? tabStates.get(active) : null;
+        if (state != null && state.collectionId != null) {
+            Map<String, String> collectionVars = collectionVariablesCache.get(state.collectionId);
+            if (collectionVars != null) {
+                merged.putAll(collectionVars);
+            }
+        }
+
+        if (globalsEnvironment != null && globalsEnvironment.getVariables() != null) {
+            merged.putAll(globalsEnvironment.getVariables());
+        }
+
+        String selected = environmentCombo.getValue();
+        if (selected != null && !"No Environment".equals(selected)) {
+            EnvironmentResponse env = environmentsMap.get(selected);
+            if (env != null && env.getVariables() != null) {
+                merged.putAll(env.getVariables());
+            }
+        }
+        return merged;
+    }
+
+    /** Fetches this collection's variables once (best-effort, cached
+     * afterward) so Collection-scoped variables are ready by the time the
+     * person sends a request or opens "Set as variable" again. */
+    private void ensureCollectionVariablesLoaded(Long collectionId) {
+        if (collectionId == null || collectionVariablesCache.containsKey(collectionId)) {
+            return;
+        }
+        new Thread(() -> {
+            Optional<CollectionResponse> collection = CollectionService.getCollectionById(collectionId);
+            Map<String, String> vars = collection.map(CollectionResponse::getVariables).orElse(null);
+            collectionVariablesCache.put(collectionId, vars != null ? vars : new LinkedHashMap<>());
+        }).start();
+    }
+
+    /** Postman's "Set as variable" > Environment scope. */
+    private void saveEnvironmentVariable(String name, String value) {
+        String envName = environmentCombo != null ? environmentCombo.getValue() : null;
+        if (envName == null || "No Environment".equals(envName)) {
+            AlertUtils.showError("Select (or create) an environment first, then try again.");
+            return;
+        }
+        EnvironmentResponse env = environmentsMap.get(envName);
+        if (env == null) {
+            AlertUtils.showError("Couldn't find the active environment.");
+            return;
+        }
+        Map<String, String> updated = new LinkedHashMap<>(
+                env.getVariables() != null ? env.getVariables() : Collections.emptyMap());
+        updated.put(name, value);
+        env.setVariables(updated);
+        new Thread(() -> {
+            EnvironmentService.updateEnvironmentVariables(env.getId(), updated);
+            Platform.runLater(() -> updateStatus("Variable \"" + name + "\" saved to " + envName));
+        }).start();
+    }
+
+    /** Postman's "Set as variable" > Global scope — writes to the
+     * reserved, hidden "Globals" environment, creating it on first use. */
+    private void saveGlobalVariable(String name, String value) {
+        new Thread(() -> {
+            EnvironmentResponse target = globalsEnvironment;
+            if (target == null) {
+                target = EnvironmentService.getUserEnvironments().orElse(Collections.emptyList()).stream()
+                        .filter(e -> "Globals".equals(e.getName()))
+                        .findFirst()
+                        .orElse(null);
+            }
+            Optional<EnvironmentResponse> saved;
+            if (target == null) {
+                saved = EnvironmentService.createEnvironment("Globals",
+                        "Global variables — not shown in the environment switcher",
+                        new LinkedHashMap<>(Map.of(name, value)));
+            } else {
+                Map<String, String> updated = new LinkedHashMap<>(
+                        target.getVariables() != null ? target.getVariables() : Collections.emptyMap());
+                updated.put(name, value);
+                saved = EnvironmentService.updateEnvironmentVariables(target.getId(), updated);
+            }
+            if (saved.isPresent()) {
+                globalsEnvironment = saved.get();
+                Platform.runLater(() -> updateStatus("Global variable \"" + name + "\" saved"));
+            } else {
+                Platform.runLater(() -> AlertUtils.showError("Failed to save global variable \"" + name + "\""));
+            }
+        }).start();
+    }
+
+    /** Postman's "Set as variable" > Collection scope. */
+    private void saveCollectionVariable(Long collectionId, String name, String value) {
+        if (collectionId == null) {
+            AlertUtils.showError("Save this request into a collection first, then try again.");
+            return;
+        }
+        new Thread(() -> {
+            Map<String, String> current = new LinkedHashMap<>();
+            Optional<CollectionResponse> latest = CollectionService.getCollectionById(collectionId);
+            latest.map(CollectionResponse::getVariables).ifPresent(current::putAll);
+            current.put(name, value);
+            Optional<CollectionResponse> saved = CollectionService.updateCollectionVariables(collectionId, current);
+            if (saved.isPresent()) {
+                collectionVariablesCache.put(collectionId,
+                        saved.get().getVariables() != null ? saved.get().getVariables() : current);
+                Platform.runLater(() -> updateStatus("Collection variable \"" + name + "\" saved"));
+            } else {
+                Platform.runLater(() -> AlertUtils.showError("Failed to save collection variable \"" + name + "\""));
+            }
+        }).start();
+    }
+
+    /** Postman's "Set as variable" > Vault scope — device-local only. */
+    private void saveVaultVariable(String name, String value) {
+        VaultService.setSecret(name, value);
+        updateStatus("Vault secret \"" + name + "\" saved (this device only, never synced)");
+    }
+
     private void updateEnvironmentVariables(String environmentName) {
         // Intentionally does NOT rewrite the URL field or headers table.
         // Templates like {{baseUrl}} stay visible in the UI and are resolved
@@ -1829,18 +2153,6 @@ public class MainController implements Initializable {
         } else {
             updateStatus("Environment: " + environmentName);
         }
-    }
-
-    /** Variables of the currently selected environment, or an empty map. */
-    private Map<String, String> currentEnvironmentVariables() {
-        String selected = environmentCombo.getValue();
-        if (selected == null || "No Environment".equals(selected)) {
-            return Collections.emptyMap();
-        }
-        EnvironmentResponse env = environmentsMap.get(selected);
-        return (env != null && env.getVariables() != null)
-                ? env.getVariables()
-                : Collections.emptyMap();
     }
 
     private void setupCollectionsTree() {
@@ -1953,6 +2265,9 @@ public class MainController implements Initializable {
             }
             if (state != null) {
                 state.dirty = false; // freshly loaded from the server: nothing unsaved
+                state.collectionId = requestResponse.getCollectionId();
+                ensureCollectionVariablesLoaded(state.collectionId);
+                ensureCommentThreadsLoaded(state.requestId);
             }
             if (currentTab != null) {
                 refreshTabGraphic(currentTab);
@@ -4849,6 +5164,10 @@ public class MainController implements Initializable {
     private static class RequestTabState {
         String name = "Untitled Request";
         Long requestId;
+        // Which collection this (saved) request lives in — powers the
+        // Collection scope in "Set as variable" and its precedence in
+        // currentEnvironmentVariables(). Null for an unsaved/new request.
+        Long collectionId;
         String method = "GET";
         String url = "";
         String body = "";
@@ -4875,6 +5194,7 @@ public class MainController implements Initializable {
             RequestTabState copy = new RequestTabState();
             copy.name = this.name;
             copy.requestId = null;
+            copy.collectionId = this.collectionId;
             copy.method = this.method;
             copy.url = this.url;
             copy.body = this.body;
@@ -5341,6 +5661,8 @@ public class MainController implements Initializable {
         }
 
         refreshTabGraphic(tab);
+        ensureCollectionVariablesLoaded(state.collectionId);
+        ensureCommentThreadsLoaded(state.requestId);
     }
 
     private Tab findTabByRequestId(Long requestId) {

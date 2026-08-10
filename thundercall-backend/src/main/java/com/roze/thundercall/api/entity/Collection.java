@@ -10,7 +10,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Entity
 @Table(name = "collections")
@@ -38,6 +40,15 @@ public class Collection {
     @OneToMany(mappedBy = "collection",cascade = CascadeType.ALL,orphanRemoval = true)
     @Builder.Default
     private List<Folder> folders = new ArrayList<>();
+    // Collection-scoped variables (Postman's "Set as variable" > Collection
+    // scope) — visible to every request in this collection, one level
+    // below Environment/Global in resolution precedence.
+    @ElementCollection
+    @CollectionTable(name = "collection_variables", joinColumns = @JoinColumn(name = "collection_id"))
+    @MapKeyColumn(name = "variable_key")
+    @Column(name = "variable_value", columnDefinition = "TEXT")
+    @Builder.Default
+    private Map<String, String> variables = new HashMap<>();
     @Column(nullable = false)
     @CreationTimestamp
     private LocalDateTime createdAt;

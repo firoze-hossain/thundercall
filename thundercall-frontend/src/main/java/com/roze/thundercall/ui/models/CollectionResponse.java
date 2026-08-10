@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @AllArgsConstructor
@@ -27,4 +28,6 @@ public class CollectionResponse {
     @JsonAlias("requests")
     private List<RequestResponse> requestResponses;
     private List<FolderResponse> folderResponses;
+    /** Collection-scoped variables — Postman's "Set as variable" > Collection. */
+    private Map<String, String> variables;
 }

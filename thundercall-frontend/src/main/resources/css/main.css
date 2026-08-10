@@ -973,6 +973,84 @@
 .text.search-match { -rtfx-background-color: #5a5320; }
 .text.search-match-current { -rtfx-background-color: -accent; -fx-fill: #1d1f24; }
 
+/* ---- Postman-style inline comment highlight (body editor) ---- */
+.text.comment-highlight { -rtfx-background-color: rgba(217, 168, 62, 0.35); }
+
+/* ---- Shared floating popup card (Set as variable / Comment threads) ---- */
+.set-variable-popup, .comment-popup {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 16, 0, 0, 6);
+}
+.popup-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+}
+.popup-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+}
+.popup-submit-button {
+    -fx-background-color: -accent;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+    -fx-padding: 6 14 6 14;
+}
+.popup-submit-button:hover { -fx-background-color: -accent-hover; }
+.popup-submit-button:pressed { -fx-background-color: -accent-pressed; }
+.popup-submit-button:disabled { -fx-opacity: 0.5; -fx-cursor: default; }
+
+/* ---- Comment composer / thread viewer ---- */
+.comment-popup .comment-input {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-text-fill: -text-primary;
+}
+.comment-breadcrumb {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+}
+.comment-author {
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+}
+.comment-timestamp {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 10px;
+}
+.comment-message {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+}
+.comment-icon-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-padding: 1 5 1 5;
+    -fx-font-size: 11px;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.comment-icon-button:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+.comment-reply-field {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+}
+.comment-delete-item .label { -fx-text-fill: -danger; }
+
 /* Shared workspace dialogs — browse and send-request views */
 .shared-workspace-dialog .dialog-pane,
 .shared-workspace-dialog {
