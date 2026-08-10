@@ -83,7 +83,7 @@ public final class CommentThreadPopup {
         buttonRow.setAlignment(Pos.CENTER_RIGHT);
 
         VBox box = new VBox(8, textArea, buttonRow);
-        box.getStyleClass().add("comment-popup");
+        box.getStyleClass().addAll("root", "comment-popup");
         box.setPadding(new Insets(10));
         box.setPrefWidth(320);
         applyStylesheets(anchor, box);
@@ -103,7 +103,7 @@ public final class CommentThreadPopup {
         popup.setHideOnEscape(true);
 
         VBox box = new VBox();
-        box.getStyleClass().add("comment-popup");
+        box.getStyleClass().addAll("root", "comment-popup");
         box.setPrefWidth(360);
 
         Label breadcrumbLabel = new Label(breadcrumb);

@@ -55,7 +55,7 @@ public final class InlineFindPopup {
         closeBtn.setOnAction(e -> popup.hide());
 
         HBox bar = new HBox(6, searchField, countLabel, prevBtn, nextBtn, new Region(), closeBtn);
-        bar.getStyleClass().add("search-bar");
+        bar.getStyleClass().addAll("root", "search-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(6));
         bar.setPrefWidth(340);
