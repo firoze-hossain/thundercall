@@ -27,6 +27,25 @@ public class RequestService {
         return Optional.empty();
     }
 
+    /** Logs a request/response pair to history WITHOUT executing
+     * anything server-side — used after ClientHttpExecutor already ran
+     * the actual HTTP call directly from this machine, so the backend's
+     * only job here is the same history bookkeeping executeRequest()
+     * already does internally for a server-executed request. Best
+     * effort: a failure here shouldn't interrupt the person's workflow,
+     * just mean this one send doesn't show up in History. */
+    public static void recordHistory(ApiRequest request, ApiResponse response) {
+        try {
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("request", request);
+            body.put("response", response);
+            ApiClient.post(BASE_URL + "/record-history", body, new TypeReference<BaseResponse<Void>>() {
+            });
+        } catch (IOException ignored) {
+            // best-effort, as noted above
+        }
+    }
+
 
     /** Deletes a saved request on the server. */
     public static boolean deleteRequest(Long id) {

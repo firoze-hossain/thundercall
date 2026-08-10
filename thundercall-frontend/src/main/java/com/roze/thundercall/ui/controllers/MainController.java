@@ -3983,10 +3983,19 @@ public class MainController implements Initializable {
                     .body(VariableResolver.resolve(bodyArea.getText(), resolveVars))
                     .build();
             new Thread(() -> {
-                try {
-                    ApiResponse response = WorkspaceSharingService.executeSharedRequest(
-                            workspaceId, request.getId(), overrides);
-                    Platform.runLater(() -> {
+                // FIX: this used to call WorkspaceSharingService.executeSharedRequest(),
+                // which runs the actual HTTP call on the BACKEND server.
+                // That's fine when the backend happens to run on the same
+                // machine as you, but breaks the moment it's hosted
+                // anywhere else — "localhost" or anything on your own
+                // private network resolves on the SERVER, not on your
+                // machine, so it can never reach the thing you're
+                // actually trying to test. Executing directly from here
+                // (matching how Postman's own desktop app behaves) fixes
+                // that regardless of where the backend lives.
+                ApiResponse response = ClientHttpExecutor.execute(
+                        request.getMethod().name(), overrides.getUrl(), overrides.getHeaders(), overrides.getBody());
+                Platform.runLater(() -> {
                         sendBtn.setDisable(false);
                         statusLabel.setText("Status " + response.getStatusCode()
                                 + "  ·  " + response.getDuration() + " ms"
@@ -4055,14 +4064,6 @@ public class MainController implements Initializable {
                             }
                         }
                     });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> {
-                        sendBtn.setDisable(false);
-                        statusLabel.getStyleClass().removeAll("shared-workspace-status-ok");
-                        statusLabel.getStyleClass().add("shared-workspace-status-error");
-                        statusLabel.setText("Couldn't send: " + WorkspaceSharingService.friendlyMessage(ex));
-                    });
-                }
             }).start();
         });
 
@@ -5852,6 +5853,20 @@ public class MainController implements Initializable {
             return;
         }
 
+        // FIX: WS/SOCKETIO are markers for "use the dedicated Connect
+        // button," not real HTTP methods — the backend used to guard
+        // against sending these as an actual HTTP call, but now that
+        // execution happens client-side (see below), that guard needs
+        // to live here instead. Without it, e.g. pressing Enter in the
+        // URL field while WS is selected would try to build an HTTP
+        // request with method "WS", which java.net.http rejects outright
+        // with an unhandled exception rather than a clear message.
+        String selectedMethod = methodCombo.getValue();
+        if ("WS".equals(selectedMethod) || "SOCKETIO".equals(selectedMethod)) {
+            AlertUtils.showInfo("Use the Connect button for " + selectedMethod + " — it isn't a regular HTTP send.");
+            return;
+        }
+
         isRequestInProgress = true;
         requestStartTime = System.currentTimeMillis();
         updateStatus("Sending request...");
@@ -5930,7 +5945,27 @@ public class MainController implements Initializable {
                 apiRequest.setBody(body);
                 apiRequest.setFormData(finalFormDataFields);
 
-                return RequestService.executeRequest(apiRequest);
+                // FIX: this used to call RequestService.executeRequest(),
+                // which runs the actual HTTP call on the BACKEND server.
+                // That's fine when the backend happens to run on the same
+                // machine as you, but breaks the moment it's hosted
+                // anywhere else — "localhost" or anything on your own
+                // private network resolves on the SERVER, not on your
+                // machine, so it can never reach the thing you're
+                // actually trying to test. Executing directly from here
+                // (matching how Postman's own desktop app behaves, and
+                // exactly what the Team Spaces quick-send dialog already
+                // does) fixes that regardless of where the backend lives.
+                ApiResponse apiResponse = (finalFormDataFields != null && !finalFormDataFields.isEmpty())
+                        ? ClientHttpExecutor.executeMultipart(method, finalUrl, apiRequest.getHeaders(), finalFormDataFields)
+                        : ClientHttpExecutor.execute(method, finalUrl, apiRequest.getHeaders(), body);
+
+                // History is still server-side bookkeeping — the call
+                // already happened above; this just logs what happened,
+                // same as executeRequest() always did internally.
+                RequestService.recordHistory(apiRequest, apiResponse);
+
+                return Optional.of(apiResponse);
             }
         };
 

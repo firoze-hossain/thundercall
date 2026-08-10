@@ -67,6 +67,11 @@ public class RequestServiceImpl implements RequestService {
 
     @Override
     @Transactional
+    public void recordHistory(ApiRequest apiRequest, ApiResponse apiResponse, User user) {
+        saveRequestHistory(apiRequest, apiResponse, user);
+    }
+
+    @Override
     public ApiResponse executeRequest(ApiRequest apiRequest, User user) {
         Instant startTime = Instant.now();
         // WS is a marker for "this is a WebSocket request", not a real

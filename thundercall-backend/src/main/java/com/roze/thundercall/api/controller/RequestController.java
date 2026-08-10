@@ -28,6 +28,17 @@ public class RequestController extends BaseController {
         return ok(responseDTO);
     }
 
+    /** For a request that was already executed on the client (see
+     * ClientHttpExecutor) — just logs it to history, without executing
+     * anything server-side. */
+    @PostMapping("/record-history")
+    public ResponseEntity<BaseResponse<Void>> recordHistory(
+            @RequestBody com.roze.thundercall.api.dto.RecordHistoryRequest body, Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        requestService.recordHistory(body.request(), body.response(), user);
+        return ok(null);
+    }
+
     @PostMapping("")
     public ResponseEntity<BaseResponse<RequestResponse>> saveRequest(@Valid @RequestBody ApiRequest apiRequest, Authentication authentication) {
         User user = authService.getUserFromAuthentication(authentication);
