@@ -1329,48 +1329,27 @@ public class MainController implements Initializable {
         bodyCommentHighlighter.setThreads(all.stream().filter(t -> "body".equals(t.getFieldName())).toList());
     }
 
-    /** Postman's "Save to Package Library" — persists the selected script
-     * as a reusable local snippet, either under a brand-new package or
-     * appended to one that already exists. */
+    /** Postman's "Save to Package Library" — opens the real two-pane New
+     * Package editor or the existing-package picker (see
+     * PackageLibraryDialogs), persisting the selected script either way. */
     private void handleSaveToPackage(TextEditTarget target, boolean createNew) {
         String selected = target.getSelectedText();
         if (selected == null || selected.isEmpty()) {
             AlertUtils.showError("Select the script code you want to save first.");
             return;
         }
+        javafx.stage.Window owner = target.getNode().getScene() != null
+                ? target.getNode().getScene().getWindow() : null;
         if (createNew) {
-            TextInputDialog nameDialog = new TextInputDialog();
-            nameDialog.setTitle("New Package");
-            nameDialog.setHeaderText("Save selected script as a new Package Library entry");
-            nameDialog.setContentText("Package name:");
-            ThemeManager.styleDialog(nameDialog.getDialogPane());
-            nameDialog.showAndWait().ifPresent(nameInput -> {
-                String pkgName = nameInput == null ? "" : nameInput.trim();
-                if (pkgName.isEmpty()) {
-                    return;
-                }
-                TextInputDialog descDialog = new TextInputDialog();
-                descDialog.setTitle("New Package");
-                descDialog.setHeaderText("Description (optional)");
-                descDialog.setContentText("Description:");
-                ThemeManager.styleDialog(descDialog.getDialogPane());
-                String desc = descDialog.showAndWait().map(String::trim).orElse("");
-
-                PackageLibraryService.createPackage(pkgName, desc, selected);
-                updateStatus("Saved to new package \"" + pkgName + "\"");
-            });
+            PackageLibraryDialogs.showNewPackage(owner, selected,
+                    pkg -> updateStatus("Saved to new package \"" + pkg.getName() + "\""));
         } else {
             List<ScriptPackage> packages = PackageLibraryService.listPackages();
             if (packages.isEmpty()) {
                 AlertUtils.showError("No packages yet — use \"New Package\" to create one first.");
                 return;
             }
-            ChoiceDialog<ScriptPackage> dialog = new ChoiceDialog<>(packages.get(0), packages);
-            dialog.setTitle("Save to Package Library");
-            dialog.setHeaderText("Add selected script to an existing package");
-            dialog.setContentText("Package:");
-            ThemeManager.styleDialog(dialog.getDialogPane());
-            dialog.showAndWait().ifPresent(pkg -> {
+            PackageLibraryDialogs.showExistingPackagePicker(owner, pkg -> {
                 PackageLibraryService.appendToPackage(pkg.getId(), selected);
                 updateStatus("Added to package \"" + pkg.getName() + "\"");
             });
