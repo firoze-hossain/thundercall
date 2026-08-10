@@ -13,9 +13,9 @@ import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -29,38 +29,69 @@ import java.util.function.Consumer;
 
 /**
  * Postman's real "Package Library" dialogs for the Scripts editor's
- * right-click "Save to Package Library" — a two-pane "New Package" editor
- * (package browser on the left, name/summary/code on the right, with the
- * module.exports/pm.require boilerplate that updates live as you type the
- * name) and a small "Add script to an existing package" search-and-pick
- * modal. Postman's real feature is a paid, team-synced one, so this
- * reproduces the UI/flow against the local {@link PackageLibraryService}
- * rather than a real backend.
+ * right-click "Save to Package Library" — a resizable, IDE-style split
+ * view for "New Package" (package browser on the left, name/summary/code
+ * on the right, with the module.exports/pm.require boilerplate that
+ * updates live as you type the name) and a small "Add script to an
+ * existing package" search-and-pick modal. Postman's real feature is a
+ * paid, team-synced one, so this reproduces the UI/flow against the local
+ * {@link PackageLibraryService} rather than a real backend.
  */
 public final class PackageLibraryDialogs {
+
+    private static final double NEW_PACKAGE_WIDTH = 1000;
+    private static final double NEW_PACKAGE_HEIGHT = 600;
+    private static final double NEW_PACKAGE_MIN_WIDTH = 820;
+    private static final double NEW_PACKAGE_MIN_HEIGHT = 480;
+    private static final double SIDEBAR_MIN_WIDTH = 240;
+    private static final double EDITOR_MIN_WIDTH = 520;
+
+    private static final double PICKER_WIDTH = 440;
+    private static final double PICKER_HEIGHT = 520;
 
     private PackageLibraryDialogs() {
     }
 
-    /** The "New Package" two-pane editor (Postman's package-library +
-     * package-editor screens combined into one window). */
+    /** The "New Package" split-view editor (Postman's package-library +
+     * package-editor screens combined into one resizable window). */
     public static void showNewPackage(Window owner, String initialScript, Consumer<ScriptPackage> onCreated) {
         Stage stage = new Stage();
         stage.initOwner(owner);
         stage.initModality(Modality.WINDOW_MODAL);
         stage.setTitle("Package Library");
+        stage.setMinWidth(NEW_PACKAGE_MIN_WIDTH);
+        stage.setMinHeight(NEW_PACKAGE_MIN_HEIGHT);
 
-        BorderPane root = new BorderPane();
-        root.getStyleClass().addAll("root", "package-library-dialog");
+        VBox sidebar = buildLibrarySidebar();
+        sidebar.setMinWidth(SIDEBAR_MIN_WIDTH);
 
+        VBox editor = buildNewPackageEditor(stage, initialScript, onCreated);
+        editor.setMinWidth(EDITOR_MIN_WIDTH);
+
+        SplitPane splitPane = new SplitPane(sidebar, editor);
+        splitPane.setDividerPositions(0.28);
+        splitPane.getStyleClass().addAll("root", "package-library-dialog");
+
+        Scene scene = new Scene(splitPane, NEW_PACKAGE_WIDTH, NEW_PACKAGE_HEIGHT);
+        copyStylesheets(owner, scene);
+        stage.setScene(scene);
+        stage.setWidth(NEW_PACKAGE_WIDTH);
+        stage.setHeight(NEW_PACKAGE_HEIGHT);
+        stage.setResizable(true);
+        stage.show();
+        stage.centerOnScreen();
+    }
+
+    private static VBox buildNewPackageEditor(Stage stage, String initialScript, Consumer<ScriptPackage> onCreated) {
         TextField nameField = new TextField();
         nameField.setPromptText("package-name");
         nameField.getStyleClass().add("package-name-field");
+        nameField.setPrefHeight(36);
         HBox.setHgrow(nameField, Priority.ALWAYS);
 
-        Hyperlink addSummaryLink = new Hyperlink("Add a summary");
+        Hyperlink addSummaryLink = new Hyperlink("+ Add a summary");
         TextField summaryField = new TextField();
-        summaryField.setPromptText("Summary");
+        summaryField.setPromptText("What does this package do?");
         summaryField.setVisible(false);
         summaryField.setManaged(false);
         addSummaryLink.setOnAction(e -> {
@@ -75,15 +106,18 @@ public final class PackageLibraryDialogs {
         codeArea.getStyleClass().add("package-code-area");
         codeArea.setWrapText(false);
         codeArea.setText(buildTemplate(initialScript, ""));
+        VBox.setVgrow(codeArea, Priority.ALWAYS);
         nameField.textProperty().addListener((o, ov, nv) -> codeArea.setText(buildTemplate(initialScript, nv.trim())));
 
         Button createButton = new Button("Create");
         createButton.getStyleClass().add("popup-submit-button");
+        createButton.setPrefHeight(36);
         createButton.setDisable(true);
         nameField.textProperty().addListener((o, ov, nv) -> createButton.setDisable(nv.trim().isEmpty()));
 
         Button cancelButton = new Button("Cancel");
         cancelButton.getStyleClass().add("secondary-button");
+        cancelButton.setPrefHeight(36);
         cancelButton.setOnAction(e -> stage.close());
 
         createButton.setOnAction(e -> {
@@ -101,20 +135,14 @@ public final class PackageLibraryDialogs {
         HBox.setHgrow(spacer, Priority.ALWAYS);
         HBox headerRow = new HBox(10, nameField, spacer, cancelButton, createButton);
         headerRow.setAlignment(Pos.CENTER_LEFT);
-        headerRow.setPadding(new Insets(12));
 
-        VBox right = new VBox(6, headerRow, addSummaryLink, summaryField, codeArea);
-        VBox.setVgrow(codeArea, Priority.ALWAYS);
-        right.setPadding(new Insets(0, 12, 12, 12));
-        right.getStyleClass().add("package-editor-pane");
+        Label codeLabel = new Label("Package script");
+        codeLabel.getStyleClass().add("popup-label");
 
-        root.setLeft(buildLibrarySidebar());
-        root.setCenter(right);
-
-        Scene scene = new Scene(root, 940, 480);
-        copyStylesheets(owner, scene);
-        stage.setScene(scene);
-        stage.show();
+        VBox editor = new VBox(12, headerRow, addSummaryLink, summaryField, codeLabel, codeArea);
+        editor.setPadding(new Insets(20));
+        editor.getStyleClass().add("package-editor-pane");
+        return editor;
     }
 
     /** The "Add script to an existing package" picker: search + list +
@@ -124,6 +152,8 @@ public final class PackageLibraryDialogs {
         stage.initOwner(owner);
         stage.initModality(Modality.WINDOW_MODAL);
         stage.setTitle("Package Library");
+        stage.setMinWidth(360);
+        stage.setMinHeight(420);
 
         Label title = new Label("Add script to an existing package");
         title.getStyleClass().add("popup-title");
@@ -131,6 +161,7 @@ public final class PackageLibraryDialogs {
 
         TextField searchField = new TextField();
         searchField.setPromptText("Find packages...");
+        searchField.setPrefHeight(34);
 
         ObservableList<ScriptPackage> all = FXCollections.observableArrayList(PackageLibraryService.listPackages());
         FilteredList<ScriptPackage> filtered = new FilteredList<>(all, p -> true);
@@ -140,23 +171,19 @@ public final class PackageLibraryDialogs {
         });
 
         ListView<ScriptPackage> listView = new ListView<>(filtered);
-        listView.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(ScriptPackage item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? null : item.getName());
-            }
-        });
+        listView.setCellFactory(lv -> packageCell());
         VBox.setVgrow(listView, Priority.ALWAYS);
 
         Button selectButton = new Button("Select");
         selectButton.getStyleClass().add("popup-submit-button");
+        selectButton.setPrefHeight(34);
         selectButton.setDisable(true);
         listView.getSelectionModel().selectedItemProperty()
                 .addListener((o, ov, nv) -> selectButton.setDisable(nv == null));
 
         Button cancelButton = new Button("Cancel");
         cancelButton.getStyleClass().add("secondary-button");
+        cancelButton.setPrefHeight(34);
         cancelButton.setOnAction(e -> stage.close());
         selectButton.setOnAction(e -> {
             ScriptPackage selected = listView.getSelectionModel().getSelectedItem();
@@ -171,15 +198,18 @@ public final class PackageLibraryDialogs {
         HBox buttonRow = new HBox(8, spacer, cancelButton, selectButton);
         buttonRow.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox root = new VBox(12, title, searchField, listView, buttonRow);
+        VBox root = new VBox(14, title, searchField, listView, buttonRow);
         root.getStyleClass().addAll("root", "package-picker-dialog");
-        root.setPadding(new Insets(16));
-        root.setPrefSize(360, 420);
+        root.setPadding(new Insets(20));
 
-        Scene scene = new Scene(root);
+        Scene scene = new Scene(root, PICKER_WIDTH, PICKER_HEIGHT);
         copyStylesheets(owner, scene);
         stage.setScene(scene);
+        stage.setWidth(PICKER_WIDTH);
+        stage.setHeight(PICKER_HEIGHT);
+        stage.setResizable(true);
         stage.show();
+        stage.centerOnScreen();
     }
 
     /** The left-hand package browser shown alongside the New Package
@@ -199,40 +229,65 @@ public final class PackageLibraryDialogs {
 
         TextField searchField = new TextField();
         searchField.setPromptText("Find packages...");
+        searchField.setPrefHeight(34);
 
         List<ScriptPackage> packages = PackageLibraryService.listPackages();
         VBox content;
         if (packages.isEmpty()) {
             Label icon = new Label("\uD83D\uDCE6");
-            icon.setStyle("-fx-font-size: 40px;");
+            icon.setStyle("-fx-font-size: 44px;");
             Label emptyTitle = new Label("No packages in this library yet!");
             emptyTitle.setWrapText(true);
+            emptyTitle.setStyle("-fx-text-alignment: center;");
             emptyTitle.getStyleClass().add("popup-title");
-            Label emptyBody = new Label("Packages help you reuse common scripts.");
+            Label emptyBody = new Label("Packages help you reuse common scripts across requests.");
             emptyBody.setWrapText(true);
+            emptyBody.setStyle("-fx-text-alignment: center;");
             emptyBody.getStyleClass().add("popup-label");
-            content = new VBox(10, icon, emptyTitle, emptyBody);
+            content = new VBox(12, icon, emptyTitle, emptyBody);
             content.setAlignment(Pos.CENTER);
-            content.setPadding(new Insets(30, 10, 10, 10));
+            content.setPadding(new Insets(40, 16, 10, 16));
         } else {
             ListView<ScriptPackage> listView = new ListView<>(FXCollections.observableArrayList(packages));
-            listView.setCellFactory(lv -> new ListCell<>() {
-                @Override
-                protected void updateItem(ScriptPackage item, boolean empty) {
-                    super.updateItem(item, empty);
-                    setText(empty || item == null ? null : item.getName());
-                }
-            });
+            listView.setCellFactory(lv -> packageCell());
             VBox.setVgrow(listView, Priority.ALWAYS);
             content = new VBox(listView);
         }
 
-        VBox left = new VBox(10, headerRow, searchField, content);
+        VBox left = new VBox(14, headerRow, searchField, content);
         VBox.setVgrow(content, Priority.ALWAYS);
-        left.setPadding(new Insets(12));
-        left.setPrefWidth(260);
+        left.setPadding(new Insets(20));
         left.getStyleClass().add("package-library-sidebar");
         return left;
+    }
+
+    /** A package list cell showing the name plus a one-line preview of its
+     * saved script, similar in spirit to Postman's package rows. */
+    private static ListCell<ScriptPackage> packageCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(ScriptPackage item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                Label nameLabel = new Label(item.getName());
+                nameLabel.getStyleClass().add("comment-author");
+                String preview = item.getScript() == null ? "" : item.getScript()
+                        .replace("\n", " ").trim();
+                if (preview.length() > 48) {
+                    preview = preview.substring(0, 48) + "...";
+                }
+                Label previewLabel = new Label(preview);
+                previewLabel.getStyleClass().add("comment-timestamp");
+                VBox box = new VBox(2, nameLabel, previewLabel);
+                box.setPadding(new Insets(4, 2, 4, 2));
+                setGraphic(box);
+                setText(null);
+            }
+        };
     }
 
     /** Postman's boilerplate for a package script: the code being saved,
