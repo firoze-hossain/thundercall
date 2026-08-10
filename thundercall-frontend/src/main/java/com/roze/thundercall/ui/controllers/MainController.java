@@ -708,9 +708,18 @@ public class MainController implements Initializable {
 
     private void populateEnvironmentsUi(List<EnvironmentResponse> environments) {
         Platform.runLater(() -> {
+            // FIX: this used to clear the combo and add ONLY the real
+            // environments, silently dropping "No Environment" (which
+            // setupEnvironmentCombo() only ever added once, at startup,
+            // before any real environments existed). Every reload after
+            // that point left no way to opt out of using an environment
+            // at all — exactly the opposite of Postman, where "No
+            // Environment" is always available as a real choice.
+            String previousSelection = environmentCombo.getValue();
             environmentCombo.getItems().clear();
             environmentsMap.clear();
 
+            environmentCombo.getItems().add("No Environment");
             for (EnvironmentResponse env : environments) {
                 if (env.getIsActive()) {
                     environmentCombo.getItems().add(env.getName());
@@ -722,7 +731,12 @@ public class MainController implements Initializable {
                 environmentsList.getItems().setAll(environments);
             }
 
-            if (!environmentCombo.getItems().isEmpty()) {
+            // Keep whatever was selected before if it still exists (e.g.
+            // after renaming/reloading); otherwise default to "No
+            // Environment" rather than silently picking one for the user.
+            if (previousSelection != null && environmentCombo.getItems().contains(previousSelection)) {
+                environmentCombo.setValue(previousSelection);
+            } else {
                 environmentCombo.getSelectionModel().select(0);
                 updateEnvironmentVariables(environmentCombo.getValue());
             }
@@ -3860,6 +3874,7 @@ public class MainController implements Initializable {
         // rather than actually running.
         ComboBox<String> envCombo = new ComboBox<>();
         Map<String, EnvironmentResponse> envByName = new LinkedHashMap<>();
+        envCombo.getItems().add("No Environment");
         for (EnvironmentResponse env : environments) {
             envByName.put(env.getName(), env);
             envCombo.getItems().add(env.getName());
@@ -3877,7 +3892,11 @@ public class MainController implements Initializable {
         } else {
             Label envLabel = new Label("Environment");
             envLabel.getStyleClass().add("shared-workspace-hint");
-            envCombo.getSelectionModel().selectFirst();
+            // FIX: this used to auto-select the first real environment,
+            // with no way to opt out even if this particular send didn't
+            // need any variable resolution — unlike Postman, where "No
+            // Environment" is always available as a genuine choice.
+            envCombo.getSelectionModel().select("No Environment");
             envRow = new HBox(8, envLabel, envCombo);
             envRow.setAlignment(Pos.CENTER_LEFT);
         }
