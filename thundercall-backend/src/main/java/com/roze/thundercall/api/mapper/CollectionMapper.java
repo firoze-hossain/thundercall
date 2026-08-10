@@ -29,6 +29,7 @@ public class CollectionMapper {
                 .requestCount(collection.getRequests().size())
                 .createdAt(collection.getCreatedAt())
                 .updatedAt(collection.getUpdatedAt())
+                .variables(collection.getVariables())
                 .build();
     }
 
@@ -59,6 +60,7 @@ public class CollectionMapper {
                 .createdAt(collection.getCreatedAt())
                 .updatedAt(collection.getUpdatedAt())
                 .requests(requestResponses)
+                .variables(collection.getVariables())
                 .build();
     }
 
@@ -75,6 +77,7 @@ public class CollectionMapper {
                 .updatedAt(collection.getUpdatedAt())
                 .requests(requestResponses)
                 .folderResponses(folderResponses)
+                .variables(collection.getVariables())
                 .build();
     }
 }

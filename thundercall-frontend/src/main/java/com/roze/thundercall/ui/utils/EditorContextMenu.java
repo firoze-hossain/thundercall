@@ -14,8 +14,11 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Postman-style right-click menu for the request body / scripts editors:
- * Comment, Set as variable, (Save to Package Library for scripts),
- * Cut/Copy/Paste, EncodeURIComponent/DecodeURIComponent, and Find.
+ * Comment (opens an inline annotation thread — see CommentThreadPopup),
+ * Set as variable, (Save to Package Library for scripts), Cut/Copy/Paste,
+ * EncodeURIComponent/DecodeURIComponent, and Find. Ctrl+/ line-commenting
+ * is a separate, always-available shortcut (see
+ * MainController#attachCommentToggleShortcut) — not tied to this menu.
  * <p>
  * Works against any {@link TextEditTarget}, so the exact same menu logic
  * drives the raw/GraphQL body editors (RichTextFX CodeArea) and the
@@ -28,9 +31,16 @@ public final class EditorContextMenu {
     }
 
     /** App-specific actions this generic utility doesn't own (they need
-     * access to the active environment / local package library). */
+     * access to the active environment / local package library / the
+     * inline comment-thread backend). */
     public interface Extensions {
         void onSetAsVariable(TextEditTarget target);
+
+        /** Postman's real inline-comment/annotation feature — opens a
+         * composer for a new thread anchored to the current selection.
+         * No-op by default since only the body editor wires this up. */
+        default void onComment(TextEditTarget target) {
+        }
 
         default void onSaveToExistingPackage(TextEditTarget target) {
         }
@@ -51,7 +61,8 @@ public final class EditorContextMenu {
      * (disabled states, the "Find: ..." label) are refreshed on every
      * {@code onShowing} — which fires whichever way the menu is triggered.
      *
-     * @param includeComment        show the "Comment" item (raw/GraphQL body editors)
+     * @param includeComment        show the "Comment" item — opens the inline
+     *                              annotation-thread composer (body editor only)
      * @param includePackageLibrary show "Save to Package Library" (script editors)
      */
     public static void attach(TextEditTarget target, boolean includeComment,
@@ -74,7 +85,7 @@ public final class EditorContextMenu {
 
         if (includeComment) {
             MenuItem comment = new MenuItem("Comment");
-            comment.setOnAction(e -> toggleLineComment(target));
+            comment.setOnAction(e -> extensions.onComment(target));
             menu.getItems().add(comment);
         }
 
@@ -160,9 +171,9 @@ public final class EditorContextMenu {
     }
 
     /** Toggles "// " line comments across the selected lines (or the caret's
-     * current line when nothing is selected) — matching a code editor's
-     * usual Comment behaviour. */
-    private static void toggleLineComment(TextEditTarget target) {
+     * current line when nothing is selected) — Postman's Ctrl+/ shortcut,
+     * independent of the "Comment" annotation-thread menu item above. */
+    public static void toggleLineComment(TextEditTarget target) {
         String text = target.getText();
         if (text == null || text.isEmpty()) {
             return;

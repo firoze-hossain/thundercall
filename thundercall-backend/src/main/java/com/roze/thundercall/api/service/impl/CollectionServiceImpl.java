@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * FIX: createCollection() no longer throws "No workspace found".
@@ -127,6 +128,15 @@ public class CollectionServiceImpl implements CollectionService {
     public void deleteCollection(Long id, User user) {
         Collection collection = findCollectionWithAccess(id, user, true);
         collectionRepository.delete(collection);
+    }
+
+    @Override
+    @Transactional
+    public CollectionResponse updateCollectionVariables(Long id, Map<String, String> variables, User user) {
+        Collection collection = findCollectionWithAccess(id, user, true);
+        collection.setVariables(variables != null ? variables : new java.util.HashMap<>());
+        Collection updated = collectionRepository.save(collection);
+        return collectionMapper.toShortResponse(updated);
     }
 
     /** Fetches a collection by plain ID (no owner filter baked into the

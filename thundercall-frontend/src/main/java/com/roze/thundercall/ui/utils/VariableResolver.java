@@ -8,13 +8,17 @@ import java.util.regex.Pattern;
  * Resolves {{variable}} placeholders the Postman way: at SEND TIME, without
  * mutating what the user typed. The URL field keeps showing {{baseUrl}}/users
  * while the actual request goes out with the value substituted.
+ * <p>
+ * Names may contain a colon ({@code {{vault:apiKey}}}) so Vault-scoped
+ * variables (see MainController's mergedVariables()) can share this same
+ * resolver — the vault: prefix is just part of the key in the merged map.
  *
  * See FIXES_GUIDE.md for the exact MainController integration (two small
  * edits: handleSendRequest and updateEnvironmentVariables).
  */
 public final class VariableResolver {
 
-    private static final Pattern VARIABLE = Pattern.compile("\\{\\{\\s*([\\w.\\-]+)\\s*}}");
+    private static final Pattern VARIABLE = Pattern.compile("\\{\\{\\s*([\\w.\\-:]+)\\s*}}");
 
     private VariableResolver() {
     }

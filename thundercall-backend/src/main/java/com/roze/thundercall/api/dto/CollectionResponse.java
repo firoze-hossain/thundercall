@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -24,4 +25,5 @@ public class CollectionResponse {
     private LocalDateTime updatedAt;
     private List<RequestResponse> requests;
     private List<FolderResponse> folderResponses;
+    private Map<String, String> variables;
 }
