@@ -503,8 +503,12 @@ public class MainController implements Initializable {
         treeContextMenu.setOnShowing(event -> {
             TreeItem<String> selected = collectionsTree.getSelectionModel().getSelectedItem();
             boolean isCollection = selected != null && collectionIdMap.containsKey(selected);
+            boolean isRequest = selected != null && requestIdMap.containsKey(selected);
             exportJsonItem.setVisible(isCollection);
             exportCsvItem.setVisible(isCollection);
+            // A request can't contain a folder — Postman doesn't offer
+            // this on a request either.
+            addFolderItem.setVisible(!isRequest);
         });
 
         // Set context menu on TreeView
