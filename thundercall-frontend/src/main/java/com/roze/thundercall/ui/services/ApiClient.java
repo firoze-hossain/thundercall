@@ -29,8 +29,8 @@ import java.nio.charset.StandardCharsets;
  * "Unknown error", plus the app returns them to the login screen.
  */
 public class ApiClient {
-   private static final String BASE_URL = "http://localhost:9084/api/v1";
-   // private static final String BASE_URL = "http://172.16.0.161:9084/api/v1";
+   //private static final String BASE_URL = "http://localhost:9084/api/v1";
+    private static final String BASE_URL = "http://172.16.0.161:9084/api/v1";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static String token;
     private static String refreshToken;
