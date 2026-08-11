@@ -7603,13 +7603,16 @@ public class MainController implements Initializable {
         if (selectedItem != null && selectedItem != collectionsTree.getRoot()) {
             Long collectionId = collectionIdMap.get(selectedItem);
             Long folderId = folderIdMap.get(selectedItem);
+            Long requestId = requestIdMap.get(selectedItem);
 
             if (collectionId != null) {
                 duplicateCollection(collectionId);
             } else if (folderId != null) {
                 duplicateFolder(folderId);
+            } else if (requestId != null) {
+                duplicateRequest(requestId);
             } else {
-                AlertUtils.showInfo("Duplication is only supported for collections and folders");
+                AlertUtils.showError("Please select a collection, folder, or request to duplicate");
             }
         } else {
             AlertUtils.showError("Please select an item to duplicate");
@@ -8669,62 +8672,289 @@ public class MainController implements Initializable {
         }).start();
     }
 
+    /** Postman's collection Duplicate: an exact, independent copy of the
+     * WHOLE tree — every folder, every nested subfolder, every request in
+     * each, all landing under a freshly-created "{name} Copy" collection.
+     * Only the collection itself gets renamed; everything inside keeps
+     * its original name unchanged, matching Postman. */
     private void duplicateCollection(Long collectionId) {
         new Thread(() -> {
             try {
-                // Get the original collection
-                Optional<CollectionResponse> original = CollectionService.getCollectionById(collectionId);
-                if (original.isPresent()) {
-                    CollectionResponse collectionResponse = original.get();
-                    // Create a copy with "Copy of" prefix
-                    CollectionRequest request = CollectionRequest.builder()
-                            .name("Copy of " + collectionResponse.getName())
-                            .description(collectionResponse.getDescription())
-                            .build();
-
-                    Optional<CollectionResponse> newCollection = CollectionService.createCollection(request);
-                    if (newCollection.isPresent()) {
-                        Platform.runLater(() -> {
-                            refreshCollectionsTree();
-                            updateStatus("Collection duplicated");
-                        });
-                    } else {
-                        Platform.runLater(() -> {
-                            AlertUtils.showError("Failed to duplicate collection");
-                        });
-                    }
+                Optional<CollectionResponse> originalOpt = CollectionService.getCollectionById(collectionId);
+                if (originalOpt.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to duplicate collection"));
+                    return;
                 }
+                CollectionResponse original = originalOpt.get();
+
+                List<String> siblingNames = CollectionService.getUserCollections()
+                        .orElse(new ArrayList<>())
+                        .stream().map(CollectionResponse::getName).toList();
+                String newName = generateCopyName(original.getName(), siblingNames);
+
+                CollectionRequest createReq = CollectionRequest.builder()
+                        .name(newName)
+                        .description(original.getDescription())
+                        .build();
+                Optional<CollectionResponse> createdOpt = CollectionService.createCollection(createReq);
+                if (createdOpt.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to duplicate collection"));
+                    return;
+                }
+                Long newCollectionId = createdOpt.get().getId();
+
+                deepCopySubtree(collectionId, null, newCollectionId, null);
+
+                Platform.runLater(() -> {
+                    refreshCollectionsTree();
+                    updateStatus("Collection duplicated as \"" + newName + "\"");
+                });
             } catch (Exception e) {
                 Platform.runLater(() -> handleApiError(e, "Duplicating collection"));
             }
         }).start();
     }
 
+    /** Postman's folder Duplicate: an exact copy of this folder AND
+     * everything inside it (nested subfolders, requests), placed as a
+     * sibling in the same parent. Only the folder itself gets renamed. */
     private void duplicateFolder(Long folderId) {
         new Thread(() -> {
             try {
-                // Get the original folder
-                Optional<FolderResponse> original = FolderService.getFolderById(folderId);
-                if (original.isPresent()) {
-                    FolderResponse folderResponse = original.get();
-                    // Create a copy with "Copy of" prefix
-                    Optional<FolderResponse> newFolder = FolderService.createFolder("Copy of " + folderResponse.getName(), folderResponse.getDescription(), folderResponse.getCollectionId());
-
-                    if (newFolder.isPresent()) {
-                        Platform.runLater(() -> {
-                            refreshCollectionsTree();
-                            updateStatus("Folder duplicated");
-                        });
-                    } else {
-                        Platform.runLater(() -> {
-                            AlertUtils.showError("Failed to duplicate folder");
-                        });
-                    }
+                Optional<FolderResponse> originalOpt = FolderService.getFolderById(folderId);
+                if (originalOpt.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to duplicate folder"));
+                    return;
                 }
+                FolderResponse original = originalOpt.get();
+                Long collectionId = original.getCollectionId();
+                Long parentFolderId = original.getParentFolderId();
+
+                List<String> siblingNames = FolderService.getCollectionFolders(collectionId)
+                        .orElse(new ArrayList<>())
+                        .stream()
+                        .filter(f -> Objects.equals(f.getParentFolderId(), parentFolderId))
+                        .map(FolderResponse::getName)
+                        .toList();
+                String newName = generateCopyName(original.getName(), siblingNames);
+
+                Optional<FolderResponse> createdOpt = FolderService.createFolder(
+                        newName, original.getDescription(), collectionId, parentFolderId);
+                if (createdOpt.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to duplicate folder"));
+                    return;
+                }
+                Long newFolderId = createdOpt.get().getId();
+
+                deepCopySubtree(collectionId, folderId, collectionId, newFolderId);
+
+                Platform.runLater(() -> {
+                    refreshCollectionsTree();
+                    updateStatus("Folder duplicated as \"" + newName + "\"");
+                });
             } catch (Exception e) {
                 Platform.runLater(() -> handleApiError(e, "Duplicating folder"));
             }
         }).start();
+    }
+
+    /** Postman's request Duplicate: an exact copy of this one request
+     * (every field — method, URL, headers, body, scripts, auth) landing
+     * right next to the original, in the same folder/collection. */
+    private void duplicateRequest(Long requestId) {
+        new Thread(() -> {
+            try {
+                Optional<RequestResponse> originalOpt = RequestService.getRequest(requestId);
+                if (originalOpt.isEmpty()) {
+                    Platform.runLater(() -> AlertUtils.showError("Failed to duplicate request"));
+                    return;
+                }
+                RequestResponse original = originalOpt.get();
+                Long collectionId = original.getCollectionId();
+                Long folderId = original.getFolderId();
+
+                List<String> siblingNames = CollectionService.getCollectionWithDetails(collectionId)
+                        .map(CollectionResponse::getRequestResponses)
+                        .orElse(new ArrayList<>())
+                        .stream()
+                        .filter(r -> Objects.equals(r.getFolderId(), folderId))
+                        .map(RequestResponse::getName)
+                        .toList();
+                String newName = generateCopyName(original.getName(), siblingNames);
+
+                ApiRequest copyRequest = ApiRequest.builder()
+                        .name(newName)
+                        .description(original.getDescription())
+                        .method(original.getMethod())
+                        .url(original.getUrl())
+                        .headers(original.getHeaders())
+                        .body(original.getBody())
+                        .collectionId(collectionId)
+                        .folderId(folderId)
+                        .preRequestScript(original.getPreRequestScript())
+                        .testsScript(original.getTestsScript())
+                        .authType(original.getAuthType())
+                        .authToken(original.getAuthToken())
+                        .authUsername(original.getAuthUsername())
+                        .authPassword(original.getAuthPassword())
+                        .build();
+                Optional<RequestResponse> createdOpt = RequestService.saveRequest(copyRequest);
+
+                Platform.runLater(() -> {
+                    if (createdOpt.isPresent()) {
+                        refreshCollectionsTree();
+                        updateStatus("Request duplicated as \"" + newName + "\"");
+                    } else {
+                        AlertUtils.showError("Failed to duplicate request");
+                    }
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> handleApiError(e, "Duplicating request"));
+            }
+        }).start();
+    }
+
+    /** Deep-copies every folder/request at or below {@code sourceRootFolderId}
+     * (or, when null, every top-level folder/request in the whole
+     * collection) from {@code sourceCollectionId} into
+     * {@code targetCollectionId}, landing under {@code targetRootFolderId}
+     * (null = the collection's root). Names are copied exactly — only the
+     * item that was actually right-clicked gets the "Copy" rename;
+     * everything nested under it keeps its original name, matching
+     * Postman. Runs entirely on the calling (background) thread. */
+    private void deepCopySubtree(Long sourceCollectionId, Long sourceRootFolderId,
+                                  Long targetCollectionId, Long targetRootFolderId) {
+        List<FolderResponse> allFolders = FolderService.getCollectionFolders(sourceCollectionId)
+                .orElse(new ArrayList<>());
+        List<RequestResponse> allRequests = CollectionService.getCollectionWithDetails(sourceCollectionId)
+                .map(CollectionResponse::getRequestResponses)
+                .orElse(new ArrayList<>());
+
+        // old folder id -> new folder id. Seed it with the already-created
+        // copy of the root folder itself, when duplicating a folder.
+        Map<Long, Long> folderIdMapping = new HashMap<>();
+        if (sourceRootFolderId != null) {
+            folderIdMapping.put(sourceRootFolderId, targetRootFolderId);
+        }
+
+        // Recreate folders in parent-before-child order (breadth-first by
+        // however many passes the tree's depth needs) so every child's
+        // parent has already been mapped by the time we get to it.
+        List<FolderResponse> remaining = new ArrayList<>(allFolders);
+        boolean progress = true;
+        while (progress && !remaining.isEmpty()) {
+            progress = false;
+            List<FolderResponse> ready = new ArrayList<>();
+            for (FolderResponse f : remaining) {
+                boolean isTopLevelOfWholeCollection = sourceRootFolderId == null && f.getParentFolderId() == null;
+                boolean parentAlreadyMapped = f.getParentFolderId() != null && folderIdMapping.containsKey(f.getParentFolderId());
+                if (isTopLevelOfWholeCollection || parentAlreadyMapped) {
+                    ready.add(f);
+                }
+            }
+            for (FolderResponse f : ready) {
+                Long newParentId = f.getParentFolderId() != null ? folderIdMapping.get(f.getParentFolderId()) : targetRootFolderId;
+                Optional<FolderResponse> created = FolderService.createFolder(
+                        f.getName(), f.getDescription(), targetCollectionId, newParentId);
+                created.ifPresent(nf -> folderIdMapping.put(f.getId(), nf.getId()));
+                progress = true;
+            }
+            remaining.removeAll(ready);
+        }
+
+        for (RequestResponse reqSummary : allRequests) {
+            Long originalFolderId = reqSummary.getFolderId();
+            Long newFolderId;
+            if (sourceRootFolderId == null) {
+                // Whole-collection copy: every request comes along, either
+                // into its mapped folder or straight into the new root.
+                if (originalFolderId == null) {
+                    newFolderId = null;
+                } else {
+                    newFolderId = folderIdMapping.get(originalFolderId);
+                    if (newFolderId == null) {
+                        continue; // shouldn't happen for a well-formed tree; skip rather than misplace it
+                    }
+                }
+            } else {
+                // Single-folder copy: only requests inside it (or a
+                // descendant) come along.
+                if (originalFolderId == null || !folderIdMapping.containsKey(originalFolderId)) {
+                    continue;
+                }
+                newFolderId = folderIdMapping.get(originalFolderId);
+            }
+
+            final Long resolvedFolderId = newFolderId;
+            RequestService.getRequest(reqSummary.getId()).ifPresent(full -> {
+                ApiRequest copyRequest = ApiRequest.builder()
+                        .name(full.getName())
+                        .description(full.getDescription())
+                        .method(full.getMethod())
+                        .url(full.getUrl())
+                        .headers(full.getHeaders())
+                        .body(full.getBody())
+                        .collectionId(targetCollectionId)
+                        .folderId(resolvedFolderId)
+                        .preRequestScript(full.getPreRequestScript())
+                        .testsScript(full.getTestsScript())
+                        .authType(full.getAuthType())
+                        .authToken(full.getAuthToken())
+                        .authUsername(full.getAuthUsername())
+                        .authPassword(full.getAuthPassword())
+                        .build();
+                RequestService.saveRequest(copyRequest);
+            });
+        }
+    }
+
+    private static final java.util.regex.Pattern COPY_NAME_PATTERN =
+            java.util.regex.Pattern.compile("^(.+) Copy(?: (\\d+(?:\\.\\d+)?))?$");
+
+    /** Postman's duplicate-naming scheme: "X" -> "X Copy" -> "X Copy 2" ->
+     * "X Copy 3" for repeated duplicates of the SAME original — but
+     * duplicating a copy branches into a sub-version instead of
+     * continuing that top-level count: "X Copy 3" -> "X Copy 3.1" -> "X
+     * Copy 3.2", and a bare "X Copy" (implicitly version 1) -> "X Copy
+     * 1.1". Either way the result is guaranteed unique among
+     * {@code siblingNames}. */
+    private String generateCopyName(String originalName, List<String> siblingNames) {
+        Set<String> taken = new HashSet<>(siblingNames);
+        java.util.regex.Matcher matcher = COPY_NAME_PATTERN.matcher(originalName);
+
+        if (!matcher.matches()) {
+            String base = originalName + " Copy";
+            if (!taken.contains(base)) {
+                return base;
+            }
+            int n = 2;
+            while (taken.contains(originalName + " Copy " + n)) {
+                n++;
+            }
+            return originalName + " Copy " + n;
+        }
+
+        String base = matcher.group(1);
+        String version = matcher.group(2);
+        String majorPart;
+        int minorPart;
+        if (version == null) {
+            majorPart = "1";
+            minorPart = 1;
+        } else if (version.contains(".")) {
+            String[] parts = version.split("\\.", 2);
+            majorPart = parts[0];
+            minorPart = Integer.parseInt(parts[1]) + 1;
+        } else {
+            majorPart = version;
+            minorPart = 1;
+        }
+        String candidate = base + " Copy " + majorPart + "." + minorPart;
+        while (taken.contains(candidate)) {
+            minorPart++;
+            candidate = base + " Copy " + majorPart + "." + minorPart;
+        }
+        return candidate;
     }
 
     private void deleteCollection(Long collectionId) {
