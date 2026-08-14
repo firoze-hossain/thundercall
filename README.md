@@ -36,6 +36,62 @@ looking at it.
 
 ---
 
+## 📌 Project status
+
+**Actively developed, pre-1.0, usable day to day.** The core workflow —
+building and sending requests, organizing them into collections,
+switching environments, sharing a workspace with a team, mocking an
+API, and scheduling monitors — is complete and stable enough to be
+someone's daily driver, which is exactly how it's being built and
+tested. Newer, more detailed conveniences (see the **Roadmap** section
+below) are still being filled in one at a time.
+
+If you're evaluating whether to depend on this today: read
+[`README_APPLY.md`](README_APPLY.md) — it's the running changelog of
+every feature as it lands, with what changed, why, and how it was
+verified, so you can see exactly how the project is moving rather than
+just trusting a badge.
+
+---
+
+## 📸 Screenshots
+
+<table>
+<tr>
+<td width="50%">
+
+![Building and sending a request](docs/screenshots/01-request-response.png)
+*Building a request and inspecting a response*
+
+</td>
+<td width="50%">
+
+![Collections organized like a filesystem](docs/screenshots/02-collections.png)
+*Collections → folders → requests*
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+![Editor: line numbers, comment-aware JSON](docs/screenshots/03-editor.png)
+*Line numbers, comment-tolerant JSON, autocomplete*
+
+</td>
+<td width="50%">
+
+![Environments, Monitors, Mock Servers, or GraphQL](docs/screenshots/04-highlights.png)
+*Environments · Monitors · Mock Servers · GraphQL*
+
+</td>
+</tr>
+</table>
+
+*(Images land in [`docs/screenshots/`](docs/screenshots/) — see that
+folder's own README for exactly what each one should show.)*
+
+---
+
 ## ✨ Features
 
 ### Core request building
@@ -47,6 +103,30 @@ looking at it.
 - Form-data with real file uploads, and `x-www-form-urlencoded` support
 - Binary response handling (images, PDFs, zips — byte-for-byte, not text-mangled)
 - Full request history, searchable
+
+### Editor experience — built to feel like a real IDE, not a text box
+- **Comment-tolerant JSON body** — write `//` or `/* */` inside the raw
+  body to leave yourself a note or temporarily disable a field (e.g.
+  commenting out `"fatherName": ""` while filling in a form) without
+  tripping a false "Invalid JSON" error. Comments render in a distinct
+  grey/italic style so they're never mistaken for real data, and the
+  exact text you typed — comments included — is still what's actually
+  sent, exactly like Postman.
+- **Line numbers** down the left edge of the request body, GraphQL
+  query/variables, and response viewer.
+- **Auto-closing quotes and brackets** — type `"`, `'`, `(`, or `[` and
+  the matching close is inserted with the caret in between; typing the
+  close yourself right next to its own pair "types through" instead of
+  duplicating it, and Backspace on an empty pair removes both sides at
+  once.
+- **Ctrl+Shift+F to format** — reformats the *whole* JSON body with
+  2-space indentation, no need to select anything first. Field order is
+  preserved exactly as written (a hand-written, order-preserving
+  formatter — not a shortcut that quietly reshuffles your fields).
+- **Click outside to dismiss** — the right-click menu, the inline
+  "Comment" composer, and the "Set as new variable" card all close the
+  instant you click elsewhere in the window, on top of Escape still
+  working.
 
 ### Organize your work
 - Collections → nested folders → requests, exactly like a filesystem
@@ -198,6 +278,24 @@ scoped for later rather than half-built now:
 - **cURL import/export**, drag-and-drop request reordering, and
   installer packaging (jpackage) for distributing the desktop client
   without requiring a local Maven build.
+- **Comment-preserving JSON formatting** — Ctrl+Shift+F currently
+  strips `//`/`/* */` comments as part of reformatting (matching how
+  virtually every JSON formatter works, since comments aren't part of
+  JSON's data model); a JSONC-aware formatter that keeps them anchored
+  to the right line is a nice-to-have on top of that.
+
+---
+
+## 💬 Feedback & Suggestions
+
+Found a bug, have a feature idea, or something feels off compared to
+Postman? **Open an issue** on the
+[GitHub repo](https://github.com/firoze-hossain/thundercall/issues) —
+that's the single place all of this gets tracked, roadmap included.
+When reporting a bug, a screenshot plus the steps to reproduce it goes
+a long way; when requesting a feature, a quick note on *how* you'd use
+it (not just *what* it should do) helps it get built the way you'd
+actually want.
 
 ---
 
