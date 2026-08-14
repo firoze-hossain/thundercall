@@ -1043,6 +1043,7 @@ public class MainController implements Initializable {
         bodyTextArea.plainTextChanges().subscribe(change -> bodyCommentHighlighter.refresh());
         VariableAutocomplete.attach(bodyTextArea, this::currentEnvironmentVariables);
         AutoPairing.attach(bodyTextArea);
+        attachPrettifyShortcut(bodyTextArea);
         if (bodyPromptLabel != null) {
             bodyPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
@@ -1074,6 +1075,7 @@ public class MainController implements Initializable {
                         JsonSyntaxHighlighter.computeHighlighting(graphqlVariablesArea.getText())));
         VariableAutocomplete.attach(graphqlVariablesArea, this::currentEnvironmentVariables);
         AutoPairing.attach(graphqlVariablesArea);
+        attachPrettifyShortcut(graphqlVariablesArea);
 
         // Set as variable / Cut/Copy/Paste/Encode/Decode/Find — the inline
         // "Comment" annotation thread feature is body-only for now (see
@@ -1109,6 +1111,46 @@ public class MainController implements Initializable {
                 e.consume();
             }
         });
+    }
+
+    /** Ctrl+Shift+F reformats the WHOLE JSON body with 2-space indentation
+     * (the same convention used everywhere else in the app — response
+     * viewer, exports) regardless of any current selection, matching how
+     * a "Format Document" command works in most editors rather than a
+     * "format selection" one — no need to select-all first, just press
+     * the shortcut. JSON itself has no concept of comments, so if the
+     * body has any "//" or block comments they're stripped as part of
+     * reformatting, exactly like every other JSON beautifier; the person
+     * is told this via the status bar so it's never a silent surprise. */
+    private void attachPrettifyShortcut(CodeArea area) {
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.F && e.isControlDown() && e.isShiftDown()) {
+                prettifyJsonEditor(area);
+                e.consume();
+            }
+        });
+    }
+
+    private void prettifyJsonEditor(CodeArea area) {
+        String text = area.getText();
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        String trimmed = text.trim();
+        if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+            AlertUtils.showError("Can't format — this doesn't look like JSON");
+            return;
+        }
+        boolean hadComments = JsonCommentStripper.containsComment(trimmed);
+        String forParsing = JsonCommentStripper.strip(trimmed).trim();
+        try {
+            String pretty = JsonPrettyPrinter.prettyPrint(forParsing);
+            area.replaceText(pretty);
+            area.moveTo(0);
+            updateStatus(hadComments ? "Formatted JSON (comments removed)" : "Formatted JSON");
+        } catch (Exception ex) {
+            AlertUtils.showError("Can't format — invalid JSON");
+        }
     }
 
     /** "Set as variable" (+ "Comment" for the body editor) extensions
@@ -1374,6 +1416,7 @@ public class MainController implements Initializable {
         responseBodyArea.setWrapText(true);
         // Postman-style line numbers down the left edge of the response viewer.
         responseBodyArea.setParagraphGraphicFactory(LineNumberFactory.get(responseBodyArea));
+        attachPrettifyShortcut(responseBodyArea);
         responseBodyArea.plainTextChanges().subscribe(change -> {
             if (responseSearch == null || responseSearch.getBar().isManaged()) {
                 return; // the search bar owns styling (base + match highlight) while open

@@ -81,4 +81,43 @@ public final class JsonCommentStripper {
     private static String stripTrailingCommas(String json) {
         return json.replaceAll(",(\\s*)([}\\]])", "$1$2");
     }
+
+    /** True if {@code text} contains a "//" line comment or "/* *&#47;"
+     * block comment OUTSIDE any string literal — unlike a plain substring
+     * search, a "//" inside a URL or other string value doesn't count.
+     * Used to decide whether to mention "(comments removed)" after a
+     * format operation. */
+    public static boolean containsComment(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        boolean inString = false;
+        boolean escaped = false;
+        int i = 0;
+        int n = text.length();
+        while (i < n) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+                i++;
+                continue;
+            }
+            if (c == '/' && i + 1 < n && (text.charAt(i + 1) == '/' || text.charAt(i + 1) == '*')) {
+                return true;
+            }
+            i++;
+        }
+        return false;
+    }
 }

@@ -157,6 +157,7 @@ public final class EditorContextMenu {
             encode.setDisable(!hasSelection);
             decode.setDisable(!hasSelection);
             find.setText("Find: " + truncate(hasSelection ? selected : target.getText()));
+            PopupDismissal.closeOnOutsideClick(menu, target.getNode());
         });
 
         return menu;

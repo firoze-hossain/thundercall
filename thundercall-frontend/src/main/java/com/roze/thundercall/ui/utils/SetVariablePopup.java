@@ -109,6 +109,7 @@ public final class SetVariablePopup {
         double x = bounds != null ? bounds.getMinX() + 24 : 150;
         double y = bounds != null ? bounds.getMinY() + 24 : 150;
         popup.show(anchor, x, y);
+        PopupDismissal.closeOnOutsideClick(popup, anchor);
         nameField.requestFocus();
     }
 
