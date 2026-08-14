@@ -31,8 +31,16 @@ public final class JsonSyntaxHighlighter {
     // is consumed by a plain (non-recursive) character-class quantifier,
     // and the group only recurses once per ESCAPE SEQUENCE — which is
     // rare — instead of once per character.
+    // COMMENT is checked first so a "//" or "/* */" span always wins over
+    // whatever it contains — e.g. a commented-out "fatherName": "" line
+    // reads as one continuous comment, not a highlighted JSON key sitting
+    // right after two slashes. Because STRING greedily consumes an entire
+    // "..." literal in one match, a "//" inside a URL string (e.g.
+    // "http://example.com") is never seen as the start of a comment: the
+    // matcher only lands on the STRING alternative at that position.
     private static final Pattern PATTERN = Pattern.compile(
-            "(?<VARIABLE>\\{\\{[^}]*}}?)"
+            "(?<COMMENT>//[^\\n]*|/\\*[\\s\\S]*?\\*/)"
+                    + "|(?<VARIABLE>\\{\\{[^}]*}}?)"
                     + "|(?<KEY>\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"\\s*(?=:))"
                     + "|(?<STRING>\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\")"
                     + "|(?<NUMBER>-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b)"
@@ -59,7 +67,8 @@ public final class JsonSyntaxHighlighter {
         int lastEnd = 0;
         while (matcher.find()) {
             String styleClass =
-                    matcher.group("VARIABLE") != null ? "json-variable"
+                    matcher.group("COMMENT") != null ? "json-comment"
+                            : matcher.group("VARIABLE") != null ? "json-variable"
                             : matcher.group("KEY") != null ? "json-key"
                             : matcher.group("STRING") != null ? "json-string"
                             : matcher.group("NUMBER") != null ? "json-number"

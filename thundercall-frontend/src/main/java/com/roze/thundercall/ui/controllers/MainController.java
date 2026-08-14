@@ -29,6 +29,7 @@ import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.XML;
@@ -1036,9 +1037,12 @@ public class MainController implements Initializable {
     /** Request body editor: full JSON + {{variable}} coloring, autocomplete,
      * and auto-closing braces. */
     private void setupBodyCodeArea() {
+        // Postman-style line numbers down the left edge of the body editor.
+        bodyTextArea.setParagraphGraphicFactory(LineNumberFactory.get(bodyTextArea));
         bodyCommentHighlighter = new CommentHighlighter(bodyTextArea, this::handleOpenCommentThread);
         bodyTextArea.plainTextChanges().subscribe(change -> bodyCommentHighlighter.refresh());
         VariableAutocomplete.attach(bodyTextArea, this::currentEnvironmentVariables);
+        AutoPairing.attach(bodyTextArea);
         if (bodyPromptLabel != null) {
             bodyPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
@@ -1061,11 +1065,15 @@ public class MainController implements Initializable {
         if (graphqlQueryArea == null || graphqlVariablesArea == null) {
             return;
         }
+        graphqlQueryArea.setParagraphGraphicFactory(LineNumberFactory.get(graphqlQueryArea));
+        graphqlVariablesArea.setParagraphGraphicFactory(LineNumberFactory.get(graphqlVariablesArea));
         VariableAutocomplete.attach(graphqlQueryArea, this::currentEnvironmentVariables);
+        AutoPairing.attach(graphqlQueryArea);
         graphqlVariablesArea.plainTextChanges().subscribe(change ->
                 graphqlVariablesArea.setStyleSpans(0,
                         JsonSyntaxHighlighter.computeHighlighting(graphqlVariablesArea.getText())));
         VariableAutocomplete.attach(graphqlVariablesArea, this::currentEnvironmentVariables);
+        AutoPairing.attach(graphqlVariablesArea);
 
         // Set as variable / Cut/Copy/Paste/Encode/Decode/Find — the inline
         // "Comment" annotation thread feature is body-only for now (see
@@ -1364,6 +1372,8 @@ public class MainController implements Initializable {
      * Ctrl/Cmd+F find bar overlaid in its top-right corner. */
     private void setupResponseCodeArea() {
         responseBodyArea.setWrapText(true);
+        // Postman-style line numbers down the left edge of the response viewer.
+        responseBodyArea.setParagraphGraphicFactory(LineNumberFactory.get(responseBodyArea));
         responseBodyArea.plainTextChanges().subscribe(change -> {
             if (responseSearch == null || responseSearch.getBar().isManaged()) {
                 return; // the search bar owns styling (base + match highlight) while open
@@ -7376,10 +7386,22 @@ public class MainController implements Initializable {
                 return graphqlBody.toString();
             case "Raw":
                 String bodyText = bodyTextArea.getText().trim();
-                // Validate JSON if it looks like JSON
+                // Validate JSON if it looks like JSON. Comments are stripped
+                // first — Postman-style "//" notes and commented-out fields
+                // (e.g. disabling "fatherName"/"motherName" while filling a
+                // form) are valid things to leave in the editor and must
+                // never trip this check. The comments themselves are NOT
+                // removed from what actually gets sent — bodyText below is
+                // still the original raw text, exactly like Postman sends
+                // the editor's raw contents verbatim.
                 if (bodyText.startsWith("{") || bodyText.startsWith("[")) {
+                    String forValidation = JsonCommentStripper.strip(bodyText).trim();
                     try {
-                        new JSONObject(bodyText);
+                        if (forValidation.startsWith("[")) {
+                            new JSONArray(forValidation);
+                        } else {
+                            new JSONObject(forValidation);
+                        }
                     } catch (Exception e) {
                         AlertUtils.showError("Invalid JSON format");
                         return "";
