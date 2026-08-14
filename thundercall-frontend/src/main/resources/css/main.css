@@ -877,6 +877,17 @@
 }
 .url-field:focus-within { -fx-border-color: -accent; }
 
+/* Postman-style line-number gutter (body request/response editors). RichTextFX
+   labels each paragraph's number with the "lineno" style class. */
+.body-textarea .lineno, .response-body .lineno {
+    -fx-background-color: -bg-panel;
+    -fx-text-fill: -text-muted;
+    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+    -fx-padding: 0 8 0 6;
+    -fx-alignment: center-right;
+}
+
 /* Placeholder text for the CodeArea-based fields (CodeArea has no
    built-in promptText, so a Label is overlaid and hidden once non-empty) */
 .url-prompt-label, .body-prompt-label, .response-prompt-label {
@@ -893,6 +904,7 @@
 .json-number      { -fx-fill: #d19a66; }                          /* tan/orange */
 .json-boolean     { -fx-fill: #6cb6ff; -fx-font-weight: bold; }   /* blue, same family as keys */
 .json-punctuation { -fx-fill: -text-secondary; }
+.json-comment     { -fx-fill: -text-muted; -fx-font-style: italic; }      /* grey, italic — "// disabled" fields */
 .json-variable    {
     -fx-fill: #1d1f24;
     -fx-font-weight: bold;
