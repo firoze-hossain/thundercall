@@ -6,11 +6,14 @@ import com.roze.thundercall.ui.enums.HttpMethod;
 import com.roze.thundercall.ui.models.*;
 import com.roze.thundercall.ui.services.*;
 import com.roze.thundercall.ui.utils.*;
+import com.roze.thundercall.ui.update.AppUpdateService;
+import com.roze.thundercall.ui.update.AppUpdateDialog;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
@@ -28,6 +31,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
+import javafx.stage.Window;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.json.JSONArray;
@@ -347,6 +351,14 @@ public class MainController implements Initializable {
         Platform.runLater(() -> {
             if (urlField != null && urlField.getScene() != null) {
                 ThemeManager.apply(urlField.getScene());
+                if (AppUpdateService.isAutoCheckEnabled()) {
+                    Thread.startVirtualThread(() -> {
+                        try {
+                            var update = AppUpdateService.checkForUpdate();
+                            if (update.available()) Platform.runLater(() -> AppUpdateDialog.check(urlField.getScene().getWindow(), false));
+                        } catch (Exception ignored) { }
+                    });
+                }
                 // Global search: Ctrl+K, like Postman
                 urlField.getScene().getAccelerators().put(
                         new javafx.scene.input.KeyCodeCombination(
@@ -2473,7 +2485,7 @@ public class MainController implements Initializable {
         // Save asynchronously and only close on success — consuming the
         // event keeps the dialog open so an error is actually visible.
         Button saveBtn = (Button) dialog.getDialogPane().lookupButton(saveType);
-        saveBtn.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+        saveBtn.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
             saveBtn.setDisable(true);
             statusLabel.setText("Saving…");
@@ -2587,11 +2599,50 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSettings() {
+        /*
+         * Settings uses one window with a simple, flat navigation list.
+         * Appearance, Updates and Mail are top-level items — there is no
+         * "Appearance & Behavior" parent and no nested settings tree.
+         */
         Dialog<ButtonType> dialog = new Dialog<>();
+        if (urlField != null && urlField.getScene() != null) {
+            dialog.initOwner(urlField.getScene().getWindow());
+        }
         dialog.setTitle("Settings");
-        dialog.setHeaderText("Appearance");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResizable(false);
+        dialog.getDialogPane().getButtonTypes().addAll(
+                ButtonType.APPLY, ButtonType.CANCEL, ButtonType.OK);
 
+        VBox navigation = new VBox();
+        navigation.setPrefWidth(205);
+        navigation.setMinWidth(205);
+        navigation.setMaxWidth(205);
+        navigation.setPadding(new Insets(18, 8, 12, 8));
+        navigation.setSpacing(2);
+        navigation.setStyle("-fx-background-color: -fx-control-inner-background;");
+
+        VBox page = new VBox(0);
+        page.setPadding(new Insets(28, 20, 18, 20));
+        page.setPrefWidth(455);
+        page.setMinWidth(455);
+
+        BorderPane root = new BorderPane();
+        root.setLeft(navigation);
+        root.setCenter(page);
+        root.setPrefSize(660, 500);
+        root.setMinSize(660, 500);
+
+        Button appearanceNav = settingsNavigationButton("Appearance");
+        Button updatesNav = settingsNavigationButton("Updates");
+        navigation.getChildren().addAll(appearanceNav, updatesNav);
+
+        Button mailNav = null;
+        if (TokenManager.isAdmin()) {
+            mailNav = settingsNavigationButton("Mail");
+            navigation.getChildren().add(mailNav);
+        }
+
+        // ---------------- Appearance ----------------
         RadioButton darkBtn = new RadioButton("Dark theme");
         RadioButton lightBtn = new RadioButton("Light theme");
         ToggleGroup themeGroup = new ToggleGroup();
@@ -2603,26 +2654,167 @@ public class MainController implements Initializable {
             darkBtn.setSelected(true);
         }
 
-        VBox content = new VBox(10, darkBtn, lightBtn);
-        // FIX: this used to always show "Mail Server Settings..." to
-        // every user — the backend correctly rejected non-admins, but
-        // only after they'd already clicked into it and hit Save/Test.
-        // Regular users shouldn't see this entry point exist at all.
-        if (TokenManager.isAdmin()) {
-            Hyperlink mailSettingsLink = new Hyperlink("Mail Server Settings...");
-            mailSettingsLink.setOnAction(e -> openMailSettingsDialog());
-            content.getChildren().addAll(new Separator(), mailSettingsLink);
-        }
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        VBox appearancePage = createSettingsPage(
+                "Appearance",
+                "Theme and visual preferences");
+        appearancePage.getChildren().addAll(
+                new Label("Choose how Thundercall should look."),
+                new Separator(),
+                darkBtn,
+                lightBtn);
+        VBox.setMargin(darkBtn, new Insets(8, 0, 0, 0));
+        VBox.setMargin(lightBtn, new Insets(8, 0, 0, 0));
 
-        dialog.showAndWait().ifPresent(button -> {
-            if (button == ButtonType.OK) {
-                ThemeManager.setLight(lightBtn.isSelected(), urlField.getScene());
-                updateStatus("Theme: " + (lightBtn.isSelected() ? "Light" : "Dark"));
+        // ---------------- Updates ----------------
+        CheckBox autoUpdate = new CheckBox("Automatically check for application updates");
+        autoUpdate.setSelected(AppUpdateService.isAutoCheckEnabled());
+
+        ComboBox<String> channel = new ComboBox<>();
+        channel.getItems().addAll("Stable", "Beta", "Nightly");
+        channel.setValue(AppUpdateService.getChannel());
+        channel.setMaxWidth(Double.MAX_VALUE);
+
+        TextField endpoint = new TextField(AppUpdateService.getEndpoint());
+        endpoint.setPromptText(AppUpdateService.DEFAULT_ENDPOINT);
+
+        Label updateHint = new Label(
+                "Updates are downloaded outside the Thundercall installation " +
+                "and verified with SHA-256 before installation.");
+        updateHint.setWrapText(true);
+        updateHint.setStyle("-fx-opacity: 0.68;");
+
+        Button checkButton = new Button("Check for Updates...");
+        checkButton.setOnAction(e -> {
+            Window owner = dialog.getDialogPane().getScene() != null
+                    ? dialog.getDialogPane().getScene().getWindow() : null;
+            if (owner != null) {
+                AppUpdateDialog.check(owner, true);
             }
         });
+
+        VBox updatesPage = createSettingsPage(
+                "Updates",
+                "Application update and RozeHub settings");
+        updatesPage.getChildren().addAll(
+                autoUpdate,
+                new Separator(),
+                settingsFieldLabel("Update channel:"),
+                channel,
+                settingsFieldLabel("RozeHub endpoint:"),
+                endpoint,
+                updateHint,
+                checkButton);
+        VBox.setMargin(autoUpdate, new Insets(4, 0, 0, 0));
+        VBox.setMargin(channel, new Insets(6, 0, 8, 0));
+        VBox.setMargin(endpoint, new Insets(6, 0, 8, 0));
+        VBox.setMargin(checkButton, new Insets(8, 0, 0, 0));
+
+        final Button settingsMailNav = mailNav;
+
+        Runnable showAppearance = () -> {
+            page.getChildren().setAll(appearancePage);
+            selectSettingsNavigation(appearanceNav, appearanceNav, updatesNav, settingsMailNav);
+        };
+        Runnable showUpdates = () -> {
+            page.getChildren().setAll(updatesPage);
+            selectSettingsNavigation(updatesNav, appearanceNav, updatesNav, settingsMailNav);
+        };
+        appearanceNav.setOnAction(e -> showAppearance.run());
+        updatesNav.setOnAction(e -> showUpdates.run());
+        if (mailNav != null) {
+            // Mail uses its existing dedicated SMTP settings dialog/action.
+            // Keep Mail as a flat top-level Settings item, but do not duplicate
+            // the SMTP form inside the generic Settings page.
+            mailNav.setOnAction(e -> {
+                Window owner = dialog.getDialogPane().getScene() != null
+                        ? dialog.getDialogPane().getScene().getWindow() : null;
+                openMailSettingsDialog(owner);
+            });
+        }
+
+        showAppearance.run();
+
+        dialog.getDialogPane().setContent(root);
+        ThemeManager.styleDialog(dialog.getDialogPane());
+        dialog.getDialogPane().setPrefSize(660, 500);
+
+        Button applyButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.APPLY);
+        Button cancelButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        Button okButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        if (applyButton != null) applyButton.setText("Apply");
+        if (cancelButton != null) cancelButton.setText("Cancel");
+        if (okButton != null) okButton.setText("OK");
+
+        Runnable applySettings = () -> {
+            if (lightBtn.isSelected() && urlField != null && urlField.getScene() != null) {
+                ThemeManager.setLight(true, urlField.getScene());
+            } else if (darkBtn.isSelected() && urlField != null && urlField.getScene() != null) {
+                ThemeManager.setLight(false, urlField.getScene());
+            }
+            AppUpdateService.setAutoCheckEnabled(autoUpdate.isSelected());
+            AppUpdateService.setChannel(channel.getValue());
+            AppUpdateService.setEndpoint(endpoint.getText());
+            updateStatus("Settings saved");
+        };
+
+        if (applyButton != null) {
+            applyButton.setOnAction(e -> applySettings.run());
+        }
+        if (okButton != null) {
+            okButton.setOnAction(e -> applySettings.run());
+        }
+
+        dialog.showAndWait();
+    }
+
+    private VBox createSettingsPage(String title, String subtitle) {
+        Label titleLabel = new Label(title);
+        titleLabel.setStyle("-fx-font-size: 17px; -fx-font-weight: bold;");
+
+        Label subtitleLabel = new Label(subtitle);
+        subtitleLabel.setStyle("-fx-opacity: 0.70; -fx-font-size: 12px;");
+
+        Separator separator = new Separator();
+        VBox box = new VBox(8, titleLabel, subtitleLabel, separator);
+        box.setFillWidth(true);
+        return box;
+    }
+
+    private Label settingsFieldLabel(String text) {
+        Label label = new Label(text);
+        label.setStyle("-fx-font-size: 13px;");
+        return label;
+    }
+
+    private Button settingsNavigationButton(String text) {
+        Button button = new Button(text);
+        button.setAlignment(Pos.CENTER_LEFT);
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setPrefHeight(34);
+        button.setPadding(new Insets(0, 14, 0, 14));
+        button.setFocusTraversable(false);
+        return button;
+    }
+
+    private void selectSettingsNavigation(Button selected, Button appearance,
+                                           Button updates, Button mail) {
+        Button[] buttons = {appearance, updates, mail};
+        for (Button button : buttons) {
+            if (button == null) continue;
+            if (button == selected) {
+                button.setStyle(
+                        "-fx-background-color: #2f73e8;" +
+                        "-fx-text-fill: white;" +
+                        "-fx-background-radius: 3;" +
+                        "-fx-border-radius: 3;");
+            } else {
+                button.setStyle(
+                        "-fx-background-color: transparent;" +
+                        "-fx-text-fill: -fx-text-base-color;" +
+                        "-fx-background-radius: 3;" +
+                        "-fx-border-radius: 3;");
+            }
+        }
     }
 
     /** Lets the project owner configure the app's own outgoing SMTP
@@ -4606,8 +4798,11 @@ public class MainController implements Initializable {
      * server — used for email verification codes and team invitations.
      * The backend rejects this for non-admins, so nothing bad happens if
      * a non-admin somehow opens it; they'll just see a clear error. */
-    private void openMailSettingsDialog() {
+    private void openMailSettingsDialog(Window owner) {
         Dialog<Void> dialog = new Dialog<>();
+        if (owner != null) {
+            dialog.initOwner(owner);
+        }
         dialog.setTitle("Mail Server Settings");
         dialog.setHeaderText("Outgoing mail (SMTP) — used for verification emails and team invitations");
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CLOSE);
@@ -4751,8 +4946,13 @@ public class MainController implements Initializable {
     }
 
     @FXML
+    private void handleCheckForUpdates() {
+        AppUpdateDialog.check(urlField.getScene().getWindow(), true);
+    }
+
+    @FXML
     private void handleAbout() {
-        AlertUtils.showInfo("Thundercall v1.0.0\nA professional API client.\nBackend: Spring Boot  |  Frontend: JavaFX");
+        AlertUtils.showInfo("Thundercall v" + AppUpdateService.CURRENT_VERSION + "\nA professional API client.\nBackend: Spring Boot  |  Frontend: JavaFX");
     }
 
     @FXML

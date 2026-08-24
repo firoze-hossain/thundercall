@@ -40,6 +40,7 @@
                         <MenuItem text="Light Theme" onAction="#handleThemeLight"/>
                     </Menu>
                     <Menu text="Help">
+                        <MenuItem text="Check for Updates…" onAction="#handleCheckForUpdates"/>
                         <MenuItem text="About Thundercall" onAction="#handleAbout"/>
                     </Menu>
                 </MenuBar>
