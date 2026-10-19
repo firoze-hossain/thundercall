@@ -1,0 +1,209 @@
+name: Release
+
+# ==============================================================================
+# Automated Multi-Platform Release Workflow for ThunderCall (Frontend)
+# 
+# Triggered ONLY when a version tag like 'v1.0.0' or '1.0.0' is pushed to the repository.
+# Standard code pushes to master/branches do NOT trigger this workflow.
+#
+# Builds native desktop installers across 3 parallel runner environments:
+#   - Linux:   Ubuntu/Debian .deb package (with desktop menu, icons, file associations)
+#   - Windows: Inno Setup .exe installer wizard (with desktop/start menu shortcuts)
+#              plus WiX .msi package
+#   - macOS:   Apple .dmg disk image (with .app bundle and ICNS icon)
+#
+# Collects all artifacts, generates SHA-256 checksums, and publishes a GitHub Release.
+# ==============================================================================
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: thundercall-frontend/pom.xml
+
+      - name: Install Windows Tools (WiX & Inno Setup)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          choco install wixtoolset --version=3.14.1 -y
+          choco install innosetup -y
+          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Derive version from Git tag
+        shell: bash
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build ThunderCall Frontend with Maven
+        working-directory: thundercall-frontend
+        run: mvn -B clean package -DskipTests
+
+      - name: Prepare common packaging input
+        working-directory: thundercall-frontend
+        shell: bash
+        run: |
+          mkdir -p packaging/input dist
+          cp target/thundercall-frontend-*.jar packaging/input/thundercall.jar
+          cp target/dependency/*.jar packaging/input/
+
+      # ------------------------------------------------------------------------
+      # Linux: Ubuntu/Debian .deb package
+      # ------------------------------------------------------------------------
+      - name: Build Linux .deb Package
+        if: matrix.platform == 'linux'
+        working-directory: thundercall-frontend
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot
+          jpackage \
+            --type deb \
+            --input packaging/input \
+            --name thundercall \
+            --main-jar thundercall.jar \
+            --main-class com.roze.thundercall.ui.Launcher \
+            --app-version "${{ steps.version.outputs.version }}" \
+            --vendor "Roze Ecosystem" \
+            --description "ThunderCall - Modern API Development & Testing Client" \
+            --linux-package-name thundercall \
+            --linux-deb-maintainer "maintainer@rozehub.dev" \
+            --linux-shortcut \
+            --linux-menu-group "Development;Network;WebDevelopment;" \
+            --icon packaging/linux/thundercall.png \
+            --resource-dir packaging/linux \
+            --dest dist
+
+      # ------------------------------------------------------------------------
+      # Windows: Inno Setup .exe Setup Wizard & WiX .msi
+      # ------------------------------------------------------------------------
+      - name: Build Windows .exe Setup Wizard and .msi
+        if: matrix.platform == 'windows'
+        working-directory: thundercall-frontend
+        shell: pwsh
+        run: |
+          # 1. Create Windows runtime app image
+          jpackage `
+            --type app-image `
+            --input packaging/input `
+            --name ThunderCall `
+            --main-jar thundercall.jar `
+            --main-class com.roze.thundercall.ui.Launcher `
+            --app-version "${{ steps.version.outputs.version }}" `
+            --vendor "Roze Ecosystem" `
+            --icon packaging\windows\Thundercall.ico `
+            --dest dist\thundercall-win-pkg
+
+          # Move contents into a clean root structure for Inno Setup
+          Move-Item -Path "dist\thundercall-win-pkg\ThunderCall\*" -Destination "dist\thundercall-win-pkg\"
+          Remove-Item -Path "dist\thundercall-win-pkg\ThunderCall" -Recurse -Force
+
+          # 2. Compile Inno Setup .exe wizard
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="${{ steps.version.outputs.version }}" packaging\windows\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE" }
+          if (Test-Path "packaging\windows\dist\*.exe") {
+            Move-Item -Path "packaging\windows\dist\*.exe" -Destination "dist\" -Force
+          }
+
+          # 3. Build Windows .msi with jpackage
+          jpackage `
+            --type msi `
+            --input packaging/input `
+            --name ThunderCall `
+            --main-jar thundercall.jar `
+            --main-class com.roze.thundercall.ui.Launcher `
+            --app-version "${{ steps.version.outputs.version }}" `
+            --vendor "Roze Ecosystem" `
+            --description "ThunderCall - Modern API Development & Testing Client" `
+            --win-menu `
+            --win-shortcut `
+            --icon packaging\windows\Thundercall.ico `
+            --dest dist
+
+          # Clean intermediate app-image so only final installers remain
+          Remove-Item -Path "dist\thundercall-win-pkg" -Recurse -Force
+
+      # ------------------------------------------------------------------------
+      # macOS: .dmg disk image
+      # ------------------------------------------------------------------------
+      - name: Build macOS .dmg Disk Image
+        if: matrix.platform == 'macos'
+        working-directory: thundercall-frontend
+        run: |
+          jpackage \
+            --type dmg \
+            --input packaging/input \
+            --name ThunderCall \
+            --main-jar thundercall.jar \
+            --main-class com.roze.thundercall.ui.Launcher \
+            --app-version "${{ steps.version.outputs.version }}" \
+            --vendor "Roze Ecosystem" \
+            --description "ThunderCall - Modern API Development & Testing Client" \
+            --mac-package-name ThunderCall \
+            --icon packaging/macos/Thundercall.icns \
+            --dest dist
+
+      - name: Upload Installer Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: thundercall-${{ matrix.platform }}
+          path: thundercall-frontend/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA-256 Checksums
+        run: |
+          cd dist
+          sha256sum *.* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: List Release Files
+        run: ls -la dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

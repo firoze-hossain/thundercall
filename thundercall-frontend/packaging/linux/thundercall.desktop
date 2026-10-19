@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=ThunderCall
+GenericName=API Client & Testing Platform
+Comment=Lightweight, Modern API Development and Testing Client
+Exec=/opt/thundercall/bin/ThunderCall %U
+Icon=thundercall
+Terminal=false
+Type=Application
+Categories=Development;Network;WebDevelopment;
+StartupWMClass=com.roze.thundercall.ui.Main
+Keywords=api;rest;http;graphql;client;postman;thunder;curl;testing;
