@@ -1910,12 +1910,11 @@ public class MainController implements Initializable {
 
     private void setupTables() {
         setupParamsTable();
-        setupKeyValueTable(headersTable, headersData, "Key", "Value", "Description");
+        addCommonHeaders();
+        setupHeadersTable();
         setupKeyValueTable(responseHeadersTable, responseHeadersData, "Key", "Value");
         setupKeyValueTable(cookiesTable, cookiesData, "Name", "Value", "Domain");
         setupSocketIoEventsTable();
-
-        addCommonHeaders();
     }
 
     private static final javafx.css.PseudoClass ROW_SELECTED_PSEUDO =
@@ -1923,6 +1922,10 @@ public class MainController implements Initializable {
     private CheckBox paramsMasterCheckBox;
     private CheckBox paramsMasterSelectBox;
     private int pendingFocusParamRow = -1;
+
+    private CheckBox headersMasterCheckBox;
+    private CheckBox headersMasterSelectBox;
+    private int pendingFocusHeaderRow = -1;
 
     private void setupParamsTable() {
         paramsTable.getColumns().clear();
@@ -2347,10 +2350,434 @@ public class MainController implements Initializable {
 
     private void addCommonHeaders() {
         headersData.addAll(
-                new KeyValuePair("Content-Type", "application/json", "Request content type"),
-                new KeyValuePair("Accept", "application/json", "Response format"),
-                new KeyValuePair("User-Agent", "JavaFX-API-Client/1.0", "Client identifier")
+                new KeyValuePair(true, "Content-Type", "application/json", "Request content type", false),
+                new KeyValuePair(true, "Accept", "application/json", "Response format", false),
+                new KeyValuePair(true, "User-Agent", "JavaFX-API-Client/1.0", "Client identifier", false)
         );
+    }
+
+    private void setupHeadersTable() {
+        headersTable.getColumns().clear();
+        headersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        headersTable.setItems(headersData);
+        headersTable.setEditable(true);
+        headersTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        // Row factory applies user-friendly selection color dynamically via listener
+        headersTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        CheckBox masterCheckBox = new CheckBox();
+        this.headersMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : headersData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            headersTable.refresh();
+            onEditorFieldChanged();
+        });
+
+        // 1. Tick mark (enable/disable header in request)
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        onEditorFieldChanged();
+                        updateHeadersMasterCheckBox(headersMasterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Key column (with HeaderAutocomplete attached)
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(140);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createHeaderCell("Key", 0, KeyValuePair::getKey, KeyValuePair::setKey));
+
+        // 3. Value column
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(140);
+        valueCol.setPrefWidth(240);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createHeaderCell("Value", 1, KeyValuePair::getValue, KeyValuePair::setValue));
+
+        // 4. Description column
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createHeaderCell("Description", 2, KeyValuePair::getDescription, KeyValuePair::setDescription));
+
+        // 5. Select column (row select checkbox for delete)
+        CheckBox masterSelectBox = new CheckBox();
+        this.headersMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : headersData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            headersTable.getSelectionModel().clearSelection();
+            headersTable.refresh();
+        });
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateHeadersMasterSelectBox(headersMasterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        headersTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddHeaderRow());
+        deleteItem.setOnAction(e -> handleDeleteHeaderRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        headersTable.setContextMenu(contextMenu);
+
+        ensureHeadersPlaceholderRow();
+        updateHeadersMasterCheckBox(headersMasterCheckBox);
+        updateHeadersMasterSelectBox(headersMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createHeaderCell(String placeholder,
+                                                             int colIndex,
+                                                             Function<KeyValuePair, String> getter,
+                                                             BiConsumer<KeyValuePair, String> setter) {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                if (colIndex == 0) {
+                    HeaderAutocomplete.attach(textField, selectedHeader -> {
+                        KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                        if (row != null) {
+                            row.setKey(selectedHeader);
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) {
+                                row.setEnabled(true);
+                            }
+                            ensureHeadersPlaceholderRow();
+                            updateHeadersMasterCheckBox(headersMasterCheckBox);
+                            updateHeadersMasterSelectBox(headersMasterSelectBox);
+                            onEditorFieldChanged();
+                            focusHeaderCell(getIndex(), 2);
+                        }
+                    });
+                }
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    String safeVal = newVal != null ? newVal : "";
+                    setter.accept(row, safeVal);
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureHeadersPlaceholderRow();
+                        updateHeadersMasterCheckBox(headersMasterCheckBox);
+                        updateHeadersMasterSelectBox(headersMasterSelectBox);
+                    }
+
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                    if (e.isConsumed()) {
+                        return;
+                    }
+                    if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                        e.consume();
+                        navigateNextHeaderCell(colIndex);
+                    }
+                });
+            }
+
+            private void navigateNextHeaderCell(int currentCol) {
+                int rowIndex = getIndex();
+                if (currentCol < 2) {
+                    focusHeaderCell(rowIndex, currentCol + 2);
+                } else {
+                    int nextRow = rowIndex + 1;
+                    if (nextRow < headersData.size()) {
+                        focusHeaderCell(nextRow, 1);
+                    }
+                }
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    // Check if this row was just added and needs Key focus
+                    if (colIndex == 0 && getIndex() == pendingFocusHeaderRow) {
+                        pendingFocusHeaderRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusHeaderCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            headersTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < headersTable.getColumns().size()) {
+                headersTable.getFocusModel().focus(rowIdx, headersTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < headersTable.getColumns().size()) {
+                    var targetCol = headersTable.getColumns().get(colIdx);
+                    for (Node n : headersTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void ensureHeadersPlaceholderRow() {
+        if (headersData.isEmpty()) {
+            headersData.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        while (headersData.size() > 1) {
+            KeyValuePair last = headersData.get(headersData.size() - 1);
+            KeyValuePair secondLast = headersData.get(headersData.size() - 2);
+            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
+                headersData.remove(headersData.size() - 1);
+            } else {
+                break;
+            }
+        }
+        KeyValuePair last = headersData.get(headersData.size() - 1);
+        if (!last.isPlaceholder()) {
+            headersData.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateHeadersMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) {
+            return;
+        }
+        long totalActive = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateHeadersMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) {
+            return;
+        }
+        long totalActive = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
     }
 
     private void setupKeyValueTable(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data, String... columns) {
@@ -2967,12 +3394,12 @@ public class MainController implements Initializable {
                 }
 
                 // Load headers
+                headersData.clear();
                 if (requestResponse.getHeaders() != null && !requestResponse.getHeaders().isEmpty()) {
                     try {
                         JSONObject headersJson = new JSONObject(requestResponse.getHeaders());
-                        headersData.clear();
                         for (String key : headersJson.keySet()) {
-                            headersData.add(new KeyValuePair(key, headersJson.getString(key), ""));
+                            headersData.add(new KeyValuePair(true, key, headersJson.getString(key), "", false));
                         }
                     } catch (Exception e) {
                         // Fallback to simple header parsing
@@ -2980,11 +3407,14 @@ public class MainController implements Initializable {
                         for (String line : headerLines) {
                             String[] parts = line.split(":", 2);
                             if (parts.length == 2) {
-                                headersData.add(new KeyValuePair(parts[0].trim(), parts[1].trim(), ""));
+                                headersData.add(new KeyValuePair(true, parts[0].trim(), parts[1].trim(), "", false));
                             }
                         }
                     }
                 }
+                ensureHeadersPlaceholderRow();
+                updateHeadersMasterCheckBox(headersMasterCheckBox);
+                updateHeadersMasterSelectBox(headersMasterSelectBox);
 
                 // Load body
                 bodyTextArea.replaceText(requestResponse.getBody() != null ? requestResponse.getBody() : "");
@@ -6162,7 +6592,7 @@ public class MainController implements Initializable {
             }
             copy.headers = new ArrayList<>();
             for (KeyValuePair kv : this.headers) {
-                copy.headers.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+                copy.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
             }
             copy.socketIoNamespace = this.socketIoNamespace;
             copy.socketIoEventName = this.socketIoEventName;
@@ -6595,7 +7025,10 @@ public class MainController implements Initializable {
         for (KeyValuePair kv : paramsData) {
             state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
         }
-        state.headers = new ArrayList<>(headersData);
+        state.headers = new ArrayList<>();
+        for (KeyValuePair kv : headersData) {
+            state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+        }
         state.socketIoNamespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : "";
         state.socketIoEventName = socketIoEventNameField != null ? socketIoEventNameField.getText() : "";
         state.socketIoMessageBody = socketIoMessageComposeArea != null ? socketIoMessageComposeArea.getText() : "";
@@ -6649,7 +7082,15 @@ public class MainController implements Initializable {
                 }
             }
             ensurePlaceholderRow();
-            headersData.setAll(state.headers);
+            headersData.clear();
+            if (state.headers != null && !state.headers.isEmpty()) {
+                for (KeyValuePair kv : state.headers) {
+                    headersData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+                }
+            }
+            ensureHeadersPlaceholderRow();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
 
             if (socketIoNamespaceField != null) {
                 socketIoNamespaceField.setText(state.socketIoNamespace != null ? state.socketIoNamespace : "");
@@ -8391,8 +8832,10 @@ public class MainController implements Initializable {
 
         // Add user-defined headers
         for (KeyValuePair header : headersData) {
-            if (!header.getKey().isEmpty() && !header.getValue().isEmpty()) {
-                headers.put(header.getKey(), header.getValue());
+            if (header.isEnabled() && !header.isPlaceholder()
+                    && header.getKey() != null && !header.getKey().trim().isEmpty()
+                    && header.getValue() != null && !header.getValue().trim().isEmpty()) {
+                headers.put(header.getKey().trim(), header.getValue().trim());
             }
         }
 
@@ -8638,7 +9081,12 @@ public class MainController implements Initializable {
         }
 
         if (!hasContentType) {
-            headersData.add(new KeyValuePair("Content-Type", "application/json", "Request content type"));
+            int insertIdx = !headersData.isEmpty() && headersData.get(headersData.size() - 1).isPlaceholder()
+                    ? headersData.size() - 1 : headersData.size();
+            headersData.add(insertIdx, new KeyValuePair(true, "Content-Type", "application/json", "Request content type", false));
+            ensureHeadersPlaceholderRow();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
         }
 
         AlertUtils.showInfo("Sample POST request loaded. Click Send to execute.");
@@ -8694,14 +9142,48 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleAddHeaderRow() {
-        headersData.add(new KeyValuePair("", "", ""));
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+
+        int targetIndex;
+        if (!headersData.isEmpty() && headersData.get(headersData.size() - 1).isPlaceholder()) {
+            targetIndex = headersData.size() - 1;
+            headersData.add(targetIndex, newRow);
+        } else {
+            headersData.add(newRow);
+            targetIndex = headersData.size() - 1;
+        }
+
+        ensureHeadersPlaceholderRow();
+
+        pendingFocusHeaderRow = targetIndex;
+        headersTable.getSelectionModel().clearSelection();
+        focusHeaderCell(targetIndex, 1);
+        onEditorFieldChanged();
     }
 
     @FXML
     private void handleDeleteHeaderRow() {
-        KeyValuePair selected = headersTable.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            headersData.remove(selected);
+        // Collect all rows marked by Select checkbox
+        List<KeyValuePair> toDelete = headersData.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+
+        // If no explicit selection, fall back to the currently focused row
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = headersTable.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+
+        if (!toDelete.isEmpty()) {
+            headersData.removeAll(toDelete);
+            ensureHeadersPlaceholderRow();
+            onEditorFieldChanged();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
+            headersTable.refresh();
         }
     }
 

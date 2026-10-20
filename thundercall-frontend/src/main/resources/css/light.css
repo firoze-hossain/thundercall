@@ -105,3 +105,20 @@
     -fx-background-color: #ffffff;
 }
 
+/* Header autocomplete popup for Light theme */
+.header-suggestions {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d6d6d6;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.12), 12, 0, 0, 4);
+}
+.header-suggestions .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #212121;
+}
+.header-suggestions .list-cell:filled:selected,
+.header-suggestions .list-cell:filled:hover {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+}
+
+

@@ -1152,6 +1152,28 @@
     -fx-font-size: 11px;
 }
 
+/* ============ Header autocomplete popup ============ */
+.header-suggestions {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 4 0 4 0;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.28), 12, 0, 0, 4);
+}
+.header-suggestions .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 6 12 6 12;
+}
+.header-suggestions .list-cell:filled:selected,
+.header-suggestions .list-cell:filled:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+
+
 /* ============ Response find bar (Ctrl/Cmd+F) ============ */
 .search-bar {
     -fx-background-color: -bg-elevated;

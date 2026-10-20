@@ -639,7 +639,11 @@
                             </Tab>
 
                             <Tab text="Headers" fx:id="headersTab">
-                                <VBox>
+                                <VBox spacing="6">
+                                    <padding>
+                                        <Insets top="8" right="0" bottom="0" left="0"/>
+                                    </padding>
+                                    <Label text="Headers" styleClass="params-section-title"/>
                                     <TableView fx:id="headersTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddHeaderRow"
