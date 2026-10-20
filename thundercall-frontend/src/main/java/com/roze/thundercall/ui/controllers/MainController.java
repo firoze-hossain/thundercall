@@ -354,8 +354,11 @@ public class MainController implements Initializable {
                 if (AppUpdateService.isAutoCheckEnabled()) {
                     Thread.startVirtualThread(() -> {
                         try {
+                            Thread.sleep(2500);
                             var update = AppUpdateService.checkForUpdate();
-                            if (update.available()) Platform.runLater(() -> AppUpdateDialog.check(urlField.getScene().getWindow(), false));
+                            if (update != null && update.available()) {
+                                Platform.runLater(() -> AppUpdateDialog.show(urlField.getScene().getWindow(), update));
+                            }
                         } catch (Exception ignored) { }
                     });
                 }
@@ -2677,9 +2680,12 @@ public class MainController implements Initializable {
         TextField endpoint = new TextField(AppUpdateService.getEndpoint());
         endpoint.setPromptText(AppUpdateService.DEFAULT_ENDPOINT);
 
+        TextField githubRepo = new TextField(AppUpdateService.getGitHubRepo());
+        githubRepo.setPromptText(AppUpdateService.DEFAULT_GITHUB_REPO);
+
         Label updateHint = new Label(
-                "Updates are downloaded outside the Thundercall installation " +
-                "and verified with SHA-256 before installation.");
+                "Updates are checked first from the RozeHub website API (Priority 1) with automatic " +
+                "fallback to GitHub Releases (Priority 2). Packages are verified with SHA-256 before installation.");
         updateHint.setWrapText(true);
         updateHint.setStyle("-fx-opacity: 0.68;");
 
@@ -2700,13 +2706,16 @@ public class MainController implements Initializable {
                 new Separator(),
                 settingsFieldLabel("Update channel:"),
                 channel,
-                settingsFieldLabel("RozeHub endpoint:"),
+                settingsFieldLabel("RozeHub endpoint (Priority 1):"),
                 endpoint,
+                settingsFieldLabel("GitHub repository (Priority 2 fallback):"),
+                githubRepo,
                 updateHint,
                 checkButton);
         VBox.setMargin(autoUpdate, new Insets(4, 0, 0, 0));
         VBox.setMargin(channel, new Insets(6, 0, 8, 0));
         VBox.setMargin(endpoint, new Insets(6, 0, 8, 0));
+        VBox.setMargin(githubRepo, new Insets(6, 0, 8, 0));
         VBox.setMargin(checkButton, new Insets(8, 0, 0, 0));
 
         final Button settingsMailNav = mailNav;
@@ -2754,6 +2763,7 @@ public class MainController implements Initializable {
             AppUpdateService.setAutoCheckEnabled(autoUpdate.isSelected());
             AppUpdateService.setChannel(channel.getValue());
             AppUpdateService.setEndpoint(endpoint.getText());
+            AppUpdateService.setGitHubRepo(githubRepo.getText());
             updateStatus("Settings saved");
         };
 
