@@ -9,6 +9,7 @@ import com.roze.thundercall.ui.utils.*;
 import com.roze.thundercall.ui.update.AppUpdateService;
 import com.roze.thundercall.ui.update.AppUpdateDialog;
 import javafx.application.Platform;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -67,7 +68,19 @@ public class MainController implements Initializable {
     @FXML
     private Button wsConnectBtn;
     @FXML
+    private TabPane responseTabPane;
+    @FXML
+    private Tab responseBodyTab;
+    @FXML
     private Tab wsMessagesTab;
+    @FXML
+    private Tab socketIoMessagesTab;
+    @FXML
+    private Tab responseCookiesTab;
+    @FXML
+    private Tab responseHeadersTab;
+    @FXML
+    private Tab responseTestsTab;
     @FXML
     private Label wsStatusLabel;
     @FXML
@@ -77,11 +90,23 @@ public class MainController implements Initializable {
     @FXML
     private Tab wsMessageTab;
     @FXML
+    private Tab socketIoMessageTab;
+    @FXML
+    private Tab socketIoEventsTab;
+    @FXML
+    private Tab paramsTab;
+    @FXML
+    private Tab authTab;
+    @FXML
+    private Tab headersTab;
+    @FXML
+    private Tab bodyTab;
+    @FXML
+    private Tab scriptsTab;
+    @FXML
     private TabPane requestBuilderTabPane;
     @FXML
     private Button socketIoConnectBtn;
-    @FXML
-    private Tab socketIoTab;
     @FXML
     private TextField socketIoNamespaceField;
     @FXML
@@ -92,6 +117,11 @@ public class MainController implements Initializable {
     private TextField socketIoEventNameField;
     @FXML
     private TextField socketIoEventDataField;
+    @FXML
+    private TextArea socketIoMessageComposeArea;
+    @FXML
+    private TableView<SocketIoEventItem> socketIoEventsTable;
+    private final ObservableList<SocketIoEventItem> socketIoEventsData = FXCollections.observableArrayList();
     @FXML
     private ComboBox<String> authTypeCombo;
     @FXML
@@ -1502,16 +1532,8 @@ public class MainController implements Initializable {
                 socketIoConnectBtn.setVisible(isSocketIo);
                 socketIoConnectBtn.setManaged(isSocketIo);
             }
-            // FIX: the compose box used to be buried in the response
-            // area's Messages tab, easy to miss entirely — it's now the
-            // first tab at the top (matching Postman's own layout), and
-            // switching to WS jumps straight to it so there's no hunting.
-            if (isWs && requestBuilderTabPane != null && wsMessageTab != null) {
-                requestBuilderTabPane.getSelectionModel().select(wsMessageTab);
-            }
-            if (isSocketIo && requestBuilderTabPane != null && socketIoTab != null) {
-                requestBuilderTabPane.getSelectionModel().select(socketIoTab);
-            }
+            updateRequestBuilderTabs(newMethod);
+            updateResponseTabs(newMethod);
             // Switching away from WS while still connected would leave a
             // socket open with no way to see or close it from the UI —
             // disconnect cleanly instead.
@@ -1522,6 +1544,59 @@ public class MainController implements Initializable {
                 closeActiveSocketIoSession();
             }
         });
+
+        updateRequestBuilderTabs(methodCombo.getValue() != null ? methodCombo.getValue() : "GET");
+        updateResponseTabs(methodCombo.getValue() != null ? methodCombo.getValue() : "GET");
+    }
+
+    private void updateRequestBuilderTabs(String method) {
+        if (requestBuilderTabPane == null) {
+            return;
+        }
+        Tab selectedBefore = requestBuilderTabPane.getSelectionModel().getSelectedItem();
+        List<Tab> targetTabs;
+        if ("WS".equals(method)) {
+            targetTabs = Arrays.asList(wsMessageTab, paramsTab, headersTab);
+        } else if ("SOCKETIO".equals(method)) {
+            targetTabs = Arrays.asList(socketIoMessageTab, socketIoEventsTab, paramsTab, headersTab);
+        } else {
+            targetTabs = Arrays.asList(paramsTab, authTab, headersTab, bodyTab, scriptsTab);
+        }
+
+        List<Tab> validTabs = targetTabs.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        if (!requestBuilderTabPane.getTabs().equals(validTabs)) {
+            requestBuilderTabPane.getTabs().setAll(validTabs);
+            if (selectedBefore != null && validTabs.contains(selectedBefore)) {
+                requestBuilderTabPane.getSelectionModel().select(selectedBefore);
+            } else if (!validTabs.isEmpty()) {
+                requestBuilderTabPane.getSelectionModel().select(validTabs.get(0));
+            }
+        }
+    }
+
+    private void updateResponseTabs(String method) {
+        if (responseTabPane == null) {
+            return;
+        }
+        Tab selectedBefore = responseTabPane.getSelectionModel().getSelectedItem();
+        List<Tab> targetTabs;
+        if ("WS".equals(method)) {
+            targetTabs = Collections.singletonList(wsMessagesTab);
+        } else if ("SOCKETIO".equals(method)) {
+            targetTabs = Collections.singletonList(socketIoMessagesTab);
+        } else {
+            targetTabs = Arrays.asList(responseBodyTab, responseCookiesTab, responseHeadersTab, responseTestsTab);
+        }
+
+        List<Tab> validTabs = targetTabs.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        if (!responseTabPane.getTabs().equals(validTabs)) {
+            responseTabPane.getTabs().setAll(validTabs);
+            if (selectedBefore != null && validTabs.contains(selectedBefore)) {
+                responseTabPane.getSelectionModel().select(selectedBefore);
+            } else if (!validTabs.isEmpty()) {
+                responseTabPane.getSelectionModel().select(validTabs.get(0));
+            }
+        }
     }
 
     private void loadUserData() {
@@ -1836,6 +1911,7 @@ public class MainController implements Initializable {
         setupKeyValueTable(headersTable, headersData, "Key", "Value", "Description");
         setupKeyValueTable(responseHeadersTable, responseHeadersData, "Key", "Value");
         setupKeyValueTable(cookiesTable, cookiesData, "Name", "Value", "Domain");
+        setupSocketIoEventsTable();
 
         addCommonHeaders();
     }
@@ -2075,6 +2151,172 @@ public class MainController implements Initializable {
         };
     }
 
+    private void setupSocketIoEventsTable() {
+        if (socketIoEventsTable == null) {
+            return;
+        }
+        socketIoEventsTable.getColumns().clear();
+        socketIoEventsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        socketIoEventsTable.setItems(socketIoEventsData);
+        socketIoEventsTable.setEditable(true);
+
+        TableColumn<SocketIoEventItem, String> eventCol = new TableColumn<>("EVENTS");
+        eventCol.setCellValueFactory(cellData -> cellData.getValue().eventNameProperty());
+        eventCol.setCellFactory(col -> commitOnFocusLossEventCell("Add event"));
+        eventCol.setOnEditCommit(event -> {
+            event.getRowValue().setEventName(event.getNewValue());
+            onEditorFieldChanged();
+        });
+        eventCol.setPrefWidth(220);
+
+        TableColumn<SocketIoEventItem, Boolean> listenCol = new TableColumn<>("LISTEN");
+        listenCol.setCellValueFactory(cellData -> cellData.getValue().listenProperty());
+        listenCol.setCellFactory(col -> createListenToggleCell());
+        listenCol.setPrefWidth(100);
+        listenCol.setStyle("-fx-alignment: CENTER;");
+
+        TableColumn<SocketIoEventItem, String> descCol = new TableColumn<>("DESCRIPTION");
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> commitOnFocusLossEventCell("Add description"));
+        descCol.setOnEditCommit(event -> {
+            event.getRowValue().setDescription(event.getNewValue());
+            onEditorFieldChanged();
+        });
+        descCol.setPrefWidth(260);
+
+        socketIoEventsTable.getColumns().addAll(eventCol, listenCol, descCol);
+
+        if (socketIoEventsData.isEmpty()) {
+            socketIoEventsData.add(new SocketIoEventItem("", true, ""));
+        }
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Event");
+        MenuItem deleteItem = new MenuItem("Delete Event");
+        addItem.setOnAction(e -> handleAddSocketIoEventRow());
+        deleteItem.setOnAction(e -> handleDeleteSocketIoEventRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        socketIoEventsTable.setContextMenu(contextMenu);
+    }
+
+    private TableCell<SocketIoEventItem, String> commitOnFocusLossEventCell(String promptText) {
+        return new TextFieldTableCell<SocketIoEventItem, String>(new javafx.util.converter.DefaultStringConverter()) {
+            @Override
+            public void startEdit() {
+                super.startEdit();
+                if (getGraphic() instanceof TextField field) {
+                    field.setPromptText(promptText);
+                    field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                        if (!isFocused && isEditing()) {
+                            commitEdit(field.getText());
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setText(null);
+                    setGraphic(null);
+                } else if (!isEditing()) {
+                    if (item == null || item.trim().isEmpty()) {
+                        setText(promptText);
+                        setStyle("-fx-text-fill: -text-muted; -fx-font-style: italic;");
+                    } else {
+                        setText(item);
+                        setStyle("-fx-text-fill: -text-primary; -fx-font-style: normal;");
+                    }
+                }
+            }
+        };
+    }
+
+    private TableCell<SocketIoEventItem, Boolean> createListenToggleCell() {
+        return new TableCell<>() {
+            private final ToggleButton toggle = new ToggleButton();
+            private final Region thumb = new Region();
+            {
+                thumb.getStyleClass().add("toggle-thumb");
+                thumb.setMouseTransparent(true);
+                toggle.getStyleClass().add("event-toggle-switch");
+                toggle.setGraphic(thumb);
+                toggle.setOnAction(e -> {
+                    SocketIoEventItem item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setListen(toggle.isSelected());
+                        updateToggleAppearance(toggle.isSelected());
+                        onEditorFieldChanged();
+                    }
+                });
+                setAlignment(Pos.CENTER);
+            }
+
+            private void updateToggleAppearance(boolean selected) {
+                if (selected) {
+                    toggle.setStyle("-fx-background-color: #007acc; -fx-alignment: center-right;");
+                } else {
+                    toggle.setStyle("-fx-background-color: #3e4451; -fx-alignment: center-left;");
+                }
+            }
+
+            @Override
+            protected void updateItem(Boolean item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    setText(null);
+                } else {
+                    boolean val = item != null && item;
+                    toggle.setSelected(val);
+                    updateToggleAppearance(val);
+                    setGraphic(toggle);
+                    setText(null);
+                }
+            }
+        };
+    }
+
+    @FXML
+    private void handleAddSocketIoEventRow() {
+        SocketIoEventItem newItem = new SocketIoEventItem("", true, "");
+        socketIoEventsData.add(newItem);
+        if (socketIoEventsTable != null) {
+            int newIdx = socketIoEventsData.size() - 1;
+            socketIoEventsTable.getSelectionModel().select(newIdx);
+            socketIoEventsTable.scrollTo(newIdx);
+            socketIoEventsTable.edit(newIdx, socketIoEventsTable.getColumns().get(0));
+        }
+        onEditorFieldChanged();
+    }
+
+    @FXML
+    private void handleDeleteSocketIoEventRow() {
+        if (socketIoEventsTable != null) {
+            SocketIoEventItem selected = socketIoEventsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                socketIoEventsData.remove(selected);
+                onEditorFieldChanged();
+            }
+        }
+    }
+
+    @FXML
+    private void handleClearWsMessages() {
+        if (wsMessageLog != null) {
+            wsMessageLog.getItems().clear();
+        }
+    }
+
+    @FXML
+    private void handleClearSocketIoMessages() {
+        if (socketIoEventLog != null) {
+            socketIoEventLog.getItems().clear();
+        }
+        socketIoEventsSeen = 0;
+    }
+
     private void setupEnvironmentCombo() {
         environmentCombo.getItems().addAll("No Environment");
         environmentCombo.getSelectionModel().select(0);
@@ -2276,6 +2518,15 @@ public class MainController implements Initializable {
                 if (state != null) {
                     state.name = requestResponse.getName();
                     state.requestId = requestResponse.getId();
+                }
+                if (requestResponse.getMethod() != null) {
+                    String m = requestResponse.getMethod().name();
+                    if (state != null) {
+                        state.method = m;
+                    }
+                    methodCombo.setValue(m);
+                    updateRequestBuilderTabs(m);
+                    updateResponseTabs(m);
                 }
                 String reqUrl = requestResponse.getUrl();
                 if (reqUrl == null || reqUrl.isEmpty()
@@ -5447,6 +5698,10 @@ public class MainController implements Initializable {
         String authPassword = "";
         List<KeyValuePair> params = new ArrayList<>();
         List<KeyValuePair> headers = new ArrayList<>();
+        String socketIoNamespace = "";
+        String socketIoEventName = "";
+        String socketIoMessageBody = "";
+        List<SocketIoEventItem> socketIoEvents = new ArrayList<>();
         // Postman-style unsaved indicator (the small dot on the tab)
         boolean dirty = false;
         // FIX: the response viewer used to be one shared set of fields
@@ -5479,6 +5734,13 @@ public class MainController implements Initializable {
             copy.headers = new ArrayList<>();
             for (KeyValuePair kv : this.headers) {
                 copy.headers.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+            }
+            copy.socketIoNamespace = this.socketIoNamespace;
+            copy.socketIoEventName = this.socketIoEventName;
+            copy.socketIoMessageBody = this.socketIoMessageBody;
+            copy.socketIoEvents = new ArrayList<>();
+            for (SocketIoEventItem item : this.socketIoEvents) {
+                copy.socketIoEvents.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
             }
             copy.dirty = true; // an unsaved copy always starts dirty
             return copy;
@@ -5530,6 +5792,16 @@ public class MainController implements Initializable {
         if (postRequestScriptsArea != null) {
             postRequestScriptsArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         }
+        if (socketIoNamespaceField != null) {
+            socketIoNamespaceField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (socketIoEventNameField != null) {
+            socketIoEventNameField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (socketIoMessageComposeArea != null) {
+            socketIoMessageComposeArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        socketIoEventsData.addListener((javafx.collections.ListChangeListener<SocketIoEventItem>) c -> onEditorFieldChanged());
         paramsData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> {
             onEditorFieldChanged();
             if (!syncingUrlAndParams) {
@@ -5879,6 +6151,13 @@ public class MainController implements Initializable {
         state.authPassword = passwordField.getText();
         state.params = new ArrayList<>(paramsData);
         state.headers = new ArrayList<>(headersData);
+        state.socketIoNamespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : "";
+        state.socketIoEventName = socketIoEventNameField != null ? socketIoEventNameField.getText() : "";
+        state.socketIoMessageBody = socketIoMessageComposeArea != null ? socketIoMessageComposeArea.getText() : "";
+        state.socketIoEvents = new ArrayList<>();
+        for (SocketIoEventItem item : socketIoEventsData) {
+            state.socketIoEvents.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
+        }
 
         // FIX: snapshot the response too, so switching back to this tab
         // later shows ITS response, not whatever the app last displayed.
@@ -5920,6 +6199,26 @@ public class MainController implements Initializable {
             passwordField.setText(state.authPassword == null ? "" : state.authPassword);
             paramsData.setAll(state.params);
             headersData.setAll(state.headers);
+
+            if (socketIoNamespaceField != null) {
+                socketIoNamespaceField.setText(state.socketIoNamespace != null ? state.socketIoNamespace : "");
+            }
+            if (socketIoEventNameField != null) {
+                socketIoEventNameField.setText(state.socketIoEventName != null ? state.socketIoEventName : "");
+            }
+            if (socketIoMessageComposeArea != null) {
+                socketIoMessageComposeArea.setText(state.socketIoMessageBody != null ? state.socketIoMessageBody : "");
+            }
+            socketIoEventsData.clear();
+            if (state.socketIoEvents != null && !state.socketIoEvents.isEmpty()) {
+                for (SocketIoEventItem item : state.socketIoEvents) {
+                    socketIoEventsData.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
+                }
+            } else {
+                socketIoEventsData.add(new SocketIoEventItem("", true, ""));
+            }
+            updateRequestBuilderTabs(state.method);
+            updateResponseTabs(state.method);
         } finally {
             restoringTabState = false;
         }
@@ -7298,11 +7597,28 @@ public class MainController implements Initializable {
         socketIoPollThread.start();
     }
 
+    private boolean shouldListenToEvent(String eventName) {
+        if (socketIoEventsData == null || socketIoEventsData.isEmpty()) {
+            return true;
+        }
+        for (SocketIoEventItem item : socketIoEventsData) {
+            if (item.getEventName() != null && !item.getEventName().trim().isEmpty()) {
+                if (item.getEventName().trim().equalsIgnoreCase(eventName != null ? eventName.trim() : "")) {
+                    return item.isListen();
+                }
+            }
+        }
+        return true;
+    }
+
     private void applySocketIoEvents(List<SocketIoEventResponse> events) {
         if (events == null || events.isEmpty() || socketIoEventLog == null) {
             return;
         }
         for (SocketIoEventResponse event : events) {
+            if ("in".equalsIgnoreCase(event.getDirection()) && !shouldListenToEvent(event.getEventName())) {
+                continue;
+            }
             String prefix;
             switch (event.getDirection()) {
                 case "in":
@@ -7333,13 +7649,22 @@ public class MainController implements Initializable {
             return;
         }
         Map<String, String> vars = currentEnvironmentVariables();
-        String data = VariableResolver.resolve(
-                socketIoEventDataField.getText() == null ? "" : socketIoEventDataField.getText(), vars);
+        String rawData = "";
+        if (socketIoMessageComposeArea != null && !socketIoMessageComposeArea.getText().isEmpty()) {
+            rawData = socketIoMessageComposeArea.getText();
+        } else if (socketIoEventDataField != null && socketIoEventDataField.getText() != null) {
+            rawData = socketIoEventDataField.getText();
+        }
+        String data = VariableResolver.resolve(rawData, vars);
         String sid = socketIoSessionId;
         new Thread(() -> {
             try {
                 SocketIoService.emit(sid, eventName, data);
-                Platform.runLater(() -> socketIoEventDataField.clear());
+                Platform.runLater(() -> {
+                    if (socketIoEventDataField != null) {
+                        socketIoEventDataField.clear();
+                    }
+                });
             } catch (IOException e) {
                 Platform.runLater(() -> AlertUtils.showError(
                         "Couldn't emit that event: " + SocketIoService.friendlyMessage(e)));
@@ -9600,6 +9925,58 @@ public class MainController implements Initializable {
 
         public void setDescription(String description) {
             this.description.set(description);
+        }
+    }
+
+    public static class SocketIoEventItem {
+        private final SimpleStringProperty eventName = new SimpleStringProperty("");
+        private final SimpleBooleanProperty listen = new SimpleBooleanProperty(true);
+        private final SimpleStringProperty description = new SimpleStringProperty("");
+
+        public SocketIoEventItem() {
+            this("", true, "");
+        }
+
+        public SocketIoEventItem(String eventName, boolean listen, String description) {
+            this.eventName.set(eventName != null ? eventName : "");
+            this.listen.set(listen);
+            this.description.set(description != null ? description : "");
+        }
+
+        public String getEventName() {
+            return eventName.get();
+        }
+
+        public void setEventName(String value) {
+            eventName.set(value != null ? value : "");
+        }
+
+        public SimpleStringProperty eventNameProperty() {
+            return eventName;
+        }
+
+        public boolean isListen() {
+            return listen.get();
+        }
+
+        public void setListen(boolean value) {
+            listen.set(value);
+        }
+
+        public SimpleBooleanProperty listenProperty() {
+            return listen;
+        }
+
+        public String getDescription() {
+            return description.get();
+        }
+
+        public void setDescription(String value) {
+            description.set(value != null ? value : "");
+        }
+
+        public SimpleStringProperty descriptionProperty() {
+            return description;
         }
     }
 }

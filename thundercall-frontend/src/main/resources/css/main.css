@@ -479,6 +479,32 @@
 .radio-button:selected .dot { -fx-background-color: -accent; }
 .check-box .label, .radio-button .label { -fx-text-fill: -text-primary; }
 
+/* Socket.IO Event listen toggle switch */
+.event-toggle-switch {
+    -fx-background-color: #3e4451;
+    -fx-background-radius: 10px;
+    -fx-min-width: 32px;
+    -fx-max-width: 32px;
+    -fx-pref-width: 32px;
+    -fx-min-height: 18px;
+    -fx-max-height: 18px;
+    -fx-pref-height: 18px;
+    -fx-padding: 2px;
+    -fx-cursor: hand;
+    -fx-border-width: 0;
+    -fx-content-display: graphic-only;
+}
+.event-toggle-switch .toggle-thumb {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 7px;
+    -fx-min-width: 14px;
+    -fx-max-width: 14px;
+    -fx-pref-width: 14px;
+    -fx-min-height: 14px;
+    -fx-max-height: 14px;
+    -fx-pref-height: 14px;
+}
+
 .combo-box {
     -fx-background-color: -bg-elevated;
     -fx-background-radius: 6;

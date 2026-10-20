@@ -497,26 +497,36 @@
                                     </HBox>
                                 </VBox>
                             </Tab>
-                            <Tab text="Socket.IO" fx:id="socketIoTab">
-                                <VBox spacing="8">
+                            <Tab text="Message" fx:id="socketIoMessageTab">
+                                <VBox spacing="10">
                                     <padding>
                                         <Insets top="10" right="10" bottom="10" left="10"/>
                                     </padding>
-                                    <HBox spacing="8" alignment="CENTER_LEFT">
-                                        <Label text="Namespace"/>
+                                    <HBox spacing="12" alignment="CENTER_LEFT">
+                                        <Label text="Namespace:"/>
                                         <TextField fx:id="socketIoNamespaceField" promptText="/ (default)" prefWidth="160"/>
-                                        <Label fx:id="socketIoStatusLabel" text="Not connected" styleClass="ws-status-label"/>
+                                        <Label text="Event:"/>
+                                        <TextField fx:id="socketIoEventNameField" promptText="Event name (e.g. message, chat)" HBox.hgrow="ALWAYS"/>
                                     </HBox>
-                                    <ListView fx:id="socketIoEventLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
-                                    <HBox spacing="8" alignment="CENTER_LEFT">
-                                        <TextField fx:id="socketIoEventNameField" promptText="Event name, e.g. chat message" prefWidth="200"/>
-                                        <TextField fx:id="socketIoEventDataField" promptText="Data (JSON or plain text)"
-                                                   HBox.hgrow="ALWAYS" onAction="#handleSocketIoEmit"/>
-                                        <Button text="Emit" onAction="#handleSocketIoEmit" styleClass="add-row-button"/>
+                                    <TextArea fx:id="socketIoMessageComposeArea" promptText="Type a message or JSON payload to send..."
+                                              wrapText="true" VBox.vgrow="ALWAYS"/>
+                                    <HBox alignment="CENTER_RIGHT" spacing="8">
+                                        <Button text="Send" onAction="#handleSocketIoEmit" styleClass="send-button"/>
                                     </HBox>
                                 </VBox>
                             </Tab>
-                            <Tab text="Params">
+                            <Tab text="Events" fx:id="socketIoEventsTab">
+                                <VBox>
+                                    <TableView fx:id="socketIoEventsTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
+                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
+                                        <Button text="+ Add Event" onAction="#handleAddSocketIoEventRow"
+                                                styleClass="add-row-button"/>
+                                        <Button text="Delete Event" onAction="#handleDeleteSocketIoEventRow"
+                                                styleClass="delete-row-button"/>
+                                    </HBox>
+                                </VBox>
+                            </Tab>
+                            <Tab text="Params" fx:id="paramsTab">
                                 <VBox>
                                     <TableView fx:id="paramsTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
@@ -528,7 +538,7 @@
                                 </VBox>
                             </Tab>
 
-                            <Tab text="Authorization">
+                            <Tab text="Authorization" fx:id="authTab">
                                 <HBox spacing="24" styleClass="auth-panel">
                                     <VBox spacing="10" minWidth="200" maxWidth="200">
                                         <Label text="Auth Type" styleClass="scripts-section-label"/>
@@ -624,7 +634,7 @@
                                 </HBox>
                             </Tab>
 
-                            <Tab text="Headers">
+                            <Tab text="Headers" fx:id="headersTab">
                                 <VBox>
                                     <TableView fx:id="headersTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
@@ -636,7 +646,7 @@
                                 </VBox>
                             </Tab>
 
-                            <Tab text="Body">
+                            <Tab text="Body" fx:id="bodyTab">
                                 <VBox>
                                     <HBox styleClass="body-type-selector">
                                         <ToggleButton fx:id="noneBodyTypeButton" text="None"
@@ -678,7 +688,7 @@
                                 </VBox>
                             </Tab>
 
-                            <Tab text="Scripts">
+                            <Tab text="Scripts" fx:id="scriptsTab">
                                 <VBox spacing="10" styleClass="scripts-panel">
                                     <Label text="Pre-request Scripts" styleClass="scripts-section-label"/>
                                     <TextArea fx:id="preRequestScriptsArea"
@@ -727,9 +737,9 @@
                         </Button>
                     </HBox>
 
-                    <TabPane styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
+                    <TabPane fx:id="responseTabPane" styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                         <tabs>
-                            <Tab text="Body">
+                            <Tab text="Body" fx:id="responseBodyTab">
                                 <SplitPane orientation="HORIZONTAL" dividerPositions="0.7">
                                     <StackPane>
                                         <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
@@ -750,18 +760,36 @@
                                     <padding>
                                         <Insets top="6" right="6" bottom="6" left="6"/>
                                     </padding>
-                                    <Label fx:id="wsStatusLabel" text="Not connected — select the WS method and click Connect"
-                                           styleClass="ws-status-label"/>
+                                    <HBox spacing="10" alignment="CENTER_LEFT">
+                                        <Label fx:id="wsStatusLabel" text="Not connected — select the WS method and click Connect"
+                                               styleClass="ws-status-label"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Button text="Clear" onAction="#handleClearWsMessages" styleClass="delete-row-button"/>
+                                    </HBox>
                                     <ListView fx:id="wsMessageLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
                                 </VBox>
                             </Tab>
-                            <Tab text="Cookies">
+                            <Tab text="Messages" fx:id="socketIoMessagesTab">
+                                <VBox spacing="6">
+                                    <padding>
+                                        <Insets top="6" right="6" bottom="6" left="6"/>
+                                    </padding>
+                                    <HBox spacing="10" alignment="CENTER_LEFT">
+                                        <Label fx:id="socketIoStatusLabel" text="Not connected — click Connect above"
+                                               styleClass="ws-status-label"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Button text="Clear" onAction="#handleClearSocketIoMessages" styleClass="delete-row-button"/>
+                                    </HBox>
+                                    <ListView fx:id="socketIoEventLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
+                                </VBox>
+                            </Tab>
+                            <Tab text="Cookies" fx:id="responseCookiesTab">
                                 <TableView fx:id="cookiesTable" styleClass="key-value-table"/>
                             </Tab>
-                            <Tab text="Headers">
+                            <Tab text="Headers" fx:id="responseHeadersTab">
                                 <TableView fx:id="responseHeadersTable" styleClass="key-value-table"/>
                             </Tab>
-                            <Tab text="Tests">
+                            <Tab text="Tests" fx:id="responseTestsTab">
                                 <VBox spacing="10">
                                     <Label styleClass="sidebar-hint" wrapText="true"
                                            text="Results from the request's Scripts tab appear here automatically after each Send."/>
