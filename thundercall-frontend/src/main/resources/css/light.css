@@ -50,3 +50,58 @@
 .method-delete  { -fx-text-fill: #d93025; }
 .method-head    { -fx-text-fill: #188038; }
 .method-options { -fx-text-fill: #5f6368; }
+
+/* User-friendly row selection color for Light theme (Params / Key-Value tables) */
+.key-value-table .table-row-cell:selected {
+    -fx-background-color: transparent;
+}
+.key-value-table .table-row-cell:selected:hover {
+    -fx-background-color: -bg-hover;
+}
+.table-row-cell:row-selected {
+    -fx-background-color: #ffe8df;
+    -fx-border-color: transparent transparent #ffd0be transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.table-row-cell:row-selected:hover {
+    -fx-background-color: #ffdfd2;
+}
+
+.table-row-cell:row-selected .table-cell {
+    -fx-background-color: transparent;
+}
+
+.table-row-cell:row-selected .param-cell-field {
+    -fx-background-color: transparent;
+    -fx-text-fill: #1f1f1f;
+}
+.table-row-cell:row-selected .param-cell-field:focused {
+    -fx-background-color: #ffffff;
+    -fx-border-color: -accent;
+    -fx-border-width: 1;
+}
+
+/* Light theme checkbox inside key-value tables */
+.key-value-table .check-box .box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #c4c4c4;
+}
+.key-value-table .check-box:hover .box {
+    -fx-border-color: -accent;
+    -fx-background-color: #fff4f0;
+}
+.key-value-table .check-box:selected .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.key-value-table .check-box:selected .mark {
+    -fx-background-color: #ffffff;
+}
+.key-value-table .check-box:indeterminate .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.key-value-table .check-box:indeterminate .mark {
+    -fx-background-color: #ffffff;
+}
+

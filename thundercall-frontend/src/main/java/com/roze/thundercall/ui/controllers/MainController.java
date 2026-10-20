@@ -49,6 +49,8 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -1068,7 +1070,7 @@ public class MainController implements Initializable {
         urlField.plainTextChanges().subscribe(change -> {
             urlField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(urlField.getText()));
             urlField.showParagraphAtTop(0);
-            if (!syncingUrlAndParams) {
+            if (!syncingUrlAndParams && (urlField.isFocused() || restoringTabState)) {
                 syncUrlToParams();
             }
         });
@@ -1907,13 +1909,440 @@ public class MainController implements Initializable {
     }
 
     private void setupTables() {
-        setupKeyValueTable(paramsTable, paramsData, this::syncParamsToUrl, "Key", "Value", "Description");
+        setupParamsTable();
         setupKeyValueTable(headersTable, headersData, "Key", "Value", "Description");
         setupKeyValueTable(responseHeadersTable, responseHeadersData, "Key", "Value");
         setupKeyValueTable(cookiesTable, cookiesData, "Name", "Value", "Domain");
         setupSocketIoEventsTable();
 
         addCommonHeaders();
+    }
+
+    private static final javafx.css.PseudoClass ROW_SELECTED_PSEUDO =
+            javafx.css.PseudoClass.getPseudoClass("row-selected");
+    private CheckBox paramsMasterCheckBox;
+    private CheckBox paramsMasterSelectBox;
+    private int pendingFocusParamRow = -1;
+
+    private void setupParamsTable() {
+        paramsTable.getColumns().clear();
+        paramsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        paramsTable.setItems(paramsData);
+        paramsTable.setEditable(true);
+        paramsTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        // Row factory applies user-friendly selection color dynamically via listener
+        paramsTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        CheckBox masterCheckBox = new CheckBox();
+        this.paramsMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : paramsData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            paramsTable.refresh();
+            syncParamsToUrl();
+            onEditorFieldChanged();
+        });
+
+        // 1. Tick mark (enable/disable param in URL query string)
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        syncParamsToUrl();
+                        onEditorFieldChanged();
+                        updateMasterCheckBox(paramsMasterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Key column
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(140);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createParamCell("Key", 0, KeyValuePair::getKey, KeyValuePair::setKey));
+
+        // 3. Value column
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(140);
+        valueCol.setPrefWidth(240);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createParamCell("Value", 1, KeyValuePair::getValue, KeyValuePair::setValue));
+
+        // 4. Description column
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createParamCell("Description", 2, KeyValuePair::getDescription, KeyValuePair::setDescription));
+
+        // 5. Select column (row select option: centered checkbox in header, aligned above row checkboxes)
+        CheckBox masterSelectBox = new CheckBox();
+        this.paramsMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : paramsData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            paramsTable.getSelectionModel().clearSelection();
+            paramsTable.refresh();
+        });
+
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateMasterSelectBox(paramsMasterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        paramsTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddParamRow());
+        deleteItem.setOnAction(e -> handleDeleteParamRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        paramsTable.setContextMenu(contextMenu);
+
+        ensurePlaceholderRow();
+        updateMasterCheckBox(paramsMasterCheckBox);
+        updateMasterSelectBox(paramsMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createParamCell(String placeholder,
+                                                            int colIndex,
+                                                            Function<KeyValuePair, String> getter,
+                                                            BiConsumer<KeyValuePair, String> setter) {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    String safeVal = newVal != null ? newVal : "";
+                    setter.accept(row, safeVal);
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensurePlaceholderRow();
+                        updateMasterCheckBox(paramsMasterCheckBox);
+                        updateMasterSelectBox(paramsMasterSelectBox);
+                    }
+
+                    if (!syncingUrlAndParams) {
+                        syncParamsToUrl();
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                        e.consume();
+                        navigateNextParamCell(colIndex);
+                    }
+                });
+            }
+
+            private void navigateNextParamCell(int currentCol) {
+                int rowIndex = getIndex();
+                if (currentCol < 2) {
+                    focusParamCell(rowIndex, currentCol + 2);
+                } else {
+                    int nextRow = rowIndex + 1;
+                    if (nextRow < paramsData.size()) {
+                        focusParamCell(nextRow, 1);
+                    }
+                }
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    // Check if this row was just added and needs Key focus
+                    if (colIndex == 0 && getIndex() == pendingFocusParamRow) {
+                        pendingFocusParamRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusParamCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            paramsTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < paramsTable.getColumns().size()) {
+                paramsTable.getFocusModel().focus(rowIdx, paramsTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < paramsTable.getColumns().size()) {
+                    var targetCol = paramsTable.getColumns().get(colIdx);
+                    for (Node n : paramsTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private boolean isRowEmpty(KeyValuePair kv) {
+        if (kv == null) {
+            return true;
+        }
+        String k = kv.getKey();
+        String v = kv.getValue();
+        String d = kv.getDescription();
+        return (k == null || k.trim().isEmpty())
+                && (v == null || v.trim().isEmpty())
+                && (d == null || d.trim().isEmpty());
+    }
+
+    private void ensurePlaceholderRow() {
+        if (paramsData.isEmpty()) {
+            paramsData.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        while (paramsData.size() > 1) {
+            KeyValuePair last = paramsData.get(paramsData.size() - 1);
+            KeyValuePair secondLast = paramsData.get(paramsData.size() - 2);
+            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
+                paramsData.remove(paramsData.size() - 1);
+            } else {
+                break;
+            }
+        }
+        KeyValuePair last = paramsData.get(paramsData.size() - 1);
+        if (!last.isPlaceholder()) {
+            paramsData.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) {
+            return;
+        }
+        long totalActive = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) {
+            return;
+        }
+        long totalActive = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
     }
 
     private void addCommonHeaders() {
@@ -5729,7 +6158,7 @@ public class MainController implements Initializable {
             copy.authPassword = this.authPassword;
             copy.params = new ArrayList<>();
             for (KeyValuePair kv : this.params) {
-                copy.params.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+                copy.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
             }
             copy.headers = new ArrayList<>();
             for (KeyValuePair kv : this.headers) {
@@ -5849,11 +6278,16 @@ public class MainController implements Initializable {
 
         syncingUrlAndParams = true;
         try {
-            // Keep existing rows (and their Description) for keys still present
-            Map<String, KeyValuePair> existingByKey = new HashMap<>();
+            // Keep existing rows (and their Description / Enabled state)
+            Map<String, KeyValuePair> existingByKey = new LinkedHashMap<>();
+            List<KeyValuePair> disabledRows = new ArrayList<>();
             for (KeyValuePair kv : paramsData) {
-                if (!kv.getKey().isEmpty()) {
-                    existingByKey.put(kv.getKey(), kv);
+                if (kv.getKey() != null && !kv.getKey().isEmpty()) {
+                    if (kv.isEnabled()) {
+                        existingByKey.put(kv.getKey(), kv);
+                    } else {
+                        disabledRows.add(kv);
+                    }
                 }
             }
             List<KeyValuePair> rebuilt = new ArrayList<>();
@@ -5863,12 +6297,17 @@ public class MainController implements Initializable {
                     existing.setValue(entry.getValue());
                     rebuilt.add(existing);
                 } else {
-                    rebuilt.add(new KeyValuePair(entry.getKey(), entry.getValue(), ""));
+                    rebuilt.add(new KeyValuePair(true, entry.getKey(), entry.getValue(), ""));
                 }
             }
-            if (!rebuilt.equals(new ArrayList<>(paramsData))) {
-                paramsData.setAll(rebuilt);
+            // Preserve disabled rows in the table
+            for (KeyValuePair disabled : disabledRows) {
+                if (!parsed.containsKey(disabled.getKey())) {
+                    rebuilt.add(disabled);
+                }
             }
+            paramsData.setAll(rebuilt);
+            ensurePlaceholderRow();
         } finally {
             syncingUrlAndParams = false;
         }
@@ -5884,7 +6323,10 @@ public class MainController implements Initializable {
 
         StringBuilder query = new StringBuilder();
         for (KeyValuePair kv : paramsData) {
-            if (kv.getKey() == null || kv.getKey().isEmpty()) {
+            if (!kv.isEnabled()) {
+                continue;
+            }
+            if (kv.getKey() == null || kv.getKey().trim().isEmpty()) {
                 continue;
             }
             if (query.length() > 0) {
@@ -5904,7 +6346,7 @@ public class MainController implements Initializable {
             try {
                 urlField.replaceText(newUrl);
             } finally {
-                syncingUrlAndParams = false;
+                Platform.runLater(() -> syncingUrlAndParams = false);
             }
         }
     }
@@ -6149,7 +6591,10 @@ public class MainController implements Initializable {
         state.authToken = getAuthTokenForPersistence();
         state.authUsername = usernameField.getText();
         state.authPassword = passwordField.getText();
-        state.params = new ArrayList<>(paramsData);
+        state.params = new ArrayList<>();
+        for (KeyValuePair kv : paramsData) {
+            state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+        }
         state.headers = new ArrayList<>(headersData);
         state.socketIoNamespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : "";
         state.socketIoEventName = socketIoEventNameField != null ? socketIoEventNameField.getText() : "";
@@ -6197,7 +6642,13 @@ public class MainController implements Initializable {
             loadAuthTokenForPersistence(authTypeCombo.getValue(), state.authToken);
             usernameField.replaceText(state.authUsername == null ? "" : state.authUsername);
             passwordField.setText(state.authPassword == null ? "" : state.authPassword);
-            paramsData.setAll(state.params);
+            paramsData.clear();
+            if (state.params != null && !state.params.isEmpty()) {
+                for (KeyValuePair kv : state.params) {
+                    paramsData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+                }
+            }
+            ensurePlaceholderRow();
             headersData.setAll(state.headers);
 
             if (socketIoNamespaceField != null) {
@@ -8195,14 +8646,49 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleAddParamRow() {
-        paramsData.add(new KeyValuePair("", "", ""));
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+
+        int targetIndex;
+        if (!paramsData.isEmpty() && paramsData.get(paramsData.size() - 1).isPlaceholder()) {
+            targetIndex = paramsData.size() - 1;
+            paramsData.add(targetIndex, newRow);
+        } else {
+            paramsData.add(newRow);
+            targetIndex = paramsData.size() - 1;
+        }
+
+        ensurePlaceholderRow();
+
+        pendingFocusParamRow = targetIndex;
+        paramsTable.getSelectionModel().clearSelection();
+        focusParamCell(targetIndex, 1);
+        onEditorFieldChanged();
     }
 
     @FXML
     private void handleDeleteParamRow() {
-        KeyValuePair selected = paramsTable.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            paramsData.remove(selected);
+        // Collect all rows marked by Select checkbox
+        List<KeyValuePair> toDelete = paramsData.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+
+        // If no explicit selection, fall back to the currently focused row
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = paramsTable.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+
+        if (!toDelete.isEmpty()) {
+            paramsData.removeAll(toDelete);
+            ensurePlaceholderRow();
+            syncParamsToUrl();
+            onEditorFieldChanged();
+            updateMasterCheckBox(paramsMasterCheckBox);
+            updateMasterSelectBox(paramsMasterSelectBox);
+            paramsTable.refresh();
         }
     }
 
@@ -9834,6 +10320,9 @@ public class MainController implements Initializable {
         private final SimpleStringProperty key;
         private final SimpleStringProperty value;
         private final SimpleStringProperty description;
+        private final SimpleBooleanProperty enabled;
+        private final SimpleBooleanProperty selected = new SimpleBooleanProperty(false);
+        private final SimpleBooleanProperty placeholder = new SimpleBooleanProperty(false);
         // Only meaningful for the form-data table — "Text" (default) or
         // "File". Every other table (params, headers, cookies...) just
         // never touches these.
@@ -9842,17 +10331,63 @@ public class MainController implements Initializable {
         private final SimpleStringProperty fileName = new SimpleStringProperty("");
 
         public KeyValuePair() {
-            this("", "", "");
+            this(true, "", "", "");
         }
 
         public KeyValuePair(String key, String value) {
-            this(key, value, "");
+            this(true, key, value, "");
         }
 
         public KeyValuePair(String key, String value, String description) {
-            this.key = new SimpleStringProperty(key);
-            this.value = new SimpleStringProperty(value);
-            this.description = new SimpleStringProperty(description);
+            this(true, key, value, description);
+        }
+
+        public KeyValuePair(boolean enabled, String key, String value, String description) {
+            this(enabled, key, value, description, false);
+        }
+
+        public KeyValuePair(boolean enabled, String key, String value, String description, boolean placeholder) {
+            this.enabled = new SimpleBooleanProperty(enabled);
+            this.key = new SimpleStringProperty(key != null ? key : "");
+            this.value = new SimpleStringProperty(value != null ? value : "");
+            this.description = new SimpleStringProperty(description != null ? description : "");
+            this.placeholder.set(placeholder);
+        }
+
+        public boolean isPlaceholder() {
+            return placeholder.get();
+        }
+
+        public SimpleBooleanProperty placeholderProperty() {
+            return placeholder;
+        }
+
+        public void setPlaceholder(boolean placeholder) {
+            this.placeholder.set(placeholder);
+        }
+
+        public boolean isEnabled() {
+            return enabled.get();
+        }
+
+        public SimpleBooleanProperty enabledProperty() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled.set(enabled);
+        }
+
+        public boolean isSelected() {
+            return selected.get();
+        }
+
+        public SimpleBooleanProperty selectedProperty() {
+            return selected;
+        }
+
+        public void setSelected(boolean selected) {
+            this.selected.set(selected);
         }
 
         public String getType() {

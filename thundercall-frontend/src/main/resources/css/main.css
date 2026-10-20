@@ -271,46 +271,201 @@
 .tab:selected .focus-indicator { -fx-border-color: transparent; }
 .tab-pane > .tab-content-area { -fx-background-color: transparent; -fx-padding: 8 0 0 0; }
 
+/* ============ Query Params title ============ */
+.params-section-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 6 2;
+}
+
 /* ============ Tables (params / headers / cookies / form-data) ============ */
 .key-value-table, .table-view {
     -fx-background-color: -bg-panel;
-    -fx-background-radius: 8;
+    -fx-background-radius: 6;
     -fx-border-color: -border-subtle;
-    -fx-border-radius: 8;
+    -fx-border-radius: 6;
     -fx-padding: 0;
 }
 .table-view .column-header-background {
     -fx-background-color: -bg-elevated;
-    -fx-background-radius: 8 8 0 0;
+    -fx-background-radius: 6 6 0 0;
     -fx-padding: 0;
 }
 .table-view .column-header {
     -fx-background-color: transparent;
-    -fx-border-color: transparent -border-subtle transparent transparent;
-    -fx-size: 30;
+    -fx-border-color: transparent -border-subtle -border-subtle transparent;
+    -fx-border-width: 0 1 1 0;
+    -fx-size: 32;
+    -fx-alignment: CENTER_LEFT;
 }
 .table-view .column-header .label {
     -fx-text-fill: -text-secondary;
     -fx-font-size: 11px;
     -fx-font-weight: bold;
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 0 0 0 10;
 }
-.table-view .filler { -fx-background-color: transparent; }
+.table-view .filler {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
+}
 .table-row-cell {
     -fx-background-color: transparent;
     -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
     -fx-table-cell-border-color: transparent;
-    -fx-cell-size: 32;
+    -fx-cell-size: 34;
 }
 .table-row-cell:hover { -fx-background-color: -bg-hover; }
-.table-row-cell:selected { -fx-background-color: -accent-soft; }
+.key-value-table .table-row-cell:selected {
+    -fx-background-color: transparent;
+}
+.key-value-table .table-row-cell:selected:hover {
+    -fx-background-color: -bg-hover;
+}
+.table-row-cell:row-selected {
+    -fx-background-color: rgba(255, 108, 55, 0.16);
+    -fx-border-color: transparent transparent #422a22 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.table-row-cell:row-selected:hover {
+    -fx-background-color: rgba(255, 108, 55, 0.22);
+}
 .table-row-cell:empty { -fx-background-color: transparent; -fx-border-color: transparent; }
+
+.table-row-cell:row-selected .table-cell {
+    -fx-background-color: transparent;
+}
+.table-row-cell:row-selected .param-cell-field {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+}
+.table-row-cell:row-selected .param-cell-field:focused {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -accent;
+    -fx-border-width: 1;
+}
+
 .table-cell {
     -fx-text-fill: -text-primary;
     -fx-font-size: 12px;
     -fx-padding: 6 10 6 10;
     -fx-alignment: CENTER_LEFT;
-    -fx-border-color: transparent;
+    -fx-border-color: transparent -border-subtle transparent transparent;
+    -fx-border-width: 0 1 0 0;
 }
+
+/* Specific cells with no inner padding so child fields / buttons fill them */
+.param-table-cell, .param-check-cell, .param-select-cell {
+    -fx-padding: 0;
+}
+.param-check-col, .param-check-cell,
+.param-select-col, .param-select-cell {
+    -fx-alignment: CENTER;
+}
+.param-check-col .label,
+.param-select-col .label {
+    -fx-alignment: CENTER;
+    -fx-padding: 0;
+}
+
+.table-view .column-header.param-check-col,
+.table-view .column-header.param-select-col {
+    -fx-alignment: CENTER;
+    -fx-padding: 0;
+}
+.table-view .column-header.param-check-col .label,
+.table-view .column-header.param-select-col .label {
+    -fx-alignment: CENTER;
+    -fx-padding: 0;
+}
+
+
+/* Param cell input field: single-click inline editing */
+.param-cell-field {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 6 10 6 10;
+    -fx-border-color: transparent;
+    -fx-border-radius: 0;
+    -fx-background-radius: 0;
+}
+.param-cell-field:focused {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -accent;
+    -fx-border-width: 1;
+}
+.param-cell-field .prompt-text {
+    -fx-text-fill: -text-muted;
+    -fx-font-style: italic;
+}
+
+/* Checkbox inside tables (Tick mark column) */
+.key-value-table .check-box {
+    -fx-alignment: CENTER;
+}
+.key-value-table .check-box .box {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: #555b68;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-min-width: 14px;
+    -fx-max-width: 14px;
+    -fx-min-height: 14px;
+    -fx-max-height: 14px;
+}
+.key-value-table .check-box:selected .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.key-value-table .check-box:selected .mark {
+    -fx-background-color: #ffffff;
+    -fx-shape: "M3.8 6.5 L1.8 4.5 L0.5 5.8 L3.8 9.1 L11 1.9 L9.7 0.6 Z";
+}
+.key-value-table .check-box:indeterminate .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.key-value-table .check-box:indeterminate .mark {
+    -fx-background-color: #ffffff;
+    -fx-shape: "M2 5 L10 5 L10 7 L2 7 Z";
+}
+
+/* Row selection checkbox styling */
+.param-select-cell .check-box .box {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-min-width: 14px;
+    -fx-max-width: 14px;
+    -fx-min-height: 14px;
+    -fx-max-height: 14px;
+}
+.param-select-cell .check-box:hover .box {
+    -fx-border-color: -accent;
+    -fx-background-color: -bg-hover;
+}
+.param-select-cell .check-box:selected .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.param-select-cell .check-box:selected .mark {
+    -fx-background-color: #ffffff;
+    -fx-shape: "M3.8 6.5 L1.8 4.5 L0.5 5.8 L3.8 9.1 L11 1.9 L9.7 0.6 Z";
+}
+.param-select-cell .check-box:indeterminate .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.param-select-cell .check-box:indeterminate .mark {
+    -fx-background-color: #ffffff;
+    -fx-shape: "M2 5 L10 5 L10 7 L2 7 Z";
+}
+
 .table-cell .text-field {
     -fx-background-color: -bg-elevated;
     -fx-text-fill: -text-primary;
@@ -884,9 +1039,9 @@
     -fx-text-fill: -text-primary;
 }
 .tab-unsaved-dot {
-    -fx-text-fill: -accent;
-    -fx-font-size: 9px;
-    -fx-padding: 0 0 0 2;
+    -fx-text-fill: #ff6c37;
+    -fx-font-size: 13px;
+    -fx-padding: 0 0 0 4;
 }
 
 /* ============================================================
