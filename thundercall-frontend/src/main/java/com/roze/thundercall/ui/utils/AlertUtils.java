@@ -1,5 +1,6 @@
 package com.roze.thundercall.ui.utils;
 
+import com.roze.thundercall.ui.Main;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
@@ -42,6 +43,9 @@ public class AlertUtils {
             alert.setTitle(title);
             alert.setContentText(message);
             alert.setHeaderText(null);
+            if (Main.getPrimaryStage() != null) {
+                alert.initOwner(Main.getPrimaryStage());
+            }
             ThemeManager.styleDialog(alert.getDialogPane());
             alert.showAndWait();
         });
@@ -56,6 +60,9 @@ public class AlertUtils {
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message);
+        if (Main.getPrimaryStage() != null) {
+            alert.initOwner(Main.getPrimaryStage());
+        }
         ThemeManager.styleDialog(alert.getDialogPane());
         Optional<ButtonType> result = alert.showAndWait();
         return result.isPresent() && result.get() == ButtonType.OK;

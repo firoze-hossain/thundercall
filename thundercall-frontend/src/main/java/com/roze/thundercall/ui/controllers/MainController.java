@@ -2483,7 +2483,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(12, mainRow, statusLabel);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         // Save asynchronously and only close on success — consuming the
         // event keeps the dialog open so an error is actually visible.
@@ -2893,7 +2893,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         content.setPrefWidth(360);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(button -> {
             if (button != ButtonType.OK) {
@@ -2922,7 +2922,7 @@ public class MainController implements Initializable {
         dialog.setTitle("Join a Team");
         dialog.setHeaderText("Enter the invite code from your invitation email");
         dialog.setContentText("Invite code:");
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(token -> {
             String trimmed = token == null ? "" : token.trim();
@@ -3205,7 +3205,7 @@ public class MainController implements Initializable {
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(520);
         dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         dialog.showAndWait();
     }
 
@@ -3271,7 +3271,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         content.setPrefWidth(360);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(button -> {
             if (button != ButtonType.OK) {
@@ -3422,7 +3422,7 @@ public class MainController implements Initializable {
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(520);
         dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         dialog.showAndWait();
     }
 
@@ -3467,7 +3467,7 @@ public class MainController implements Initializable {
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(480);
         dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(button -> {
             if (button != ButtonType.OK) {
@@ -3636,7 +3636,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         content.setPrefWidth(380);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         // Populate the collection/environment pickers in the background so the
         // dialog itself opens instantly.
@@ -3803,7 +3803,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(10, actions, new Separator(), new Label("Run History"), runsTable, statusLabel);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         dialog.showAndWait();
     }
 
@@ -4072,7 +4072,7 @@ public class MainController implements Initializable {
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(560);
         dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         Runnable[] refreshLists = new Runnable[1];
         refreshLists[0] = () -> {
@@ -4200,7 +4200,7 @@ public class MainController implements Initializable {
         dialog.setTitle("Enter Invite Code");
         dialog.setHeaderText("Paste the invite code from the email you received.");
         dialog.setContentText("Code:");
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(code -> {
             String trimmed = code == null ? "" : code.trim();
@@ -4249,7 +4249,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(10, new Label("Visible to this member:"), checklist);
         content.setPadding(new Insets(10));
         popup.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(popup.getDialogPane());
+        initAndStyleDialog(popup);
         popup.showAndWait();
     }
 
@@ -4396,7 +4396,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(16));
         content.setPrefWidth(560);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         if (canSend) {
             tree.setOnMouseClicked(e -> {
@@ -4557,7 +4557,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(16));
         content.setPrefWidth(520);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         dialog.showAndWait();
     }
 
@@ -4665,7 +4665,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(16));
         content.setPrefWidth(580);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         sendBtn.setOnAction(e -> {
             statusLabel.setText("Sending…");
@@ -5122,7 +5122,7 @@ public class MainController implements Initializable {
             dialog.setTitle("Rename Environment");
             dialog.setHeaderText("Rename \"" + env.getName() + "\"");
             dialog.setContentText("New name:");
-            ThemeManager.styleDialog(dialog.getDialogPane());
+            initAndStyleDialog(dialog);
             dialog.showAndWait().ifPresent(newName -> {
                 if (newName == null || newName.isBlank() || newName.equals(env.getName())) {
                     return;
@@ -5358,7 +5358,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(10, table, buttons);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(button -> {
             if (button == ButtonType.OK) {
@@ -6179,7 +6179,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(8, searchField, results);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         refresh.run();
         Platform.runLater(searchField::requestFocus);
         dialog.showAndWait();
@@ -6268,35 +6268,83 @@ public class MainController implements Initializable {
         }
     }
 
+    /**
+     * Centers a dialog over the main application window and applies the active theme stylesheet.
+     * Prevents dialogs from opening unanchored at (0, 0) or overflowing the display edges.
+     */
+    private void initAndStyleDialog(Dialog<?> dialog) {
+        if (dialog == null) {
+            return;
+        }
+        Window owner = Main.getPrimaryStage();
+        if (owner == null && collectionsTree != null && collectionsTree.getScene() != null) {
+            owner = collectionsTree.getScene().getWindow();
+        }
+        if (owner != null) {
+            dialog.initOwner(owner);
+        }
+        ThemeManager.styleDialog(dialog.getDialogPane());
+    }
+
     @FXML
     private void handleNewCollection() {
         if (!WorkspaceManager.canEditCurrentWorkspace()) {
             AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
             return;
         }
-        TextInputDialog nameDialog = new TextInputDialog();
-        nameDialog.setTitle("New Collection");
-        nameDialog.setHeaderText("Create a new Collection");
-        nameDialog.setContentText("Collection Name: ");
 
-        Optional<String> nameResult = nameDialog.showAndWait();
-        nameResult.ifPresent(name -> {
-            if (!name.trim().isEmpty()) {
-                TextInputDialog descDialog = new TextInputDialog();
-                descDialog.setTitle("Collection Description");
-                descDialog.setHeaderText("Add a description (optional)");
-                descDialog.setContentText("Description: ");
+        Dialog<CollectionRequest> dialog = new Dialog<>();
+        dialog.setTitle("New Collection");
+        dialog.setHeaderText("Create a new collection to organize your requests");
 
-                descDialog.showAndWait().ifPresent(description -> {
-                    CollectionRequest request = CollectionRequest.builder()
-                            .name(name)
-                            .description(description)
-                            .workspaceId(WorkspaceManager.hasWorkspace() ? WorkspaceManager.getCurrentWorkspace().getId() : null)
-                            .build();
-                    createNewCollection(request);
-                });
+        initAndStyleDialog(dialog);
+
+        ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
+
+        Label nameLabel = new Label("Collection Name *");
+        nameLabel.setStyle("-fx-font-weight: bold;");
+        TextField nameField = new TextField();
+        nameField.setPromptText("e.g. Users API, Auth Service, Payment Gateway");
+
+        Label descLabel = new Label("Description (optional)");
+        descLabel.setStyle("-fx-font-weight: bold;");
+        TextArea descArea = new TextArea();
+        descArea.setPromptText("What requests are grouped in this collection?");
+        descArea.setPrefRowCount(3);
+        descArea.setWrapText(true);
+
+        VBox content = new VBox(10, nameLabel, nameField, descLabel, descArea);
+        content.setPadding(new Insets(14));
+        content.setPrefWidth(420);
+        dialog.getDialogPane().setContent(content);
+        dialog.setResizable(true);
+
+        Node createBtn = dialog.getDialogPane().lookupButton(createButtonType);
+        if (createBtn != null) {
+            createBtn.setDisable(true);
+            nameField.textProperty().addListener((obs, oldV, newV) -> {
+                createBtn.setDisable(newV == null || newV.trim().isEmpty());
+            });
+        }
+
+        Platform.runLater(nameField::requestFocus);
+
+        dialog.setResultConverter(button -> {
+            if (button == createButtonType) {
+                String name = nameField.getText() == null ? "" : nameField.getText().trim();
+                String desc = descArea.getText() == null ? "" : descArea.getText().trim();
+                return CollectionRequest.builder()
+                        .name(name)
+                        .description(desc)
+                        .workspaceId(WorkspaceManager.hasWorkspace() ? WorkspaceManager.getCurrentWorkspace().getId() : null)
+                        .build();
             }
+            return null;
         });
+
+        Optional<CollectionRequest> result = dialog.showAndWait();
+        result.ifPresent(this::createNewCollection);
     }
 
     private void createNewCollection(CollectionRequest request) {
@@ -6330,31 +6378,43 @@ public class MainController implements Initializable {
             AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
             return;
         }
+
         // Create a custom dialog for environment creation
         Dialog<EnvironmentCreationData> dialog = new Dialog<>();
         dialog.setTitle("Create New Environment");
         dialog.setHeaderText("Create a new environment with custom variables");
 
+        // Set owner to center the dialog over the application window and apply theme
+        initAndStyleDialog(dialog);
+
         // Set the button types
         ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
 
-        // Create the form layout
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
+        // Name field
+        Label nameLabel = new Label("Environment Name *");
+        nameLabel.setStyle("-fx-font-weight: bold;");
         TextField nameField = new TextField();
-        nameField.setPromptText("Environment name");
+        nameField.setPromptText("e.g. Development, Staging, Production");
+
+        // Description area
+        Label descriptionLabel = new Label("Description (optional)");
+        descriptionLabel.setStyle("-fx-font-weight: bold;");
         TextArea descriptionArea = new TextArea();
-        descriptionArea.setPromptText("Description (optional)");
-        descriptionArea.setPrefRowCount(3);
+        descriptionArea.setPromptText("What is this environment for?");
+        descriptionArea.setPrefRowCount(2);
+        descriptionArea.setWrapText(true);
 
         // Variables table
+        Label variablesLabel = new Label("Variables");
+        variablesLabel.setStyle("-fx-font-weight: bold;");
+
         TableView<Variable> variablesTable = new TableView<>();
-        variablesTable.setPrefHeight(200);
-        variablesTable.setEditable(true); // Make table editable
+        variablesTable.setPrefHeight(170);
+        variablesTable.setMaxHeight(220);
+        variablesTable.setEditable(true);
+        variablesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        variablesTable.setPlaceholder(new Label("No variables yet. Click 'Add Variable' below to add one."));
 
         // Variable Name column with editable text field
         TableColumn<Variable, String> nameCol = new TableColumn<>("Variable Name");
@@ -6362,17 +6422,23 @@ public class MainController implements Initializable {
         nameCol.setCellFactory(TextFieldTableCell.forTableColumn());
         nameCol.setOnEditCommit(event -> {
             Variable variable = event.getRowValue();
-            variable.setName(event.getNewValue());
+            if (variable != null) {
+                variable.setName(event.getNewValue());
+            }
         });
+        nameCol.setPrefWidth(190);
 
         // Value column with editable text field
-        TableColumn<Variable, String> valueCol = new TableColumn<>("Value");
+        TableColumn<Variable, String> valueCol = new TableColumn<>("Initial Value");
         valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
         valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
         valueCol.setOnEditCommit(event -> {
             Variable variable = event.getRowValue();
-            variable.setValue(event.getNewValue());
+            if (variable != null) {
+                variable.setValue(event.getNewValue());
+            }
         });
+        valueCol.setPrefWidth(260);
 
         variablesTable.getColumns().addAll(nameCol, valueCol);
 
@@ -6395,29 +6461,55 @@ public class MainController implements Initializable {
             }
         });
 
-        HBox buttonBox = new HBox(10, addVarButton, removeVarButton);
+        HBox buttonBox = new HBox(8, addVarButton, removeVarButton);
         buttonBox.setAlignment(Pos.CENTER_LEFT);
 
-        grid.add(new Label("Name:"), 0, 0);
-        grid.add(nameField, 1, 0);
-        grid.add(new Label("Description:"), 0, 1);
-        grid.add(descriptionArea, 1, 1);
-        grid.add(new Label("Variables:"), 0, 2);
-        grid.add(variablesTable, 1, 2);
-        grid.add(buttonBox, 1, 3);
+        VBox formContent = new VBox(8,
+                nameLabel, nameField,
+                descriptionLabel, descriptionArea,
+                variablesLabel, variablesTable,
+                buttonBox
+        );
+        formContent.setPadding(new Insets(14));
+        formContent.setPrefWidth(490);
 
-        dialog.getDialogPane().setContent(grid);
+        // Wrap in ScrollPane so it gracefully fits any screen height without overflowing offscreen
+        ScrollPane scrollPane = new ScrollPane(formContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setMaxHeight(450);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+
+        dialog.getDialogPane().setContent(scrollPane);
+        dialog.getDialogPane().setPrefWidth(520);
+        dialog.setResizable(true);
+
+        // Apply theme styling (dark/light) consistent with the rest of Thundercall
+        ThemeManager.styleDialog(dialog.getDialogPane());
+
+        // Validate Create button - only enable if environment name is provided
+        Node createBtn = dialog.getDialogPane().lookupButton(createButtonType);
+        if (createBtn != null) {
+            createBtn.setDisable(true);
+            nameField.textProperty().addListener((obs, oldV, newV) -> {
+                createBtn.setDisable(newV == null || newV.trim().isEmpty());
+            });
+        }
 
         // Convert the result to EnvironmentCreationData when create button is clicked
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == createButtonType) {
-                Map<String, String> variables = variablesTable.getItems().stream()
-                        .filter(v -> v.getName() != null && !v.getName().trim().isEmpty())
-                        .collect(Collectors.toMap(Variable::getName, Variable::getValue));
+                Map<String, String> variables = new LinkedHashMap<>();
+                for (Variable v : variablesTable.getItems()) {
+                    if (v.getName() != null && !v.getName().trim().isEmpty()) {
+                        variables.put(v.getName().trim(), v.getValue() != null ? v.getValue() : "");
+                    }
+                }
 
                 return new EnvironmentCreationData(
                         nameField.getText().trim(),
-                        descriptionArea.getText().trim(),
+                        descriptionArea.getText() != null ? descriptionArea.getText().trim() : "",
                         variables
                 );
             }
@@ -6645,6 +6737,7 @@ public class MainController implements Initializable {
         dialog.setTitle("Save Request");
         dialog.setHeaderText("Save current request to collection");
         dialog.setContentText("Request name: ");
+        initAndStyleDialog(dialog);
         Optional<String> result = dialog.showAndWait();
         return result.orElse(null);
     }
@@ -7831,7 +7924,7 @@ public class MainController implements Initializable {
                     ? "Create a folder inside \"" + selectedItem.getValue() + "\""
                     : "Create a new folder");
             dialog.setContentText("Folder name:");
-            ThemeManager.styleDialog(dialog.getDialogPane());
+            initAndStyleDialog(dialog);
 
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(name -> {
@@ -7852,6 +7945,7 @@ public class MainController implements Initializable {
             dialog.setTitle("Rename");
             dialog.setHeaderText("Rename this item");
             dialog.setContentText("New name:");
+            initAndStyleDialog(dialog);
 
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(newName -> {
@@ -8836,7 +8930,7 @@ public class MainController implements Initializable {
                 dialog.setTitle("Select Collection");
                 dialog.setHeaderText("Choose a collection for the new request");
                 dialog.setContentText("Collection:");
-                ThemeManager.styleDialog(dialog.getDialogPane());
+                initAndStyleDialog(dialog);
 
                 Optional<String> result = dialog.showAndWait();
                 result.ifPresent(name -> collections.stream()
@@ -8870,7 +8964,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         Platform.runLater(nameField::requestFocus);
 
         dialog.setResultConverter(button -> button == ButtonType.OK
