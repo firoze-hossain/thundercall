@@ -30,7 +30,8 @@ public class Request {
     @Column(nullable = false)
     private HttpMethod method;
     @Column(nullable = false, length = 2000)
-    private String url;
+    @Builder.Default
+    private String url = "";
     @Column(columnDefinition = "TEXT")
     private String headers;
     @Column(columnDefinition = "TEXT")

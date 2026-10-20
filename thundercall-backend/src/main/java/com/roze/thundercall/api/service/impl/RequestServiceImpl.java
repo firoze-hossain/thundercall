@@ -170,6 +170,9 @@ public class RequestServiceImpl implements RequestService {
             }
         }
         Request request = requestMapper.toEntity(apiRequest);
+        if (request.getUrl() == null) {
+            request.setUrl("");
+        }
         request.setCollection(collection);
         if (folder != null) {
             request.setFolder(folder);
@@ -192,7 +195,7 @@ public class RequestServiceImpl implements RequestService {
             request.setName(apiRequest.name());
         }
         request.setMethod(apiRequest.method());
-        request.setUrl(apiRequest.url());
+        request.setUrl(apiRequest.url() != null ? apiRequest.url() : "");
         request.setHeaders(apiRequest.headers());
         request.setBody(apiRequest.body());
         request.setPreRequestScript(apiRequest.preRequestScript());

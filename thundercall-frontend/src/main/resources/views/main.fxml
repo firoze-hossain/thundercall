@@ -436,19 +436,24 @@
                              tabClosingPolicy="ALL_TABS"
                              minHeight="36" prefHeight="36" maxHeight="36"/>
                     <HBox styleClass="url-bar" spacing="8" alignment="CENTER_LEFT">
-                        <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"/>
-                        <StackPane HBox.hgrow="ALWAYS" alignment="CENTER_LEFT">
+                        <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"
+                                  minHeight="38" prefHeight="38" maxHeight="38"/>
+                        <StackPane HBox.hgrow="ALWAYS" alignment="CENTER_LEFT"
+                                   minHeight="38" prefHeight="38" maxHeight="38">
+                            <CodeArea fx:id="urlField" styleClass="url-field"
+                                      minHeight="38" prefHeight="38" maxHeight="38"/>
                             <Label fx:id="urlPromptLabel" styleClass="url-prompt-label"
-                                   text="Enter URL or paste text — use {{variables}} from the selected environment"
+                                   text="Enter URL or paste text"
                                    mouseTransparent="true"/>
-                            <CodeArea fx:id="urlField" styleClass="url-field"/>
                         </StackPane>
-                        <Button text="Send" fx:id="sendBtn" styleClass="send-button" onAction="#handleSendRequest"/>
+                        <Button text="Send" fx:id="sendBtn" styleClass="send-button"
+                                minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleSendRequest"/>
                         <Button text="Connect" fx:id="wsConnectBtn" styleClass="send-button" visible="false" managed="false"
-                                onAction="#handleWsConnectToggle"/>
+                                minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleWsConnectToggle"/>
                         <Button text="Connect" fx:id="socketIoConnectBtn" styleClass="send-button" visible="false" managed="false"
-                                onAction="#handleSocketIoConnectToggle"/>
-                        <Button styleClass="icon-button" onAction="#handleSaveRequest">
+                                minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleSocketIoConnectToggle"/>
+                        <Button styleClass="icon-button" onAction="#handleSaveRequest"
+                                minHeight="38" prefHeight="38" maxHeight="38" prefWidth="38">
                             <tooltip>
                                 <Tooltip text="Save request"/>
                             </tooltip>
@@ -458,7 +463,8 @@
                                 </ImageView>
                             </graphic>
                         </Button>
-                        <Button styleClass="icon-button" onAction="#handleSamplePostRequest">
+                        <Button styleClass="icon-button" onAction="#handleSamplePostRequest"
+                                minHeight="38" prefHeight="38" maxHeight="38" prefWidth="38">
                             <tooltip>
                                 <Tooltip text="Load sample POST request"/>
                             </tooltip>
@@ -535,9 +541,9 @@
                                         <VBox fx:id="bearerAuthBox" spacing="6" managed="false" visible="false">
                                             <Label text="Token" styleClass="scripts-section-label"/>
                                             <StackPane>
+                                                <CodeArea fx:id="tokenField" styleClass="url-field"/>
                                                 <Label fx:id="tokenPromptLabel" styleClass="url-prompt-label"
                                                        text="{{Token}} or paste a token" mouseTransparent="true"/>
-                                                <CodeArea fx:id="tokenField" styleClass="url-field"/>
                                             </StackPane>
                                         </VBox>
                                         <!-- Basic Auth -->
@@ -545,9 +551,9 @@
                                             <VBox spacing="6">
                                                 <Label text="Username" styleClass="scripts-section-label"/>
                                                 <StackPane>
+                                                    <CodeArea fx:id="usernameField" styleClass="url-field"/>
                                                     <Label fx:id="usernamePromptLabel" styleClass="url-prompt-label"
                                                            text="Username or {{variable}}" mouseTransparent="true"/>
-                                                    <CodeArea fx:id="usernameField" styleClass="url-field"/>
                                                 </StackPane>
                                             </VBox>
                                             <VBox spacing="6">

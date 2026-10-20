@@ -1028,8 +1028,16 @@ public class MainController implements Initializable {
      * same autocomplete-and-auto-close behavior as the body editor. */
     private void setupUrlField() {
         urlField.setWrapText(false);
+        // Single-line URL bar: keep vertically locked so text/underscores never clip or shift
+        urlField.showParagraphAtTop(0);
+        urlField.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
+            if (e.getDeltaY() != 0) {
+                e.consume(); // prevent vertical scrolling inside the single-line URL field
+            }
+        });
         urlField.plainTextChanges().subscribe(change -> {
             urlField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(urlField.getText()));
+            urlField.showParagraphAtTop(0);
             if (!syncingUrlAndParams) {
                 syncUrlToParams();
             }
@@ -1038,11 +1046,15 @@ public class MainController implements Initializable {
         if (urlPromptLabel != null) {
             urlPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> urlField.getText().isEmpty(), urlField.textProperty()));
+                            () -> urlField.getText().isEmpty() && !urlField.isFocused(),
+                            urlField.textProperty(),
+                            urlField.focusedProperty()));
         }
-        // Enter in the URL bar sends the request, like Postman
+        // Enter in the URL bar sends the request, like Postman; Up/Down prevented from vertical scrolling
         urlField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+            if (e.getCode() == javafx.scene.input.KeyCode.UP || e.getCode() == javafx.scene.input.KeyCode.DOWN) {
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
                 handleSendRequest();
                 e.consume();
             }
@@ -1537,7 +1549,9 @@ public class MainController implements Initializable {
         if (tokenPromptLabel != null) {
             tokenPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> tokenField.getText().isEmpty(), tokenField.textProperty()));
+                            () -> tokenField.getText().isEmpty() && !tokenField.isFocused(),
+                            tokenField.textProperty(),
+                            tokenField.focusedProperty()));
         }
 
         usernameField.setWrapText(false);
@@ -1547,7 +1561,9 @@ public class MainController implements Initializable {
         if (usernamePromptLabel != null) {
             usernamePromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> usernameField.getText().isEmpty(), usernameField.textProperty()));
+                            () -> usernameField.getText().isEmpty() && !usernameField.isFocused(),
+                            usernameField.textProperty(),
+                            usernameField.focusedProperty()));
         }
 
         // Any edit to the auth fields marks the tab unsaved, same as url/body
@@ -2261,8 +2277,14 @@ public class MainController implements Initializable {
                     state.name = requestResponse.getName();
                     state.requestId = requestResponse.getId();
                 }
-                methodCombo.setValue(requestResponse.getMethod().name());
-                urlField.replaceText(requestResponse.getUrl() != null ? requestResponse.getUrl() : "");
+                String reqUrl = requestResponse.getUrl();
+                if (reqUrl == null || reqUrl.isEmpty()
+                        || "https://api.example.com/endpoint".equalsIgnoreCase(reqUrl.trim())
+                        || "Enter URL or paste text".equalsIgnoreCase(reqUrl.trim())) {
+                    urlField.replaceText("");
+                } else {
+                    urlField.replaceText(reqUrl);
+                }
 
                 // Load headers
                 if (requestResponse.getHeaders() != null && !requestResponse.getHeaders().isEmpty()) {
@@ -5876,7 +5898,14 @@ public class MainController implements Initializable {
         restoringTabState = true;
         try {
             methodCombo.setValue(state.method == null ? "GET" : state.method);
-            urlField.replaceText(state.url == null ? "" : state.url);
+            String stateUrl = state.url;
+            if (stateUrl == null || stateUrl.isEmpty()
+                    || "https://api.example.com/endpoint".equalsIgnoreCase(stateUrl.trim())
+                    || "Enter URL or paste text".equalsIgnoreCase(stateUrl.trim())) {
+                urlField.replaceText("");
+            } else {
+                urlField.replaceText(stateUrl);
+            }
             bodyTextArea.replaceText(state.body == null ? "" : state.body);
             if (preRequestScriptsArea != null) {
                 preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
@@ -9402,20 +9431,26 @@ public class MainController implements Initializable {
                     ApiRequest apiRequest = new ApiRequest();
                     apiRequest.setName(name);
                     apiRequest.setMethod(HttpMethod.valueOf(method));
-                    apiRequest.setUrl("https://api.example.com/endpoint");
+                    apiRequest.setUrl("");
                     apiRequest.setHeaders("{}");
                     apiRequest.setBody("");
                     apiRequest.setCollectionId(collectionId);
                     apiRequest.setFolderId(folderId);
 
                     Optional<RequestResponse> savedRequest = RequestService.saveRequest(apiRequest);
+                    if (savedRequest.isEmpty()) {
+                        // Fallback in case remote backend requires non-blank URL
+                        apiRequest.setUrl("https://api.example.com/endpoint");
+                        savedRequest = RequestService.saveRequest(apiRequest);
+                    }
                     if (savedRequest.isPresent()) {
+                        final RequestResponse createdRequest = savedRequest.get();
                         Platform.runLater(() -> {
                             refreshCollectionsTree();
                             updateStatus("Request created: " + name);
                             // Open the new request in its own tab, like Postman
-                            openRequestTab(name, savedRequest.get().getId(), method);
-                            loadRequestIntoUI(savedRequest.get());
+                            openRequestTab(name, createdRequest.getId(), method);
+                            loadRequestIntoUI(createdRequest);
                         });
                     } else {
                         Platform.runLater(() -> {

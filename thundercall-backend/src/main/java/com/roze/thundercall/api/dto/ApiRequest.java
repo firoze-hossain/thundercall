@@ -10,7 +10,7 @@ public record ApiRequest(
         String name,
         String description,
         @NotNull HttpMethod method,
-        @NotBlank String url,
+        String url,
         String headers,
         String body,
         Long collectionId,
