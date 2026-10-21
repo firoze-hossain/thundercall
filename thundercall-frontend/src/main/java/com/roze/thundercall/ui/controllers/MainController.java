@@ -32,6 +32,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
+import javafx.stage.Stage;
 import javafx.stage.Window;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
@@ -6237,6 +6238,7 @@ public class MainController implements Initializable {
      * with no equivalent in a self-hosted single-user tool like this). */
     private void setupEnvironmentsContextMenu() {
         ContextMenu menu = new ContextMenu();
+        MenuItem editItem = new MenuItem("Edit Environment");
         MenuItem renameItem = new MenuItem("Rename");
         MenuItem duplicateItem = new MenuItem("Duplicate");
         MenuItem exportItem = new MenuItem("Export as JSON");
@@ -6244,6 +6246,13 @@ public class MainController implements Initializable {
         deleteItem.getStyleClass().add("danger-menu-item");
         renameItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+E"));
         duplicateItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+D"));
+
+        editItem.setOnAction(e -> {
+            EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
+            if (env != null) {
+                openEnvironmentEditor(env);
+            }
+        });
 
         renameItem.setOnAction(e -> {
             EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
@@ -6325,7 +6334,7 @@ public class MainController implements Initializable {
             }).start();
         });
 
-        menu.getItems().addAll(renameItem, duplicateItem, new SeparatorMenuItem(), exportItem,
+        menu.getItems().addAll(editItem, new SeparatorMenuItem(), renameItem, duplicateItem, new SeparatorMenuItem(), exportItem,
                 new SeparatorMenuItem(), deleteItem);
 
         // Only show the menu when right-clicking an actual row, and select
@@ -6445,67 +6454,596 @@ public class MainController implements Initializable {
         }
     }
 
+    // ==================== Environment Variables Table & Dialogs ====================
+
+    private TableView<KeyValuePair> createVariablesTable(
+            ObservableList<KeyValuePair> data,
+            String nameColumnTitle,
+            String valueColumnTitle,
+            CheckBox masterCheckBox,
+            CheckBox masterSelectBox,
+            int[] pendingFocus) {
+
+        TableView<KeyValuePair> table = new TableView<>();
+        table.getStyleClass().add("key-value-table");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setItems(data);
+        table.setEditable(true);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        table.setPrefHeight(200);
+        table.setMinHeight(160);
+
+        table.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        // 1. Tick mark master checkbox
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : data) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            table.refresh();
+        });
+
+        // 1. Tick mark column (38px)
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        updateVariableMasterCheckBox(data, masterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Variable Name column
+        TableColumn<KeyValuePair, String> varCol = new TableColumn<>(nameColumnTitle != null ? nameColumnTitle : "Variable Name");
+        varCol.setMinWidth(140);
+        varCol.setPrefWidth(200);
+        varCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        varCol.setCellFactory(col -> createVariableCell(table, data, "Variable Name", 0,
+                KeyValuePair::getKey, KeyValuePair::setKey, masterCheckBox, masterSelectBox, pendingFocus));
+
+        // 3. Value column
+        TableColumn<KeyValuePair, String> valCol = new TableColumn<>(valueColumnTitle != null ? valueColumnTitle : "Value");
+        valCol.setMinWidth(140);
+        valCol.setPrefWidth(240);
+        valCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valCol.setCellFactory(col -> createVariableCell(table, data, "Value", 1,
+                KeyValuePair::getValue, KeyValuePair::setValue, masterCheckBox, masterSelectBox, pendingFocus));
+
+        // 4. Select master checkbox
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : data) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            table.getSelectionModel().clearSelection();
+            table.refresh();
+        });
+
+        // 4. Select column (38px)
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateVariableMasterSelectBox(data, masterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        table.getColumns().addAll(checkCol, varCol, valCol, selectCol);
+
+        // Context menu
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Variable");
+        MenuItem deleteItem = new MenuItem("Delete Variable");
+        addItem.setOnAction(e -> addVariableRow(table, data, pendingFocus));
+        deleteItem.setOnAction(e -> removeSelectedVariables(table, data, masterCheckBox, masterSelectBox));
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        table.setContextMenu(contextMenu);
+
+        ensureVariablePlaceholderRow(data);
+        updateVariableMasterCheckBox(data, masterCheckBox);
+        updateVariableMasterSelectBox(data, masterSelectBox);
+
+        return table;
+    }
+
+    private TableCell<KeyValuePair, String> createVariableCell(
+            TableView<KeyValuePair> table,
+            ObservableList<KeyValuePair> data,
+            String placeholder,
+            int colIndex,
+            Function<KeyValuePair, String> getter,
+            BiConsumer<KeyValuePair, String> setter,
+            CheckBox masterCheckBox,
+            CheckBox masterSelectBox,
+            int[] pendingFocus) {
+
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    String safeVal = newVal != null ? newVal : "";
+                    setter.accept(row, safeVal);
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureVariablePlaceholderRow(data);
+                        updateVariableMasterCheckBox(data, masterCheckBox);
+                        updateVariableMasterSelectBox(data, masterSelectBox);
+                    }
+                });
+
+                textField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                    if (e.isConsumed()) {
+                        return;
+                    }
+                    if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                        e.consume();
+                        int rowIndex = getIndex();
+                        if (colIndex == 0) {
+                            focusVariableCell(table, rowIndex, 2);
+                        } else {
+                            int nextRow = rowIndex + 1;
+                            if (nextRow < data.size()) {
+                                focusVariableCell(table, nextRow, 1);
+                            }
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    if (colIndex == 0 && pendingFocus[0] == getIndex()) {
+                        pendingFocus[0] = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusVariableCell(TableView<KeyValuePair> table, int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            table.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < table.getColumns().size()) {
+                table.getFocusModel().focus(rowIdx, table.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < table.getColumns().size()) {
+                    var targetCol = table.getColumns().get(colIdx);
+                    for (Node n : table.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void addVariableRow(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data, int[] pendingFocus) {
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+
+        int targetIndex;
+        if (!data.isEmpty() && data.get(data.size() - 1).isPlaceholder()) {
+            targetIndex = data.size() - 1;
+            data.add(targetIndex, newRow);
+        } else {
+            data.add(newRow);
+            targetIndex = data.size() - 1;
+        }
+
+        ensureVariablePlaceholderRow(data);
+        pendingFocus[0] = targetIndex;
+        table.getSelectionModel().clearSelection();
+        focusVariableCell(table, targetIndex, 1);
+    }
+
+    private void removeSelectedVariables(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data,
+                                         CheckBox masterCheckBox, CheckBox masterSelectBox) {
+        List<KeyValuePair> toDelete = data.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = table.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+
+        if (!toDelete.isEmpty()) {
+            data.removeAll(toDelete);
+            ensureVariablePlaceholderRow(data);
+            updateVariableMasterCheckBox(data, masterCheckBox);
+            updateVariableMasterSelectBox(data, masterSelectBox);
+            table.refresh();
+        }
+    }
+
+    private void ensureVariablePlaceholderRow(ObservableList<KeyValuePair> data) {
+        if (data.isEmpty()) {
+            data.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        while (data.size() > 1) {
+            KeyValuePair last = data.get(data.size() - 1);
+            KeyValuePair secondLast = data.get(data.size() - 2);
+            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
+                data.remove(data.size() - 1);
+            } else {
+                break;
+            }
+        }
+        KeyValuePair last = data.get(data.size() - 1);
+        if (!last.isPlaceholder()) {
+            data.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateVariableMasterCheckBox(ObservableList<KeyValuePair> data, CheckBox masterCheckBox) {
+        if (masterCheckBox == null) return;
+        long totalActive = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateVariableMasterSelectBox(ObservableList<KeyValuePair> data, CheckBox masterSelectBox) {
+        if (masterSelectBox == null) return;
+        long totalActive = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
+    }
+
+    private HBox createVariablesButtonBar(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data,
+                                          CheckBox masterCheckBox, CheckBox masterSelectBox, int[] pendingFocus) {
+        Button addVarButton = new Button("+ Add Variable");
+        addVarButton.getStyleClass().add("add-row-button");
+        addVarButton.setOnAction(e -> addVariableRow(table, data, pendingFocus));
+
+        Button removeVarButton = new Button("Remove Selected");
+        removeVarButton.getStyleClass().add("delete-row-button");
+        removeVarButton.setOnAction(e -> removeSelectedVariables(table, data, masterCheckBox, masterSelectBox));
+
+        HBox buttonBox = new HBox(8, addVarButton, removeVarButton);
+        buttonBox.setAlignment(Pos.CENTER_LEFT);
+        buttonBox.setPadding(new Insets(4, 0, 0, 0));
+        return buttonBox;
+    }
+
     /** Postman-style variable editor: key/value table with add/delete/save. */
     private void openEnvironmentEditor(EnvironmentResponse env) {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Environment");
-        dialog.setHeaderText("Variables of \"" + env.getName() + "\"");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
-        TableView<KeyValuePair> table = new TableView<>();
-        ObservableList<KeyValuePair> data = FXCollections.observableArrayList();
-        if (env.getVariables() != null) {
-            env.getVariables().forEach((k, v) -> data.add(new KeyValuePair(k, v, "")));
-        }
-        table.setItems(data);
-        table.setEditable(true);
-        table.setPrefSize(460, 260);
-
-        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Variable");
-        keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
-        keyCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        keyCol.setOnEditCommit(e -> e.getRowValue().setKey(e.getNewValue()));
-        keyCol.setPrefWidth(170);
-
-        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
-        valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
-        valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        valueCol.setOnEditCommit(e -> e.getRowValue().setValue(e.getNewValue()));
-        valueCol.setPrefWidth(260);
-
-        table.getColumns().add(keyCol);
-        table.getColumns().add(valueCol);
-
-        Button addBtn = new Button("Add Variable");
-        addBtn.setOnAction(e -> data.add(new KeyValuePair("KEY", "value", "")));
-        Button deleteBtn = new Button("Delete");
-        deleteBtn.setOnAction(e -> {
-            KeyValuePair selected = table.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                data.remove(selected);
-            }
-        });
-        HBox buttons = new HBox(8, addBtn, deleteBtn);
-
-        VBox content = new VBox(10, table, buttons);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
         initAndStyleDialog(dialog);
 
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        // Header
+        VBox headerBox = new VBox(3);
+        Label titleLabel = new Label("Edit Environment");
+        titleLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label subtitleLabel = new Label("Variables of \"" + env.getName() + "\"");
+        subtitleLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: -text-muted;");
+        headerBox.getChildren().addAll(titleLabel, subtitleLabel);
+
+        // Name field
+        Label nameLabel = new Label("Environment Name *");
+        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+        TextField nameField = new TextField(env.getName());
+        nameField.setPromptText("Environment name");
+        nameField.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-color; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 7 10; -fx-text-fill: -text-primary;");
+
+        VBox nameBox = new VBox(5, nameLabel, nameField);
+
+        // Description area
+        Label descriptionLabel = new Label("Description (optional)");
+        descriptionLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+        TextArea descriptionArea = new TextArea(env.getDescription() != null ? env.getDescription() : "");
+        descriptionArea.setPromptText("What is this environment for?");
+        descriptionArea.setPrefRowCount(2);
+        descriptionArea.setWrapText(true);
+        descriptionArea.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-subtle; -fx-border-radius: 6; -fx-background-radius: 6; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+
+        VBox descBox = new VBox(5, descriptionLabel, descriptionArea);
+
+        // Variables
+        Label variablesLabel = new Label("Variables");
+        variablesLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+
+        ObservableList<KeyValuePair> data = FXCollections.observableArrayList();
+        if (env.getVariables() != null) {
+            env.getVariables().forEach((k, v) -> data.add(new KeyValuePair(true, k, v != null ? v : "", "", false)));
+        }
+
+        CheckBox masterCheckBox = new CheckBox();
+        CheckBox masterSelectBox = new CheckBox();
+        int[] pendingFocus = new int[]{-1};
+
+        TableView<KeyValuePair> table = createVariablesTable(
+                data, "Variable", "Value", masterCheckBox, masterSelectBox, pendingFocus);
+
+        HBox buttonBox = createVariablesButtonBar(table, data, masterCheckBox, masterSelectBox, pendingFocus);
+
+        VBox varBox = new VBox(6, variablesLabel, table, buttonBox);
+        VBox.setVgrow(varBox, Priority.ALWAYS);
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        VBox formContent = new VBox(12, headerBox, nameBox, descBox, varBox);
+        formContent.setPadding(new Insets(16, 20, 16, 20));
+        formContent.setPrefWidth(580);
+        formContent.setMinWidth(560);
+
+        ScrollPane scrollPane = new ScrollPane(formContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setPrefViewportWidth(620);
+        scrollPane.setPrefViewportHeight(460);
+        scrollPane.setMinWidth(580);
+        scrollPane.setMinHeight(380);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
+
+        dialog.getDialogPane().setContent(scrollPane);
+        dialog.getDialogPane().setPrefSize(640, 560);
+        dialog.getDialogPane().setMinSize(600, 480);
+        dialog.setResizable(true);
+
+        dialog.setOnShown(e -> {
+            Window window = dialog.getDialogPane().getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(600);
+                stage.setMinHeight(480);
+                stage.setWidth(640);
+                stage.setHeight(560);
+                stage.centerOnScreen();
+            }
+            Platform.runLater(nameField::requestFocus);
+        });
+
+        Node saveBtn = dialog.getDialogPane().lookupButton(saveButtonType);
+        if (saveBtn instanceof Button btn) {
+            btn.getStyleClass().add("primary-button");
+            btn.setDisable(nameField.getText() == null || nameField.getText().trim().isEmpty());
+            nameField.textProperty().addListener((obs, oldV, newV) -> {
+                btn.setDisable(newV == null || newV.trim().isEmpty());
+            });
+        }
+        Node cancelBtn = dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        if (cancelBtn instanceof Button btn) {
+            btn.getStyleClass().add("secondary-button");
+        }
+
         dialog.showAndWait().ifPresent(button -> {
-            if (button == ButtonType.OK) {
+            if (button == saveButtonType) {
                 Map<String, String> variables = new LinkedHashMap<>();
                 for (KeyValuePair kv : data) {
-                    if (kv.getKey() != null && !kv.getKey().isBlank()) {
+                    if (kv.isEnabled() && !kv.isPlaceholder() && kv.getKey() != null && !kv.getKey().isBlank()) {
                         variables.put(kv.getKey().trim(), kv.getValue() == null ? "" : kv.getValue());
                     }
                 }
+
+                String updatedName = nameField.getText() != null && !nameField.getText().isBlank()
+                        ? nameField.getText().trim() : env.getName();
+                String updatedDesc = descriptionArea.getText() != null
+                        ? descriptionArea.getText().trim() : "";
+
                 new Thread(() -> {
                     Optional<EnvironmentResponse> updated =
-                            EnvironmentService.updateEnvironmentVariables(env.getId(), variables);
+                            EnvironmentService.updateEnvironment(env.getId(), updatedName, updatedDesc, variables, env.getIsActive());
                     Platform.runLater(() -> {
                         if (updated.isPresent()) {
-                            updateStatus("Environment saved: " + env.getName());
+                            updateStatus("Environment saved: " + updatedName);
                             loadEnvironments();
                         } else {
                             AlertUtils.showError("Failed to save environment variables");
@@ -7536,8 +8074,11 @@ public class MainController implements Initializable {
 
         VBox content = new VBox(10, nameLabel, nameField, descLabel, descArea);
         content.setPadding(new Insets(14));
-        content.setPrefWidth(420);
+        content.setPrefWidth(440);
+        content.setMinWidth(400);
         dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().setPrefSize(460, 280);
+        dialog.getDialogPane().setMinSize(420, 240);
         dialog.setResizable(true);
 
         Node createBtn = dialog.getDialogPane().lookupButton(createButtonType);
@@ -7548,7 +8089,17 @@ public class MainController implements Initializable {
             });
         }
 
-        Platform.runLater(nameField::requestFocus);
+        dialog.setOnShown(e -> {
+            Window window = dialog.getDialogPane().getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(420);
+                stage.setMinHeight(240);
+                stage.setWidth(460);
+                stage.setHeight(280);
+                stage.centerOnScreen();
+            }
+            Platform.runLater(nameField::requestFocus);
+        });
 
         dialog.setResultConverter(button -> {
             if (button == createButtonType) {
@@ -7602,7 +8153,6 @@ public class MainController implements Initializable {
         // Create a custom dialog for environment creation
         Dialog<EnvironmentCreationData> dialog = new Dialog<>();
         dialog.setTitle("Create New Environment");
-        dialog.setHeaderText("Create a new environment with custom variables");
 
         // Set owner to center the dialog over the application window and apply theme
         initAndStyleDialog(dialog);
@@ -7611,119 +8161,108 @@ public class MainController implements Initializable {
         ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
 
+        // Header
+        VBox headerBox = new VBox(3);
+        Label titleLabel = new Label("Create New Environment");
+        titleLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label subtitleLabel = new Label("Create a new environment with custom variables");
+        subtitleLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: -text-muted;");
+        headerBox.getChildren().addAll(titleLabel, subtitleLabel);
+
         // Name field
         Label nameLabel = new Label("Environment Name *");
-        nameLabel.setStyle("-fx-font-weight: bold;");
+        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
         TextField nameField = new TextField();
         nameField.setPromptText("e.g. Development, Staging, Production");
+        nameField.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-color; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 7 10; -fx-text-fill: -text-primary;");
+
+        VBox nameBox = new VBox(5, nameLabel, nameField);
 
         // Description area
         Label descriptionLabel = new Label("Description (optional)");
-        descriptionLabel.setStyle("-fx-font-weight: bold;");
+        descriptionLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
         TextArea descriptionArea = new TextArea();
         descriptionArea.setPromptText("What is this environment for?");
         descriptionArea.setPrefRowCount(2);
         descriptionArea.setWrapText(true);
+        descriptionArea.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-subtle; -fx-border-radius: 6; -fx-background-radius: 6; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+
+        VBox descBox = new VBox(5, descriptionLabel, descriptionArea);
 
         // Variables table
         Label variablesLabel = new Label("Variables");
-        variablesLabel.setStyle("-fx-font-weight: bold;");
+        variablesLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
 
-        TableView<Variable> variablesTable = new TableView<>();
-        variablesTable.setPrefHeight(170);
-        variablesTable.setMaxHeight(220);
-        variablesTable.setEditable(true);
-        variablesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        variablesTable.setPlaceholder(new Label("No variables yet. Click 'Add Variable' below to add one."));
+        ObservableList<KeyValuePair> variablesData = FXCollections.observableArrayList();
+        CheckBox masterCheckBox = new CheckBox();
+        CheckBox masterSelectBox = new CheckBox();
+        int[] pendingFocus = new int[]{-1};
 
-        // Variable Name column with editable text field
-        TableColumn<Variable, String> nameCol = new TableColumn<>("Variable Name");
-        nameCol.setCellValueFactory(cellData -> cellData.getValue().nameProperty());
-        nameCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        nameCol.setOnEditCommit(event -> {
-            Variable variable = event.getRowValue();
-            if (variable != null) {
-                variable.setName(event.getNewValue());
-            }
-        });
-        nameCol.setPrefWidth(190);
+        TableView<KeyValuePair> variablesTable = createVariablesTable(
+                variablesData, "Variable Name", "Initial Value", masterCheckBox, masterSelectBox, pendingFocus);
 
-        // Value column with editable text field
-        TableColumn<Variable, String> valueCol = new TableColumn<>("Initial Value");
-        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
-        valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        valueCol.setOnEditCommit(event -> {
-            Variable variable = event.getRowValue();
-            if (variable != null) {
-                variable.setValue(event.getNewValue());
-            }
-        });
-        valueCol.setPrefWidth(260);
+        HBox buttonBox = createVariablesButtonBar(
+                variablesTable, variablesData, masterCheckBox, masterSelectBox, pendingFocus);
 
-        variablesTable.getColumns().addAll(nameCol, valueCol);
+        VBox varBox = new VBox(6, variablesLabel, variablesTable, buttonBox);
+        VBox.setVgrow(varBox, Priority.ALWAYS);
+        VBox.setVgrow(variablesTable, Priority.ALWAYS);
 
-        // Add variable button
-        Button addVarButton = new Button("Add Variable");
-        addVarButton.setOnAction(e -> {
-            Variable newVar = new Variable("", "");
-            variablesTable.getItems().add(newVar);
-            // Select the new row and start editing
-            variablesTable.getSelectionModel().select(newVar);
-            variablesTable.edit(variablesTable.getItems().size() - 1, nameCol);
-        });
-
-        // Remove variable button
-        Button removeVarButton = new Button("Remove Selected");
-        removeVarButton.setOnAction(e -> {
-            Variable selected = variablesTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                variablesTable.getItems().remove(selected);
-            }
-        });
-
-        HBox buttonBox = new HBox(8, addVarButton, removeVarButton);
-        buttonBox.setAlignment(Pos.CENTER_LEFT);
-
-        VBox formContent = new VBox(8,
-                nameLabel, nameField,
-                descriptionLabel, descriptionArea,
-                variablesLabel, variablesTable,
-                buttonBox
-        );
-        formContent.setPadding(new Insets(14));
-        formContent.setPrefWidth(490);
+        VBox formContent = new VBox(12, headerBox, nameBox, descBox, varBox);
+        formContent.setPadding(new Insets(16, 20, 16, 20));
+        formContent.setPrefWidth(580);
+        formContent.setMinWidth(560);
 
         // Wrap in ScrollPane so it gracefully fits any screen height without overflowing offscreen
         ScrollPane scrollPane = new ScrollPane(formContent);
         scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        scrollPane.setMaxHeight(450);
-        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        scrollPane.setPrefViewportWidth(620);
+        scrollPane.setPrefViewportHeight(460);
+        scrollPane.setMinWidth(580);
+        scrollPane.setMinHeight(380);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
 
         dialog.getDialogPane().setContent(scrollPane);
-        dialog.getDialogPane().setPrefWidth(520);
+        dialog.getDialogPane().setPrefSize(640, 560);
+        dialog.getDialogPane().setMinSize(600, 480);
         dialog.setResizable(true);
 
-        // Apply theme styling (dark/light) consistent with the rest of Thundercall
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        dialog.setOnShown(e -> {
+            Window window = dialog.getDialogPane().getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(600);
+                stage.setMinHeight(480);
+                stage.setWidth(640);
+                stage.setHeight(560);
+                stage.centerOnScreen();
+            }
+            Platform.runLater(nameField::requestFocus);
+        });
 
         // Validate Create button - only enable if environment name is provided
         Node createBtn = dialog.getDialogPane().lookupButton(createButtonType);
-        if (createBtn != null) {
-            createBtn.setDisable(true);
+        if (createBtn instanceof Button btn) {
+            btn.getStyleClass().add("primary-button");
+            btn.setDisable(true);
             nameField.textProperty().addListener((obs, oldV, newV) -> {
-                createBtn.setDisable(newV == null || newV.trim().isEmpty());
+                btn.setDisable(newV == null || newV.trim().isEmpty());
             });
+        }
+        Node cancelBtn = dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        if (cancelBtn instanceof Button btn) {
+            btn.getStyleClass().add("secondary-button");
         }
 
         // Convert the result to EnvironmentCreationData when create button is clicked
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == createButtonType) {
                 Map<String, String> variables = new LinkedHashMap<>();
-                for (Variable v : variablesTable.getItems()) {
-                    if (v.getName() != null && !v.getName().trim().isEmpty()) {
-                        variables.put(v.getName().trim(), v.getValue() != null ? v.getValue() : "");
+                for (KeyValuePair kv : variablesData) {
+                    if (kv.isEnabled() && !kv.isPlaceholder() && kv.getKey() != null && !kv.getKey().trim().isEmpty()) {
+                        variables.put(kv.getKey().trim(), kv.getValue() != null ? kv.getValue() : "");
                     }
                 }
 
