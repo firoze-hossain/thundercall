@@ -6132,217 +6132,57 @@ public class MainController implements Initializable {
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(team.getName());
-        dialog.setHeaderText((team.getDescription() != null && !team.getDescription().isBlank()
-                ? team.getDescription() + "\n" : "")
-                + "Your role: " + team.getMyRole() + "  ·  Owner: " + team.getOwnerUsername());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("team-dialog-pane");
 
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(480);
+        // --- Header with Team Icon, Name, Subtitle, My Role Badge & Danger Button ---
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinWidth(38);
+        headerBadge.setMaxWidth(38);
+        headerBadge.setMinHeight(38);
+        headerBadge.setMaxHeight(38);
 
-        // ---- Members ----
-        TableView<TeamMemberResponse> membersTable = new TableView<>();
-        TableColumn<TeamMemberResponse, String> memberNameCol = new TableColumn<>("Username");
-        memberNameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
-        // Presence: green dot = online right now, gray dot = offline.
-        // onlineUserIds is refreshed alongside the member list below.
-        memberNameCol.setCellFactory(col -> new TableCell<TeamMemberResponse, String>() {
-            @Override
-            protected void updateItem(String username, boolean empty) {
-                super.updateItem(username, empty);
-                if (empty || username == null || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    setText(null);
-                    return;
-                }
-                TeamMemberResponse member = getTableRow().getItem();
-                boolean online = member.getUserId() != null && onlineUserIds.contains(member.getUserId());
-                javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
-                dot.getStyleClass().add(online ? "online-dot" : "offline-dot");
-                Label nameLabel = new Label(username);
-                HBox row = new HBox(6, dot, nameLabel);
-                row.setAlignment(Pos.CENTER_LEFT);
-                HoverTooltip.attach(row, username + (online ? " is online" : " is offline"));
-                setGraphic(row);
-                setText(null);
-            }
-        });
-        TableColumn<TeamMemberResponse, String> memberEmailCol = new TableColumn<>("Email");
-        memberEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
-        TableColumn<TeamMemberResponse, String> memberRoleCol = new TableColumn<>("Role");
-        memberRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
-        membersTable.getColumns().addAll(memberNameCol, memberEmailCol, memberRoleCol);
-        membersTable.setPrefHeight(160);
-        membersTable.setPrefWidth(480);
-        membersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        javafx.scene.shape.SVGPath teamIcon = new javafx.scene.shape.SVGPath();
+        teamIcon.setContent("M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z");
+        teamIcon.setStyle("-fx-fill: -accent;");
+        teamIcon.setScaleX(1.1);
+        teamIcon.setScaleY(1.1);
+        headerBadge.getChildren().add(teamIcon);
 
-        Runnable[] refreshMembers = new Runnable[1];
-        refreshMembers[0] = () -> new Thread(() -> {
-            // Fetch presence FIRST so the dots are accurate the moment the
-            // member rows render (both calls are cheap).
-            List<OnlineUser> online = PresenceService.getOnlineUsers();
-            Optional<List<TeamMemberResponse>> members = TeamService.getMembers(team.getId());
-            Platform.runLater(() -> {
-                onlineUserIds.clear();
-                online.forEach(u -> onlineUserIds.add(u.getUserId()));
-                renderOnlineUsers(online);
-                members.ifPresent(list -> membersTable.getItems().setAll(list));
-            });
-        }).start();
-        refreshMembers[0].run();
+        Label titleLabel = new Label(team.getName());
+        titleLabel.getStyleClass().add("share-title");
 
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(10));
-        Label membersLabel = new Label("Members");
-        membersLabel.getStyleClass().add("dialog-section-title");
-        content.getChildren().add(membersLabel);
-        content.getChildren().add(membersTable);
+        String subtitleText = team.getDescription() != null && !team.getDescription().isBlank()
+                ? team.getDescription().trim()
+                : "Created by " + team.getOwnerUsername();
+        Label subtitleLabel = new Label(subtitleText);
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
 
-        if (isAdminOrOwner) {
-            ComboBox<String> newRoleCombo = new ComboBox<>();
-            newRoleCombo.getItems().addAll("ADMIN", "MEMBER");
-            newRoleCombo.setPromptText("New role");
-            Button changeRoleBtn = new Button("Change Role");
-            Button removeBtn = new Button("Remove Member");
-            HBox memberActions = new HBox(8, newRoleCombo, changeRoleBtn, removeBtn);
-            memberActions.setAlignment(Pos.CENTER_LEFT);
-            content.getChildren().add(memberActions);
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        titleBox.setMinWidth(Region.USE_PREF_SIZE);
 
-            changeRoleBtn.setOnAction(e -> {
-                TeamMemberResponse selected = membersTable.getSelectionModel().getSelectedItem();
-                String newRole = newRoleCombo.getValue();
-                if (selected == null || newRole == null) {
-                    statusLabel.setText("Select a member and a role first.");
-                    return;
-                }
-                new Thread(() -> {
-                    boolean ok = TeamService.changeMemberRole(team.getId(), selected.getUserId(), newRole);
-                    Platform.runLater(() -> {
-                        statusLabel.setText(ok ? "Role updated." : "Couldn't change that role.");
-                        if (ok) {
-                            refreshMembers[0].run();
-                        }
-                    });
-                }).start();
-            });
-            removeBtn.setOnAction(e -> {
-                TeamMemberResponse selected = membersTable.getSelectionModel().getSelectedItem();
-                if (selected == null) {
-                    statusLabel.setText("Select a member to remove first.");
-                    return;
-                }
-                if (!AlertUtils.showConfirmation("Remove Member",
-                        "Remove " + selected.getUsername() + " from " + team.getName() + "?")) {
-                    return;
-                }
-                new Thread(() -> {
-                    boolean ok = TeamService.removeMember(team.getId(), selected.getUserId());
-                    Platform.runLater(() -> {
-                        statusLabel.setText(ok ? "Member removed." : "Couldn't remove that member.");
-                        if (ok) {
-                            refreshMembers[0].run();
-                        }
-                    });
-                }).start();
-            });
-        }
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        headerSpacer.setMinWidth(12);
 
-        // ---- Pending invitations (owner/admin only) ----
-        if (isAdminOrOwner) {
-            content.getChildren().add(new Separator());
-            Label pendingInvitationsLabel = new Label("Pending Invitations");
-            pendingInvitationsLabel.getStyleClass().add("dialog-section-title");
-            content.getChildren().add(pendingInvitationsLabel);
+        // My role badge on header
+        Label myRoleBadge = new Label(team.getMyRole());
+        myRoleBadge.getStyleClass().addAll("role-badge",
+                "OWNER".equals(team.getMyRole()) ? "role-badge-owner" :
+                "ADMIN".equals(team.getMyRole()) ? "role-badge-admin" : "role-badge-member");
 
-            TableView<TeamInvitationResponse> invitationsTable = new TableView<>();
-            TableColumn<TeamInvitationResponse, String> inviteEmailCol = new TableColumn<>("Email");
-            inviteEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
-            TableColumn<TeamInvitationResponse, String> inviteRoleCol = new TableColumn<>("Role");
-            inviteRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
-            TableColumn<TeamInvitationResponse, String> inviteStatusCol = new TableColumn<>("Status");
-            inviteStatusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
-            invitationsTable.getColumns().addAll(inviteEmailCol, inviteRoleCol, inviteStatusCol);
-            invitationsTable.setPrefHeight(120);
-            invitationsTable.setPrefWidth(480);
-            invitationsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-            content.getChildren().add(invitationsTable);
+        HBox headerRight = new HBox(8, myRoleBadge);
+        headerRight.setAlignment(Pos.CENTER_RIGHT);
 
-            Runnable[] refreshInvitations = new Runnable[1];
-            refreshInvitations[0] = () -> new Thread(() -> {
-                Optional<List<TeamInvitationResponse>> invitations = TeamService.getPendingInvitations(team.getId());
-                Platform.runLater(() -> invitations.ifPresent(list -> invitationsTable.getItems().setAll(list)));
-            }).start();
-            refreshInvitations[0].run();
-
-            Button revokeBtn = new Button("Revoke Invitation");
-            content.getChildren().add(revokeBtn);
-            revokeBtn.setOnAction(e -> {
-                TeamInvitationResponse selected = invitationsTable.getSelectionModel().getSelectedItem();
-                if (selected == null) {
-                    statusLabel.setText("Select an invitation to revoke first.");
-                    return;
-                }
-                new Thread(() -> {
-                    boolean ok = TeamService.revokeInvitation(team.getId(), selected.getId());
-                    Platform.runLater(() -> {
-                        statusLabel.setText(ok ? "Invitation revoked." : "Couldn't revoke that invitation.");
-                        if (ok) {
-                            refreshInvitations[0].run();
-                        }
-                    });
-                }).start();
-            });
-
-            // ---- Invite by email ----
-            content.getChildren().add(new Separator());
-            Label inviteEmailSectionLabel = new Label("Invite someone by email");
-            inviteEmailSectionLabel.getStyleClass().add("dialog-section-title");
-            content.getChildren().add(inviteEmailSectionLabel);
-            TextField inviteEmailField = new TextField();
-            inviteEmailField.setPromptText("email@example.com");
-            ComboBox<String> inviteRoleCombo = new ComboBox<>();
-            inviteRoleCombo.getItems().addAll("ADMIN", "MEMBER");
-            inviteRoleCombo.setValue("MEMBER");
-            Button inviteBtn = new Button("Send Invite");
-            HBox inviteRow = new HBox(8, inviteEmailField, inviteRoleCombo, inviteBtn);
-            inviteRow.setAlignment(Pos.CENTER_LEFT);
-            HBox.setHgrow(inviteEmailField, Priority.ALWAYS);
-            content.getChildren().add(inviteRow);
-
-            inviteBtn.setOnAction(e -> {
-                String email = inviteEmailField.getText() == null ? "" : inviteEmailField.getText().trim();
-                if (email.isEmpty()) {
-                    statusLabel.setText("Enter an email address first.");
-                    return;
-                }
-                statusLabel.setText("Sending invitation...");
-                new Thread(() -> {
-                    try {
-                        TeamService.inviteMember(team.getId(), email, inviteRoleCombo.getValue());
-                        Platform.runLater(() -> {
-                            statusLabel.setText("Invitation sent to " + email + ".");
-                            inviteEmailField.clear();
-                            refreshInvitations[0].run();
-                        });
-                    } catch (IOException ex) {
-                        Platform.runLater(() -> statusLabel.setText(
-                                "Couldn't send that invitation: " + TeamService.friendlyMessage(ex)));
-                    }
-                }).start();
-            });
-        }
-
-        // ---- Leave / delete ----
-        content.getChildren().add(new Separator());
-        HBox dangerRow = new HBox(8);
-        dangerRow.setAlignment(Pos.CENTER_LEFT);
         if (isOwner) {
             Button deleteBtn = new Button("Delete Team");
-            deleteBtn.getStyleClass().add("danger-menu-item");
+            deleteBtn.getStyleClass().add("team-danger-btn");
             deleteBtn.setOnAction(e -> {
                 if (!AlertUtils.showConfirmation("Delete Team",
-                        "Delete \"" + team.getName() + "\"? This removes everyone and can't be undone.")) {
+                        "Delete \"" + team.getName() + "\"? This removes all members and cannot be undone.")) {
                     return;
                 }
                 new Thread(() -> {
@@ -6353,17 +6193,17 @@ public class MainController implements Initializable {
                             loadTeams();
                             updateStatus("Team deleted: " + team.getName());
                         } else {
-                            statusLabel.setText("Couldn't delete this team.");
+                            AlertUtils.showError("Couldn't delete this team.");
                         }
                     });
                 }).start();
             });
-            dangerRow.getChildren().add(deleteBtn);
+            headerRight.getChildren().add(deleteBtn);
         } else {
             Button leaveBtn = new Button("Leave Team");
-            leaveBtn.getStyleClass().add("danger-menu-item");
+            leaveBtn.getStyleClass().add("team-danger-btn");
             leaveBtn.setOnAction(e -> {
-                if (!AlertUtils.showConfirmation("Leave Team", "Leave \"" + team.getName() + "\"?")) {
+                if (!AlertUtils.showConfirmation("Leave Team", "Are you sure you want to leave \"" + team.getName() + "\"?")) {
                     return;
                 }
                 new Thread(() -> {
@@ -6374,22 +6214,345 @@ public class MainController implements Initializable {
                             loadTeams();
                             updateStatus("Left team: " + team.getName());
                         } else {
-                            statusLabel.setText("Couldn't leave this team.");
+                            AlertUtils.showError("Couldn't leave this team.");
                         }
                     });
                 }).start();
             });
-            dangerRow.getChildren().add(leaveBtn);
+            headerRight.getChildren().add(leaveBtn);
         }
-        content.getChildren().add(dangerRow);
-        content.getChildren().add(statusLabel);
 
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(520);
-        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
-        dialog.getDialogPane().setContent(scrollPane);
+        HBox headerRow = new HBox(12, headerBadge, titleBox, headerSpacer, headerRight);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Interactive Status Alert Banner ---
+        HBox statusBanner = new HBox(8);
+        statusBanner.getStyleClass().add("share-status-banner");
+        statusBanner.setAlignment(Pos.CENTER_LEFT);
+        statusBanner.setVisible(false);
+        statusBanner.setManaged(false);
+
+        Label statusIcon = new Label();
+        statusIcon.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+        Label statusText = new Label();
+        statusText.setWrapText(true);
+        statusText.setMaxWidth(560);
+        HBox.setHgrow(statusText, Priority.ALWAYS);
+
+        Button dismissBannerBtn = new Button("✕");
+        dismissBannerBtn.getStyleClass().add("share-text-btn");
+        dismissBannerBtn.setOnAction(e -> {
+            statusBanner.setVisible(false);
+            statusBanner.setManaged(false);
+        });
+        statusBanner.getChildren().addAll(statusIcon, statusText, dismissBannerBtn);
+
+        BiConsumer<String, Boolean> showStatus = (msg, isError) -> {
+            statusBanner.getStyleClass().removeAll("share-status-success", "share-status-error");
+            if (isError) {
+                statusBanner.getStyleClass().add("share-status-error");
+                statusIcon.setText("⚠");
+            } else {
+                statusBanner.getStyleClass().add("share-status-success");
+                statusIcon.setText("✓");
+            }
+            statusText.setText(msg);
+            statusBanner.setVisible(true);
+            statusBanner.setManaged(true);
+        };
+
+        // --- Quick Invite Card (Owner / Admin only) ---
+        VBox inviteCard = null;
+        TextField inviteEmailField = new TextField();
+        ComboBox<String> inviteRoleCombo = new ComboBox<>();
+        Button inviteBtn = new Button("Send Invite");
+
+        if (isAdminOrOwner) {
+            inviteCard = new VBox(10);
+            inviteCard.getStyleClass().add("share-card");
+
+            Label inviteCardTitle = new Label("INVITE TEAM MEMBER");
+            inviteCardTitle.getStyleClass().add("share-card-header");
+
+            inviteEmailField.setPromptText("Enter colleague's email address...");
+            HBox.setHgrow(inviteEmailField, Priority.ALWAYS);
+
+            inviteRoleCombo.getItems().addAll("MEMBER", "ADMIN");
+            inviteRoleCombo.setValue("MEMBER");
+            inviteRoleCombo.getStyleClass().add("share-role-combo");
+
+            inviteBtn.getStyleClass().addAll("button", "button-primary");
+            inviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+
+            HBox inviteRow = new HBox(8, inviteEmailField, inviteRoleCombo, inviteBtn);
+            inviteRow.setAlignment(Pos.CENTER_LEFT);
+            inviteCard.getChildren().addAll(inviteCardTitle, inviteRow);
+        }
+
+        // --- Tabs for Members and Pending Invitations ---
+        TabPane tabPane = new TabPane();
+        tabPane.getStyleClass().add("share-tab-pane");
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        Tab membersTab = new Tab("Members (0)");
+        VBox membersContainer = new VBox(8);
+        membersContainer.setPadding(new Insets(10, 2, 10, 2));
+        ScrollPane membersScroll = new ScrollPane(membersContainer);
+        membersScroll.getStyleClass().add("share-scroll-area");
+        membersScroll.setFitToWidth(true);
+        membersTab.setContent(membersScroll);
+
+        Tab pendingTab = new Tab("Pending Invitations (0)");
+        VBox pendingContainer = new VBox(8);
+        pendingContainer.setPadding(new Insets(10, 2, 10, 2));
+        ScrollPane pendingScroll = new ScrollPane(pendingContainer);
+        pendingScroll.getStyleClass().add("share-scroll-area");
+        pendingScroll.setFitToWidth(true);
+        pendingTab.setContent(pendingScroll);
+
+        tabPane.getTabs().add(membersTab);
+        if (isAdminOrOwner) {
+            tabPane.getTabs().add(pendingTab);
+        }
+
+        Runnable[] refreshInvitations = new Runnable[1];
+        Runnable[] refreshMembers = new Runnable[1];
+
+        refreshMembers[0] = () -> new Thread(() -> {
+            List<OnlineUser> online = PresenceService.getOnlineUsers();
+            Optional<List<TeamMemberResponse>> membersOpt = TeamService.getMembers(team.getId());
+            Platform.runLater(() -> {
+                onlineUserIds.clear();
+                online.forEach(u -> onlineUserIds.add(u.getUserId()));
+                renderOnlineUsers(online);
+
+                membersContainer.getChildren().clear();
+                List<TeamMemberResponse> members = membersOpt.orElse(List.of());
+                membersTab.setText("Members (" + members.size() + ")");
+
+                if (members.isEmpty()) {
+                    VBox emptyBox = new VBox(8);
+                    emptyBox.getStyleClass().add("share-empty-box");
+                    javafx.scene.shape.SVGPath emptyUsersSvg = new javafx.scene.shape.SVGPath();
+                    emptyUsersSvg.setContent("M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z");
+                    emptyUsersSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                    emptyUsersSvg.setScaleX(1.3);
+                    emptyUsersSvg.setScaleY(1.3);
+                    Label emptyTitle = new Label("No team members found");
+                    emptyTitle.getStyleClass().add("share-empty-title");
+                    emptyBox.getChildren().addAll(emptyUsersSvg, emptyTitle);
+                    membersContainer.getChildren().add(emptyBox);
+                } else {
+                    for (TeamMemberResponse member : members) {
+                        HBox row = new HBox(12);
+                        row.getStyleClass().add("share-row");
+
+                        StackPane avatar = createAvatar(member.getUsername());
+
+                        // Online / offline dot
+                        boolean isUserOnline = member.getUserId() != null && onlineUserIds.contains(member.getUserId());
+                        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
+                        dot.getStyleClass().add(isUserOnline ? "online-dot" : "offline-dot");
+                        HoverTooltip.attach(dot, member.getUsername() + (isUserOnline ? " is online" : " is offline"));
+
+                        Label nameLabel = new Label(member.getUsername());
+                        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+
+                        HBox nameRow = new HBox(6, dot, nameLabel);
+                        nameRow.setAlignment(Pos.CENTER_LEFT);
+
+                        Label emailLabel = new Label(member.getEmail() != null ? member.getEmail() : "No email");
+                        emailLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+
+                        VBox userDetails = new VBox(2, nameRow, emailLabel);
+
+                        Region rowSpacer = new Region();
+                        HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+
+                        boolean memberIsOwner = "OWNER".equals(member.getRole());
+
+                        if (memberIsOwner) {
+                            Label ownerBadge = new Label("OWNER");
+                            ownerBadge.getStyleClass().addAll("role-badge", "role-badge-owner");
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, ownerBadge);
+                        } else if (isAdminOrOwner) {
+                            ComboBox<String> roleBox = new ComboBox<>();
+                            roleBox.getItems().addAll("ADMIN", "MEMBER");
+                            roleBox.setValue(member.getRole());
+                            roleBox.getStyleClass().add("share-role-combo");
+
+                            roleBox.valueProperty().addListener((obs, was, isNow) -> {
+                                if (isNow != null && !isNow.equals(was)) {
+                                    new Thread(() -> {
+                                        boolean ok = TeamService.changeMemberRole(team.getId(), member.getUserId(), isNow);
+                                        Platform.runLater(() -> {
+                                            if (ok) {
+                                                showStatus.accept("Updated " + member.getUsername() + "'s role to " + isNow + ".", false);
+                                            } else {
+                                                showStatus.accept("Failed to update role for " + member.getUsername() + ".", true);
+                                                roleBox.setValue(was);
+                                            }
+                                        });
+                                    }).start();
+                                }
+                            });
+
+                            Button removeMemberBtn = new Button("Remove");
+                            removeMemberBtn.getStyleClass().add("share-remove-btn");
+                            removeMemberBtn.setOnAction(e -> {
+                                if (!AlertUtils.showConfirmation("Remove Member",
+                                        "Remove " + member.getUsername() + " from " + team.getName() + "?")) {
+                                    return;
+                                }
+                                removeMemberBtn.setDisable(true);
+                                new Thread(() -> {
+                                    boolean ok = TeamService.removeMember(team.getId(), member.getUserId());
+                                    Platform.runLater(() -> {
+                                        if (ok) {
+                                            showStatus.accept("Removed " + member.getUsername() + " from the team.", false);
+                                            membersContainer.getChildren().remove(row);
+                                            membersTab.setText("Members (" + membersContainer.getChildren().size() + ")");
+                                        } else {
+                                            removeMemberBtn.setDisable(false);
+                                            showStatus.accept("Failed to remove " + member.getUsername() + ".", true);
+                                        }
+                                    });
+                                }).start();
+                            });
+
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, roleBox, removeMemberBtn);
+                        } else {
+                            Label roleBadge = new Label(member.getRole());
+                            roleBadge.getStyleClass().addAll("role-badge",
+                                    "ADMIN".equals(member.getRole()) ? "role-badge-admin" : "role-badge-member");
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, roleBadge);
+                        }
+
+                        membersContainer.getChildren().add(row);
+                    }
+                }
+            });
+        }).start();
+
+        if (isAdminOrOwner) {
+            refreshInvitations[0] = () -> new Thread(() -> {
+                Optional<List<TeamInvitationResponse>> invitationsOpt = TeamService.getPendingInvitations(team.getId());
+                Platform.runLater(() -> {
+                    pendingContainer.getChildren().clear();
+                    List<TeamInvitationResponse> invitations = invitationsOpt.orElse(List.of());
+                    pendingTab.setText("Pending Invitations (" + invitations.size() + ")");
+
+                    if (invitations.isEmpty()) {
+                        VBox emptyBox = new VBox(8);
+                        emptyBox.getStyleClass().add("share-empty-box");
+                        javafx.scene.shape.SVGPath emptyMailSvg = new javafx.scene.shape.SVGPath();
+                        emptyMailSvg.setContent("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z");
+                        emptyMailSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                        emptyMailSvg.setScaleX(1.3);
+                        emptyMailSvg.setScaleY(1.3);
+                        Label emptyTitle = new Label("No pending invitations");
+                        emptyTitle.getStyleClass().add("share-empty-title");
+                        Label emptyDesc = new Label("Invitations waiting to be accepted will appear here.");
+                        emptyDesc.getStyleClass().add("share-empty-desc");
+                        emptyBox.getChildren().addAll(emptyMailSvg, emptyTitle, emptyDesc);
+                        pendingContainer.getChildren().add(emptyBox);
+                    } else {
+                        for (TeamInvitationResponse invite : invitations) {
+                            HBox row = new HBox(12);
+                            row.getStyleClass().add("share-row");
+
+                            StackPane mailBadge = new StackPane();
+                            mailBadge.getStyleClass().add("share-avatar");
+                            mailBadge.setStyle("-fx-background-color: #f59e0b;");
+                            javafx.scene.shape.SVGPath mailSvg = new javafx.scene.shape.SVGPath();
+                            mailSvg.setContent("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z");
+                            mailSvg.setStyle("-fx-fill: white;");
+                            mailSvg.setScaleX(0.75);
+                            mailSvg.setScaleY(0.75);
+                            mailBadge.getChildren().add(mailSvg);
+
+                            Label emailLabel = new Label(invite.getEmail());
+                            emailLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+                            Label pendingSubtext = new Label("Invited as " + invite.getRole() + "  •  " + invite.getStatus());
+                            pendingSubtext.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                            VBox inviteDetails = new VBox(2, emailLabel, pendingSubtext);
+
+                            Region rowSpacer = new Region();
+                            HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+
+                            Button revokeInviteBtn = new Button("Revoke Invitation");
+                            revokeInviteBtn.getStyleClass().add("share-remove-btn");
+                            revokeInviteBtn.setOnAction(e -> {
+                                revokeInviteBtn.setDisable(true);
+                                new Thread(() -> {
+                                    boolean ok = TeamService.revokeInvitation(team.getId(), invite.getId());
+                                    Platform.runLater(() -> {
+                                        if (ok) {
+                                            showStatus.accept("Revoked invitation to " + invite.getEmail() + ".", false);
+                                            pendingContainer.getChildren().remove(row);
+                                            pendingTab.setText("Pending Invitations (" + pendingContainer.getChildren().size() + ")");
+                                            if (pendingContainer.getChildren().isEmpty()) {
+                                                refreshInvitations[0].run();
+                                            }
+                                        } else {
+                                            revokeInviteBtn.setDisable(false);
+                                            showStatus.accept("Failed to revoke invitation.", true);
+                                        }
+                                    });
+                                }).start();
+                            });
+
+                            row.getChildren().addAll(mailBadge, inviteDetails, rowSpacer, revokeInviteBtn);
+                            pendingContainer.getChildren().add(row);
+                        }
+                    }
+                });
+            }).start();
+
+            inviteBtn.setOnAction(e -> {
+                String email = inviteEmailField.getText() == null ? "" : inviteEmailField.getText().trim();
+                if (email.isEmpty()) {
+                    showStatus.accept("Please enter an email address first.", true);
+                    return;
+                }
+                showStatus.accept("Sending invitation...", false);
+                inviteBtn.setDisable(true);
+                new Thread(() -> {
+                    try {
+                        TeamService.inviteMember(team.getId(), email, inviteRoleCombo.getValue());
+                        Platform.runLater(() -> {
+                            showStatus.accept("Invitation successfully sent to " + email + ".", false);
+                            inviteBtn.setDisable(false);
+                            inviteEmailField.clear();
+                            refreshInvitations[0].run();
+                        });
+                    } catch (IOException ex) {
+                        Platform.runLater(() -> {
+                            inviteBtn.setDisable(false);
+                            showStatus.accept("Couldn't send invitation: " + TeamService.friendlyMessage(ex), true);
+                        });
+                    }
+                }).start();
+            });
+        }
+
+        VBox mainContent = new VBox(12);
+        mainContent.setPadding(new Insets(16));
+        mainContent.getChildren().addAll(headerRow, statusBanner);
+        if (inviteCard != null) {
+            mainContent.getChildren().add(inviteCard);
+        }
+        mainContent.getChildren().add(tabPane);
+
+        dialog.getDialogPane().setContent(mainContent);
         initAndStyleDialog(dialog);
+
+        refreshMembers[0].run();
+        if (isAdminOrOwner && refreshInvitations[0] != null) {
+            refreshInvitations[0].run();
+        }
+
         dialog.showAndWait();
     }
 

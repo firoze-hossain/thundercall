@@ -2310,3 +2310,62 @@
     -fx-text-fill: -text-muted;
 }
 
+/* ============================================================
+   Modern Interactive Team Management Modal
+   ============================================================ */
+.team-dialog-pane {
+    -fx-background-color: -bg-base;
+    -fx-pref-width: 720px;
+    -fx-pref-height: 600px;
+    -fx-min-width: 690px;
+    -fx-min-height: 560px;
+}
+.team-dialog-pane > .button-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 18 10 18;
+}
+
+.role-badge {
+    -fx-background-radius: 12px;
+    -fx-padding: 3 10 3 10;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-alignment: center;
+}
+.role-badge-owner {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -accent;
+    -fx-border-color: rgba(255, 108, 55, 0.35);
+    -fx-border-radius: 12px;
+}
+.role-badge-admin {
+    -fx-background-color: rgba(59, 130, 246, 0.15);
+    -fx-text-fill: #3b82f6;
+    -fx-border-color: rgba(59, 130, 246, 0.35);
+    -fx-border-radius: 12px;
+}
+.role-badge-member {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-secondary;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 12px;
+}
+
+.team-danger-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: -danger;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-text-fill: -danger;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 10 4 10;
+    -fx-cursor: hand;
+}
+.team-danger-btn:hover {
+    -fx-background-color: -danger-soft;
+}
+
+
