@@ -44,6 +44,7 @@ public class TokenManager {
      * Starts a brand new 7-day session upon successful user authentication.
      */
     public static void startNewSession(AuthResponse response) {
+        WorkspaceManager.clear();
         storeTokens(response, true);
     }
 
@@ -253,6 +254,7 @@ public class TokenManager {
      */
     public static void clearTokens() {
         stopSessionMonitor();
+        WorkspaceManager.clear();
         prefs.remove(TOKEN_KEY);
         prefs.remove(REFRESH_TOKEN_KEY);
         prefs.remove(USERNAME_KEY);

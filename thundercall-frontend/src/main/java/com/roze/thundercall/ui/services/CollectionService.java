@@ -54,7 +54,7 @@ public class CollectionService {
                 return Optional.ofNullable(response.getData());
             }
         } catch (IOException e) {
-            Platform.runLater(() -> AlertUtils.showError("Failed to get Collection: " + e.getMessage()));
+            System.err.println("Failed to get Collection " + id + ": " + e.getMessage());
         }
         return Optional.empty();
     }

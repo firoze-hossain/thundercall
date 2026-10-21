@@ -26,6 +26,7 @@ public class Main extends Application {
         // If an API call discovers the 7-day session has fully expired,
         // return to the login screen with a clear explanation.
         ApiClient.setOnSessionExpired(() -> {
+            com.roze.thundercall.ui.services.WorkspaceManager.clear();
             AlertUtils.showInfo("Your 7-day session has expired — please log in again.");
             showLoginView();
         });

@@ -56,30 +56,27 @@ public final class SessionStateManager {
                 // Fallback if atomic move isn't supported across filesystems
                 Files.move(tempFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
-
-            // Also keep default session.json updated as fallback
-            if (!targetFile.equals(DEFAULT_STORE_FILE)) {
-                try {
-                    Files.copy(targetFile.toPath(), DEFAULT_STORE_FILE.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                } catch (Exception ignored) {
-                }
-            }
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Failed to persist session: " + e.getMessage(), e);
         }
     }
 
     public static synchronized SessionData loadSession(Long userId) {
-        File userFile = getSessionFileForUser(userId);
-        if (userFile.exists() && userFile.length() > 0) {
-            try {
-                SessionData data = MAPPER.readValue(userFile, SessionData.class);
-                if (data != null) {
-                    return data;
+        if (userId != null && userId > 0) {
+            File userFile = getSessionFileForUser(userId);
+            if (userFile.exists() && userFile.length() > 0) {
+                try {
+                    SessionData data = MAPPER.readValue(userFile, SessionData.class);
+                    if (data != null) {
+                        return data;
+                    }
+                } catch (IOException e) {
+                    LOGGER.log(Level.WARNING, "Failed to load user session from " + userFile.getName() + ": " + e.getMessage());
                 }
-            } catch (IOException e) {
-                LOGGER.log(Level.WARNING, "Failed to load user session from " + userFile.getName() + ": " + e.getMessage());
             }
+            // An authenticated user without a saved session must start clean.
+            // Never fall back to another user's session or default session file.
+            return new SessionData();
         }
 
         if (DEFAULT_STORE_FILE.exists() && DEFAULT_STORE_FILE.length() > 0) {
@@ -89,7 +86,7 @@ public final class SessionStateManager {
                     return data;
                 }
             } catch (IOException e) {
-                LOGGER.log(Level.WARNING, "Failed to load default session from " + DEFAULT_STORE_FILE.getName() + ": " + e.getMessage());
+                LOGGER.log(Level.WARNING, "Failed to load default session: " + e.getMessage());
             }
         }
 

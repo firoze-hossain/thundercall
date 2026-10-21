@@ -957,7 +957,11 @@ public class MainController implements Initializable {
                         Platform.runLater(this::showWorkspaceSetup);
                     } else {
                         Platform.runLater(() -> {
-                            if (WorkspaceManager.getCurrentWorkspace() == null) {
+                            Workspace current = WorkspaceManager.getCurrentWorkspace();
+                            boolean currentBelongsToUser = current != null
+                                    && workspaces.stream().anyMatch(w -> Objects.equals(w.getId(), current.getId()));
+
+                            if (!currentBelongsToUser) {
                                 Workspace target = null;
                                 if (currentSession != null && currentSession.getActiveWorkspaceId() != null) {
                                     Long savedWsId = currentSession.getActiveWorkspaceId();
@@ -966,7 +970,7 @@ public class MainController implements Initializable {
                                             .findFirst()
                                             .orElse(null);
                                 }
-                                if (target == null) {
+                                if (target == null && !workspaces.isEmpty()) {
                                     target = workspaces.get(0);
                                 }
                                 WorkspaceManager.setCurrentWorkspace(target);
@@ -10356,11 +10360,36 @@ public class MainController implements Initializable {
     private void handleLogout() {
         if (AlertUtils.showConfirmation("Logout", "Are you sure you want to logout?")) {
             try {
-                // Stop reporting this client as online BEFORE clearing the
-                // session — a signed-out app shouldn't show a green dot.
+                // 1. Cancel debounce & save this user's session cleanly before destroying state
+                if (sessionSaveDebounce != null) {
+                    sessionSaveDebounce.stop();
+                }
+                saveCurrentSession();
+
+                // 2. Stop reporting this client as online & stop session background monitor
                 stopPresenceUpdates();
+                TokenManager.stopSessionMonitor();
+
+                // 3. Clear all workspace context and active session data
+                WorkspaceManager.clear();
+                currentSession = null;
+
+                // 4. Clear in-memory tabs, caches, and tree maps
+                if (requestTabPane != null) {
+                    requestTabPane.getTabs().clear();
+                }
+                tabStates.clear();
+                requestIdMap.clear();
+                collectionIdMap.clear();
+                folderIdMap.clear();
+                commentThreadsCache.clear();
+                collectionVariablesCache.clear();
+
+                // 5. Clear server session and local authentication tokens
                 ApiClient.logout();
                 TokenManager.clearTokens();
+
+                // 6. Transition to login view
                 Main.showLoginView();
             } catch (Exception e) {
                 AlertUtils.showError("Logout failed: " + e.getMessage());
