@@ -771,19 +771,19 @@
                     <TabPane fx:id="responseTabPane" styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                         <tabs>
                             <Tab text="Body" fx:id="responseBodyTab">
-                                <SplitPane orientation="HORIZONTAL" dividerPositions="0.7">
+                                <SplitPane fx:id="responseBodySplitPane" orientation="HORIZONTAL" dividerPositions="0.7">
                                     <StackPane>
                                         <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
                                                text="Click Send to get a response" mouseTransparent="true"/>
                                         <CodeArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
                                         <VBox fx:id="responseSearchBarContainer" alignment="TOP_RIGHT"
-                                              pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
+                                               pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
                                             <padding>
                                                 <Insets top="8" right="8"/>
                                             </padding>
                                         </VBox>
                                     </StackPane>
-                                    <WebView fx:id="responsePreview"/>
+                                    <WebView fx:id="responsePreview" styleClass="response-preview"/>
                                 </SplitPane>
                             </Tab>
                             <Tab text="Messages" fx:id="wsMessagesTab">

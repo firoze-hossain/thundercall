@@ -27,6 +27,9 @@
     -danger-soft: rgba(217, 48, 37, 0.08);
     -info: #1a73e8;
 
+    -fx-base: -bg-base;
+    -fx-background: -bg-base;
+    -fx-control-inner-background: -bg-panel;
     -fx-background-color: -bg-base;
 }
 
@@ -177,5 +180,33 @@
     -fx-border-width: 0 0 2 0;
     -fx-cursor: closed-hand;
 }
+
+/* Light Theme overrides for ScrollPanes and Dialogs */
+.scroll-pane {
+    -fx-background: -bg-panel;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+.dialog-pane {
+    -fx-base: -bg-base;
+    -fx-background: -bg-panel;
+    -fx-background-color: -bg-panel;
+}
+.dialog-pane .scroll-pane,
+.dialog-pane .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: -bg-panel;
+    -fx-border-color: transparent;
+}
+.dialog-section-title {
+    -fx-text-fill: -text-primary;
+}
+.separator .line {
+    -fx-border-color: -border-subtle;
+}
+
 
 

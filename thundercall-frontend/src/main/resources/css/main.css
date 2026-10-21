@@ -39,6 +39,10 @@
     -danger-soft: rgba(229, 114, 106, 0.12);
     -info: #6aa8f0;
 
+    /* JavaFX looked-up colors mapped to design tokens so controls stay dark by default */
+    -fx-base: -bg-base;
+    -fx-background: -bg-base;
+    -fx-control-inner-background: -bg-panel;
     -fx-background-color: -bg-base;
     -fx-text-fill: -text-primary;
 }
@@ -878,17 +882,59 @@
 }
 .corner { -fx-background-color: transparent; }
 
+/* ScrollPanes across the entire app and inside dialogs */
+.scroll-pane {
+    -fx-background: -bg-panel;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
 /* Dialogs / alerts — remember to attach this stylesheet in AlertUtils,
    dialogs open in their own scene and do NOT inherit it automatically. */
 .dialog-pane {
+    -fx-base: -bg-base;
+    -fx-background: -bg-panel;
     -fx-background-color: -bg-panel;
     -fx-border-color: -border-color;
 }
+.dialog-pane > .content {
+    -fx-background-color: transparent;
+}
 .dialog-pane .label { -fx-text-fill: -text-primary; }
 .dialog-pane .content { -fx-text-fill: -text-primary; }
-.dialog-pane .header-panel { -fx-background-color: -bg-elevated; }
-.dialog-pane .header-panel .label { -fx-font-weight: bold; -fx-font-size: 14px; }
+.dialog-pane .header-panel {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.dialog-pane .header-panel .label {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: -text-primary;
+}
 .dialog-pane .button-bar .container { -fx-background-color: transparent; }
+.dialog-pane .scroll-pane,
+.dialog-pane .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: -bg-panel;
+    -fx-border-color: transparent;
+}
+
+.dialog-section-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-padding: 4 0 2 0;
+}
+
+.separator .line {
+    -fx-border-color: -border-subtle;
+    -fx-border-width: 1px 0 0 0;
+    -fx-background-color: transparent;
+}
 
 .progress-indicator { -fx-progress-color: -accent; }
 

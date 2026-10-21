@@ -228,6 +228,8 @@ public class MainController implements Initializable {
     @FXML
     private ListView<String> testResultsList;
     @FXML
+    private SplitPane responseBodySplitPane;
+    @FXML
     private WebView responsePreview;
     @FXML
     private TableView<KeyValuePair> responseHeadersTable;
@@ -1872,6 +1874,9 @@ public class MainController implements Initializable {
     /** Response viewer: read-only JSON + {{variable}} coloring, plus a
      * Ctrl/Cmd+F find bar overlaid in its top-right corner. */
     private void setupResponseCodeArea() {
+        if (responseBodySplitPane != null && responsePreview != null) {
+            responseBodySplitPane.getItems().remove(responsePreview);
+        }
         responseBodyArea.setWrapText(true);
         // Postman-style line numbers down the left edge of the response viewer.
         responseBodyArea.setParagraphGraphicFactory(LineNumberFactory.get(responseBodyArea));
@@ -6189,7 +6194,9 @@ public class MainController implements Initializable {
 
         VBox content = new VBox(10);
         content.setPadding(new Insets(10));
-        content.getChildren().add(new Label("Members"));
+        Label membersLabel = new Label("Members");
+        membersLabel.getStyleClass().add("dialog-section-title");
+        content.getChildren().add(membersLabel);
         content.getChildren().add(membersTable);
 
         if (isAdminOrOwner) {
@@ -6244,7 +6251,9 @@ public class MainController implements Initializable {
         // ---- Pending invitations (owner/admin only) ----
         if (isAdminOrOwner) {
             content.getChildren().add(new Separator());
-            content.getChildren().add(new Label("Pending Invitations"));
+            Label pendingInvitationsLabel = new Label("Pending Invitations");
+            pendingInvitationsLabel.getStyleClass().add("dialog-section-title");
+            content.getChildren().add(pendingInvitationsLabel);
 
             TableView<TeamInvitationResponse> invitationsTable = new TableView<>();
             TableColumn<TeamInvitationResponse, String> inviteEmailCol = new TableColumn<>("Email");
@@ -6287,7 +6296,9 @@ public class MainController implements Initializable {
 
             // ---- Invite by email ----
             content.getChildren().add(new Separator());
-            content.getChildren().add(new Label("Invite someone by email"));
+            Label inviteEmailSectionLabel = new Label("Invite someone by email");
+            inviteEmailSectionLabel.getStyleClass().add("dialog-section-title");
+            content.getChildren().add(inviteEmailSectionLabel);
             TextField inviteEmailField = new TextField();
             inviteEmailField.setPromptText("email@example.com");
             ComboBox<String> inviteRoleCombo = new ComboBox<>();
@@ -6376,6 +6387,7 @@ public class MainController implements Initializable {
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(520);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
         dialog.getDialogPane().setContent(scrollPane);
         initAndStyleDialog(dialog);
         dialog.showAndWait();
@@ -6581,11 +6593,16 @@ public class MainController implements Initializable {
             }).start();
         });
 
+        Label baseUrlSectionLabel = new Label("Base URL");
+        baseUrlSectionLabel.getStyleClass().add("dialog-section-title");
+        Label routesSectionLabel = new Label("Routes");
+        routesSectionLabel.getStyleClass().add("dialog-section-title");
+
         VBox content = new VBox(10,
-                new Label("Base URL"), urlRow,
+                baseUrlSectionLabel, urlRow,
                 enabledCheck,
                 new Separator(),
-                new Label("Routes"), routesTable, routeActions,
+                routesSectionLabel, routesTable, routeActions,
                 new Separator(),
                 deleteServerBtn,
                 statusLabel);
@@ -6593,6 +6610,7 @@ public class MainController implements Initializable {
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(520);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
         dialog.getDialogPane().setContent(scrollPane);
         initAndStyleDialog(dialog);
         dialog.showAndWait();
@@ -6638,6 +6656,7 @@ public class MainController implements Initializable {
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(480);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
         dialog.getDialogPane().setContent(scrollPane);
         initAndStyleDialog(dialog);
 
@@ -6972,7 +6991,9 @@ public class MainController implements Initializable {
             }).start();
         });
 
-        VBox content = new VBox(10, actions, new Separator(), new Label("Run History"), runsTable, statusLabel);
+        Label runHistoryLabel = new Label("Run History");
+        runHistoryLabel.getStyleClass().add("dialog-section-title");
+        VBox content = new VBox(10, actions, new Separator(), runHistoryLabel, runsTable, statusLabel);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         initAndStyleDialog(dialog);
@@ -7230,19 +7251,35 @@ public class MainController implements Initializable {
                     })));
         }).start();
 
+        Label wsSectionLabel = new Label("Workspace");
+        wsSectionLabel.getStyleClass().add("dialog-section-title");
+
+        Label inviteEmailSectionLabel = new Label("Invite by email");
+        inviteEmailSectionLabel.getStyleClass().add("dialog-section-title");
+
+        Label bulkTeamSectionLabel = new Label("Or invite a whole team at once");
+        bulkTeamSectionLabel.getStyleClass().add("dialog-section-title");
+
+        Label pendingSectionLabel = new Label("Pending Invitations");
+        pendingSectionLabel.getStyleClass().add("dialog-section-title");
+
+        Label currentAccessSectionLabel = new Label("Current Access");
+        currentAccessSectionLabel.getStyleClass().add("dialog-section-title");
+
         VBox content = new VBox(10,
-                new Label("Workspace"), workspaceCombo,
-                new Label("Invite by email"), inviteRow, chooseEnvBtn, sendInviteBtn, statusLabel,
+                wsSectionLabel, workspaceCombo,
+                inviteEmailSectionLabel, inviteRow, chooseEnvBtn, sendInviteBtn, statusLabel,
                 new Separator(),
-                new Label("Or invite a whole team at once"), bulkRow, bulkStatusLabel,
+                bulkTeamSectionLabel, bulkRow, bulkStatusLabel,
                 new Separator(),
-                new Label("Pending Invitations"), pendingTable,
-                new Label("Current Access"), accessTable);
+                pendingSectionLabel, pendingTable,
+                currentAccessSectionLabel, accessTable);
         content.setPadding(new Insets(10));
         content.setPrefWidth(560);
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefViewportHeight(560);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
         dialog.getDialogPane().setContent(scrollPane);
         initAndStyleDialog(dialog);
 
@@ -11530,16 +11567,22 @@ public class MainController implements Initializable {
         if (responsePreview == null) {
             return;
         }
+        if (responseBodySplitPane != null && !responseBodySplitPane.getItems().contains(responsePreview)) {
+            responseBodySplitPane.getItems().add(responsePreview);
+            responseBodySplitPane.setDividerPositions(0.5);
+        }
+        String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
+        String textColor = ThemeManager.isLight() ? "#6b6b6b" : "#9a9ea9";
         responsePreview.getEngine().loadContent(
-                "<html><body style='margin:0;padding:12px;background:#1d1f24;'>"
-                        + "<p style='font-family:sans-serif;color:#9a9ea9;font-size:12px;'>Rendering PDF preview…</p>"
+                "<html><body style='margin:0;padding:12px;background:" + bg + ";'>"
+                        + "<p style='font-family:sans-serif;color:" + textColor + ";font-size:12px;'>Rendering PDF preview…</p>"
                         + "</body></html>");
 
         new Thread(() -> {
             try {
                 byte[] pdfBytes = Base64.getDecoder().decode(apiResponse.getResponse());
                 StringBuilder html = new StringBuilder(
-                        "<html><body style='margin:0;padding:12px;background:#1d1f24;text-align:center;'>");
+                        "<html><body style='margin:0;padding:12px;background:" + bg + ";text-align:center;'>");
                 try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
                     org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
                     int pageCount = document.getNumberOfPages();
@@ -11555,7 +11598,7 @@ public class MainController implements Initializable {
                                 .append("' style='max-width:100%;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.4);'/>");
                     }
                     if (pageCount > pagesToRender) {
-                        html.append("<p style='font-family:sans-serif;color:#9a9ea9;font-size:12px;'>")
+                        html.append("<p style='font-family:sans-serif;color:" + textColor + ";font-size:12px;'>")
                                 .append(pageCount - pagesToRender)
                                 .append(" more page(s) not shown — save the file to see the rest.</p>");
                     }
@@ -11565,7 +11608,7 @@ public class MainController implements Initializable {
                 Platform.runLater(() -> responsePreview.getEngine().loadContent(finalHtml));
             } catch (Exception e) {
                 Platform.runLater(() -> responsePreview.getEngine().loadContent(
-                        "<html><body style='margin:0;padding:12px;background:#1d1f24;'>"
+                        "<html><body style='margin:0;padding:12px;background:" + bg + ";'>"
                                 + "<p style='font-family:sans-serif;color:#e57373;font-size:12px;'>"
                                 + "Couldn't render a preview: " + e.getMessage() + "</p></body></html>"));
             }
@@ -11574,7 +11617,12 @@ public class MainController implements Initializable {
 
     private void clearResponsePreview() {
         if (responsePreview != null) {
-            responsePreview.getEngine().loadContent("");
+            String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
+            responsePreview.getEngine().loadContent(
+                    "<html><body style='background:" + bg + ";'></body></html>");
+        }
+        if (responseBodySplitPane != null && responsePreview != null) {
+            responseBodySplitPane.getItems().remove(responsePreview);
         }
     }
 

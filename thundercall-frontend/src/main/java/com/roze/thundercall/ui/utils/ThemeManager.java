@@ -32,7 +32,17 @@ public final class ThemeManager {
 
     public static void setLight(boolean light, Scene scene) {
         prefs().put(PREF_KEY, light ? LIGHT : DARK);
-        apply(scene);
+        if (scene != null) {
+            apply(scene);
+        }
+        try {
+            for (Window window : Window.getWindows()) {
+                if (window != null && window.getScene() != null && window.getScene() != scene) {
+                    apply(window.getScene());
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /** Applies the persisted theme to the given scene. Safe to call any time. */
@@ -81,6 +91,9 @@ public final class ThemeManager {
         if (isLight()) {
             pane.getStylesheets().add(lightCss);
         }
+        if (pane.getScene() != null) {
+            apply(pane.getScene());
+        }
         anchorToMainWindow(pane);
     }
 
@@ -96,12 +109,14 @@ public final class ThemeManager {
      */
     private static void anchorToMainWindow(DialogPane pane) {
         if (pane.getScene() != null) {
+            apply(pane.getScene());
             setOwner(pane.getScene().getWindow());
         } else {
             // Dialog implementations create their Scene lazily — attach as
             // soon as it exists, which is still before the dialog is shown.
             pane.sceneProperty().addListener((obs, oldScene, newScene) -> {
                 if (newScene != null) {
+                    apply(newScene);
                     setOwner(newScene.getWindow());
                 }
             });
