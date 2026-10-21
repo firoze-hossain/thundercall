@@ -1874,6 +1874,9 @@ public class MainController implements Initializable {
     /** Response viewer: read-only JSON + {{variable}} coloring, plus a
      * Ctrl/Cmd+F find bar overlaid in its top-right corner. */
     private void setupResponseCodeArea() {
+        if (responsePreview != null && !responsePreview.getStyleClass().contains("response-preview")) {
+            responsePreview.getStyleClass().add("response-preview");
+        }
         if (responseBodySplitPane != null && responsePreview != null) {
             responseBodySplitPane.getItems().remove(responsePreview);
         }

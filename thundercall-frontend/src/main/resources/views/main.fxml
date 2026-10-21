@@ -783,7 +783,7 @@
                                             </padding>
                                         </VBox>
                                     </StackPane>
-                                    <WebView fx:id="responsePreview" styleClass="response-preview"/>
+                                    <WebView fx:id="responsePreview"/>
                                 </SplitPane>
                             </Tab>
                             <Tab text="Messages" fx:id="wsMessagesTab">
