@@ -162,4 +162,20 @@
     -fx-text-fill: #212121;
 }
 
+/* Draggable request tabs */
+.request-tab-bar .tab {
+    -fx-cursor: hand;
+}
+.tab-graphic-dragging {
+    -fx-opacity: 0.70;
+    -fx-cursor: closed-hand;
+}
+.request-tab-bar .tab.tab-dragging {
+    -fx-opacity: 0.70;
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: transparent transparent -accent transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-cursor: closed-hand;
+}
+
 

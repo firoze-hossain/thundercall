@@ -8551,6 +8551,8 @@ public class MainController implements Initializable {
                     }
                 });
 
+        TabDragReorderHelper.install(requestTabPane, isMoving -> switchingTabs = isMoving);
+
         // Live dirty-tracking + method-badge updates. These controls are
         // shared across every tab (the tab switch swaps their content), so
         // one set of listeners covers all tabs; restoringTabState guards
@@ -8926,10 +8928,14 @@ public class MainController implements Initializable {
         Label nameLabel = new Label(state.name);
         nameLabel.getStyleClass().add("tab-name-label");
 
+        methodLabel.setMouseTransparent(true);
+        nameLabel.setMouseTransparent(true);
+
         box.getChildren().addAll(methodLabel, nameLabel);
         if (state.dirty) {
             Label dot = new Label("\u25CF");
             dot.getStyleClass().add("tab-unsaved-dot");
+            dot.setMouseTransparent(true);
             box.getChildren().add(dot);
         }
         tab.setGraphic(box);

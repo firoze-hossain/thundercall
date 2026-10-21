@@ -1214,12 +1214,24 @@
 .request-tab-bar .tab {
     -fx-background-color: transparent;
     -fx-padding: 3 10 3 12;
+    -fx-cursor: hand;
 }
 .request-tab-bar .tab:hover { -fx-background-color: -bg-hover; }
 .request-tab-bar .tab:selected {
     -fx-background-color: -bg-panel;
     -fx-border-color: transparent transparent -accent transparent;
     -fx-border-width: 0 0 2 0;
+}
+.request-tab-bar .tab.tab-dragging {
+    -fx-opacity: 0.70;
+    -fx-background-color: -bg-hover;
+    -fx-border-color: transparent transparent -accent transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-cursor: closed-hand;
+}
+.tab-graphic-dragging {
+    -fx-opacity: 0.70;
+    -fx-cursor: closed-hand;
 }
 .request-tab-bar .tab .tab-label {
     -fx-text-fill: -text-secondary;
