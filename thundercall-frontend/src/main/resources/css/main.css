@@ -951,25 +951,79 @@
 .method-socketio { -fx-text-fill: #ab47bc; -fx-font-weight: bold; }
 
 /* ============================================================
-   Auth pages (login.fxml / register.fxml)
+   Auth pages (login.fxml / register.fxml / verify-email.fxml)
    ============================================================ */
 .auth-root { -fx-background-color: -bg-base; }
 
 .brand-panel {
-    -fx-background-color: linear-gradient(to bottom right, #b8431d, #ff6c37);
+    -fx-background-color: linear-gradient(to bottom, #131722, #0d1017);
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.brand-logo-image {
+    -fx-effect: dropshadow(gaussian, rgba(0, 195, 235, 0.35), 24, 0.1, 0, 4);
 }
 .brand-title {
-    -fx-text-fill: white;
-    -fx-font-size: 30px;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 26px;
     -fx-font-weight: bold;
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
+}
+.brand-version-badge {
+    -fx-background-color: rgba(255, 108, 55, 0.15);
+    -fx-text-fill: #ff835a;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(255, 108, 55, 0.35);
+    -fx-border-radius: 10;
+    -fx-padding: 2 8 2 8;
 }
 .brand-tagline {
-    -fx-text-fill: rgba(255, 255, 255, 0.88);
-    -fx-font-size: 14px;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 13px;
+    -fx-line-spacing: 2px;
 }
 .brand-feature {
-    -fx-text-fill: rgba(255, 255, 255, 0.92);
+    -fx-text-fill: -text-secondary;
     -fx-font-size: 13px;
+}
+
+/* Feature cards in left brand panel */
+.brand-features-container {
+    -fx-padding: 4 0 4 0;
+}
+.brand-feature-item {
+    -fx-background-color: rgba(255, 255, 255, 0.03);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(255, 255, 255, 0.06);
+    -fx-border-radius: 8;
+    -fx-padding: 8 12 8 12;
+}
+.brand-feature-item:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-border-color: rgba(255, 108, 55, 0.28);
+}
+.feature-icon-badge {
+    -fx-font-size: 16px;
+    -fx-alignment: center;
+}
+.feature-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+.feature-desc {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+}
+.brand-status-dot {
+    -fx-text-fill: #56c99f;
+    -fx-font-size: 10px;
+}
+.brand-footer-text {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
 }
 
 .auth-form-side { -fx-background-color: -bg-base; }
@@ -979,11 +1033,11 @@
     -fx-background-radius: 12;
     -fx-border-color: -border-color;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 24, 0, 0, 8);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.55), 28, 0, 0, 10);
 }
 .auth-title {
     -fx-text-fill: -text-primary;
-    -fx-font-size: 22px;
+    -fx-font-size: 24px;
     -fx-font-weight: bold;
 }
 .auth-subtitle {
@@ -992,16 +1046,150 @@
 }
 
 .field-label {
-    -fx-text-fill: -text-muted;
+    -fx-text-fill: -text-secondary;
     -fx-font-size: 10px;
     -fx-font-weight: bold;
 }
 
+.auth-text-field {
+    -fx-background-color: #121419;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-muted;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-padding: 8 12 8 12;
+    -fx-font-size: 13px;
+}
+.auth-text-field:focused {
+    -fx-background-color: #15181f;
+    -fx-border-color: -accent;
+    -fx-effect: dropshadow(gaussian, rgba(255, 108, 55, 0.25), 6, 0, 0, 0);
+}
+.auth-password-field {
+    -fx-padding: 8 38 8 12;
+}
+
+.password-toggle-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 14px;
+    -fx-padding: 4 6 4 6;
+    -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-background-radius: 4;
+}
+.password-toggle-btn:hover {
+    -fx-text-fill: -text-primary;
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+}
+
+.auth-checkbox {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+}
+.auth-checkbox .box {
+    -fx-background-color: #121419;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+.auth-checkbox:selected .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.auth-checkbox:selected .mark {
+    -fx-background-color: white;
+}
+
+.auth-primary-btn {
+    -fx-background-color: linear-gradient(to bottom right, #ff7a45, #ff5722);
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-padding: 9 18 9 18;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(255, 87, 34, 0.3), 8, 0, 0, 2);
+}
+.auth-primary-btn:hover {
+    -fx-background-color: linear-gradient(to bottom right, #ff8c5a, #ff6a38);
+    -fx-effect: dropshadow(gaussian, rgba(255, 87, 34, 0.5), 12, 0, 0, 3);
+}
+.auth-primary-btn:pressed {
+    -fx-background-color: #e0551f;
+}
+.auth-primary-btn:disabled {
+    -fx-background-color: -bg-active;
+    -fx-text-fill: -text-muted;
+    -fx-effect: none;
+}
+
+.auth-secondary-btn {
+    -fx-background-color: #15181f;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+    -fx-padding: 8 18 8 18;
+    -fx-cursor: hand;
+}
+.auth-secondary-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: rgba(255, 108, 55, 0.6);
+}
+
+.auth-or-row {
+    -fx-padding: 2 0 2 0;
+}
+.auth-or-label {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.auth-separator .line {
+    -fx-border-color: -border-subtle;
+    -fx-border-width: 0.5;
+}
+
+.auth-switch-prompt {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 12px;
+}
+
+.auth-link {
+    -fx-text-fill: -accent;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent;
+    -fx-underline: false;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+}
+.auth-link:hover {
+    -fx-text-fill: -accent-hover;
+    -fx-underline: true;
+}
+.auth-link:visited { -fx-text-fill: -accent; }
+
 .verification-code-field {
+    -fx-background-color: #121419;
+    -fx-text-fill: -text-primary;
     -fx-font-size: 22px;
     -fx-font-family: "Consolas", "JetBrains Mono", monospace;
     -fx-alignment: center;
     -fx-padding: 10;
+    -fx-background-radius: 6;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6;
+}
+.verification-code-field:focused {
+    -fx-border-color: -accent;
+    -fx-effect: dropshadow(gaussian, rgba(255, 108, 55, 0.25), 6, 0, 0, 0);
 }
 
 .primary-button {
@@ -1029,21 +1217,6 @@
     -fx-cursor: hand;
 }
 .secondary-button:hover { -fx-background-color: -bg-hover; -fx-border-color: -accent; }
-
-.auth-separator .line {
-    -fx-border-color: -border-subtle;
-    -fx-border-width: 0.5;
-}
-
-.auth-link {
-    -fx-text-fill: -accent;
-    -fx-font-size: 12px;
-    -fx-border-color: transparent;
-    -fx-underline: false;
-    -fx-cursor: hand;
-}
-.auth-link:hover { -fx-underline: true; }
-.auth-link:visited { -fx-text-fill: -accent; }
 
 /* ============================================================
    Postman-style shell (menu bar, nav header, workspace bar,

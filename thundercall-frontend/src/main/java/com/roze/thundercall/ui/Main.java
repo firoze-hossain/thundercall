@@ -1,5 +1,6 @@
 package com.roze.thundercall.ui;
 
+import com.roze.thundercall.ui.controllers.AuthController;
 import com.roze.thundercall.ui.utils.AlertUtils;
 import javafx.application.Application;
 import javafx.application.HostServices;
@@ -32,10 +33,10 @@ public class Main extends Application {
     public static void showLoginView() {
         try {
             FXMLLoader fxmlLoader = new FXMLLoader(Main.class.getResource("/views/login.fxml"));
-            Scene scene = new Scene(fxmlLoader.load(), 800, 600);
+            Scene scene = new Scene(fxmlLoader.load(), 880, 600);
             primaryStage.setScene(scene);
-            primaryStage.setTitle("Login");
-            resetStageToSceneSize(800, 600);
+            primaryStage.setTitle("Thundercall — Sign In");
+            resetStageToSceneSize(880, 600);
             primaryStage.show();
         } catch (IOException e) {
             AlertUtils.showError("Failed to load login view");
@@ -46,8 +47,12 @@ public class Main extends Application {
         try {
             FXMLLoader fxmlLoader = new FXMLLoader(Main.class.getResource("/views/register.fxml"));
             Scene scene = new Scene(fxmlLoader.load(), 880, 600);
+            AuthController controller = fxmlLoader.getController();
+            if (controller != null) {
+                controller.setRegisterMode(true);
+            }
             primaryStage.setScene(scene);
-            primaryStage.setTitle("Register");
+            primaryStage.setTitle("Thundercall — Create Account");
             resetStageToSceneSize(880, 600);
             primaryStage.show();
         } catch (IOException e) {
