@@ -5183,80 +5183,260 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSettings() {
-        /*
-         * Settings uses one window with a simple, flat navigation list.
-         * Appearance, Updates and Mail are top-level items — there is no
-         * "Appearance & Behavior" parent and no nested settings tree.
-         */
         Dialog<ButtonType> dialog = new Dialog<>();
-        if (urlField != null && urlField.getScene() != null) {
-            dialog.initOwner(urlField.getScene().getWindow());
+        Window owner = (urlField != null && urlField.getScene() != null)
+                ? urlField.getScene().getWindow() : null;
+        if (owner != null) {
+            dialog.initOwner(owner);
         }
         dialog.setTitle("Settings");
         dialog.setResizable(false);
-        dialog.getDialogPane().getButtonTypes().addAll(
-                ButtonType.APPLY, ButtonType.CANCEL, ButtonType.OK);
 
-        VBox navigation = new VBox();
-        navigation.setPrefWidth(205);
-        navigation.setMinWidth(205);
-        navigation.setMaxWidth(205);
-        navigation.setPadding(new Insets(18, 8, 12, 8));
-        navigation.setSpacing(2);
-        navigation.setStyle("-fx-background-color: -fx-control-inner-background;");
+        DialogPane dialogPane = dialog.getDialogPane();
+        dialogPane.getStyleClass().add("settings-dialog-pane");
+        dialogPane.getButtonTypes().addAll(ButtonType.APPLY, ButtonType.CANCEL, ButtonType.OK);
 
-        VBox page = new VBox(0);
-        page.setPadding(new Insets(28, 20, 18, 20));
-        page.setPrefWidth(455);
-        page.setMinWidth(455);
+        // Sidebar Navigation
+        VBox navigation = new VBox(4);
+        navigation.setPrefWidth(210);
+        navigation.setMinWidth(210);
+        navigation.setMaxWidth(210);
+        navigation.getStyleClass().add("settings-nav-sidebar");
 
-        BorderPane root = new BorderPane();
-        root.setLeft(navigation);
-        root.setCenter(page);
-        root.setPrefSize(660, 500);
-        root.setMinSize(660, 500);
+        Label navHeader = new Label("PREFERENCES");
+        navHeader.getStyleClass().add("settings-nav-header");
+        navigation.getChildren().add(navHeader);
 
-        Button appearanceNav = settingsNavigationButton("Appearance");
-        Button updatesNav = settingsNavigationButton("Updates");
+        Button appearanceNav = new Button("🎨  Appearance");
+        appearanceNav.getStyleClass().add("settings-nav-item");
+        appearanceNav.setMaxWidth(Double.MAX_VALUE);
+
+        Button updatesNav = new Button("🚀  Updates");
+        updatesNav.getStyleClass().add("settings-nav-item");
+        updatesNav.setMaxWidth(Double.MAX_VALUE);
+
         navigation.getChildren().addAll(appearanceNav, updatesNav);
 
         Button mailNav = null;
         if (TokenManager.isAdmin()) {
-            mailNav = settingsNavigationButton("Mail");
+            mailNav = new Button();
+            mailNav.getStyleClass().add("settings-nav-item");
+            mailNav.setMaxWidth(Double.MAX_VALUE);
+
+            HBox mailNavBox = new HBox(8);
+            mailNavBox.setAlignment(Pos.CENTER_LEFT);
+            Label mailTitle = new Label("✉  Mail Server");
+            Region mailSpacer = new Region();
+            HBox.setHgrow(mailSpacer, Priority.ALWAYS);
+            Label adminBadge = new Label("ADMIN");
+            adminBadge.getStyleClass().add("settings-admin-badge");
+            mailNavBox.getChildren().addAll(mailTitle, mailSpacer, adminBadge);
+            mailNav.setGraphic(mailNavBox);
+            mailNav.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+
             navigation.getChildren().add(mailNav);
         }
 
-        // ---------------- Appearance ----------------
-        RadioButton darkBtn = new RadioButton("Dark theme");
-        RadioButton lightBtn = new RadioButton("Light theme");
-        ToggleGroup themeGroup = new ToggleGroup();
-        darkBtn.setToggleGroup(themeGroup);
-        lightBtn.setToggleGroup(themeGroup);
-        if (ThemeManager.isLight()) {
-            lightBtn.setSelected(true);
-        } else {
-            darkBtn.setSelected(true);
-        }
+        // Right-side page container inside ScrollPane
+        VBox pageContainer = new VBox(16);
+        pageContainer.getStyleClass().add("settings-page-container");
+        pageContainer.setFillWidth(true);
+        pageContainer.setPrefWidth(570);
+        pageContainer.setMinWidth(550);
 
-        VBox appearancePage = createSettingsPage(
-                "Appearance",
-                "Theme and visual preferences");
-        appearancePage.getChildren().addAll(
-                new Label("Choose how Thundercall should look."),
-                new Separator(),
-                darkBtn,
-                lightBtn);
-        VBox.setMargin(darkBtn, new Insets(8, 0, 0, 0));
-        VBox.setMargin(lightBtn, new Insets(8, 0, 0, 0));
+        ScrollPane scrollPane = new ScrollPane(pageContainer);
+        scrollPane.getStyleClass().add("settings-scroll-pane");
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setPrefWidth(590);
+        scrollPane.setMinWidth(570);
 
-        // ---------------- Updates ----------------
-        CheckBox autoUpdate = new CheckBox("Automatically check for application updates");
+        // ============================================================
+        // 1. Appearance Page
+        // ============================================================
+        final boolean[] selectedLight = new boolean[]{ThemeManager.isLight()};
+
+        Label appTitle = new Label("Appearance");
+        appTitle.getStyleClass().add("settings-page-title");
+        Label appSub = new Label("Customize the interface theme and visual presentation of Thundercall.");
+        appSub.getStyleClass().add("settings-page-subtitle");
+        VBox appHeader = new VBox(4, appTitle, appSub);
+
+        VBox themeCard = new VBox(12);
+        themeCard.getStyleClass().add("settings-card");
+        Label themeCardTitle = new Label("Interface Theme");
+        themeCardTitle.getStyleClass().add("settings-card-title");
+        Label themeCardDesc = new Label("Select your preferred appearance. Thundercall adapts contrast and palettes instantly.");
+        themeCardDesc.getStyleClass().add("settings-card-desc");
+
+        HBox themeCardsBox = new HBox(16);
+
+        // Dark Theme Card
+        VBox darkCard = new VBox(10);
+        darkCard.getStyleClass().add("settings-theme-card");
+        HBox.setHgrow(darkCard, Priority.ALWAYS);
+        StackPane darkMockup = createThemeMockup(false);
+        HBox darkTitleRow = new HBox(8);
+        darkTitleRow.setAlignment(Pos.CENTER_LEFT);
+        Label darkTitle = new Label("🌙  Dark Theme");
+        darkTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+        Region darkSp = new Region();
+        HBox.setHgrow(darkSp, Priority.ALWAYS);
+        Label darkBadge = new Label("✓ Active");
+        darkBadge.getStyleClass().add("settings-status-badge-ok");
+        darkTitleRow.getChildren().addAll(darkTitle, darkSp, darkBadge);
+        Label darkDesc = new Label("Refined slate and charcoal canvas engineered for focus, code readability, and low eye fatigue.");
+        darkDesc.getStyleClass().add("settings-card-desc");
+        darkDesc.setWrapText(true);
+        darkCard.getChildren().addAll(darkMockup, darkTitleRow, darkDesc);
+
+        // Light Theme Card
+        VBox lightCard = new VBox(10);
+        lightCard.getStyleClass().add("settings-theme-card");
+        HBox.setHgrow(lightCard, Priority.ALWAYS);
+        StackPane lightMockup = createThemeMockup(true);
+        HBox lightTitleRow = new HBox(8);
+        lightTitleRow.setAlignment(Pos.CENTER_LEFT);
+        Label lightTitle = new Label("☀️  Light Theme");
+        lightTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+        Region lightSp = new Region();
+        HBox.setHgrow(lightSp, Priority.ALWAYS);
+        Label lightBadge = new Label("✓ Active");
+        lightBadge.getStyleClass().add("settings-status-badge-ok");
+        lightTitleRow.getChildren().addAll(lightTitle, lightSp, lightBadge);
+        Label lightDesc = new Label("Clean, bright surfaces offering crisp contrast optimized for daylight and high-ambient lighting.");
+        lightDesc.getStyleClass().add("settings-card-desc");
+        lightDesc.setWrapText(true);
+        lightCard.getChildren().addAll(lightMockup, lightTitleRow, lightDesc);
+
+        themeCardsBox.getChildren().addAll(darkCard, lightCard);
+
+        Runnable refreshThemeSelection = () -> {
+            if (selectedLight[0]) {
+                if (!lightCard.getStyleClass().contains("selected")) lightCard.getStyleClass().add("selected");
+                darkCard.getStyleClass().remove("selected");
+                lightBadge.setVisible(true);
+                darkBadge.setVisible(false);
+            } else {
+                if (!darkCard.getStyleClass().contains("selected")) darkCard.getStyleClass().add("selected");
+                lightCard.getStyleClass().remove("selected");
+                darkBadge.setVisible(true);
+                lightBadge.setVisible(false);
+            }
+        };
+
+        darkCard.setOnMouseClicked(e -> {
+            selectedLight[0] = false;
+            refreshThemeSelection.run();
+        });
+        lightCard.setOnMouseClicked(e -> {
+            selectedLight[0] = true;
+            refreshThemeSelection.run();
+        });
+        refreshThemeSelection.run();
+
+        themeCard.getChildren().addAll(themeCardTitle, themeCardDesc, themeCardsBox);
+
+        // Brand Info Card
+        VBox brandCard = new VBox(10);
+        brandCard.getStyleClass().add("settings-card");
+        Label brandTitle = new Label("Design System & Typography");
+        brandTitle.getStyleClass().add("settings-card-title");
+        Label brandDesc = new Label("Thundercall combines Postman-grade workflow ergonomics with modern reactive design tokens.");
+        brandDesc.getStyleClass().add("settings-card-desc");
+
+        HBox tokensRow = new HBox(12);
+        tokensRow.setAlignment(Pos.CENTER_LEFT);
+        Label accentPill = new Label("● Thundercall Orange (#ff6c37)");
+        accentPill.setStyle("-fx-background-color: rgba(255, 108, 55, 0.15); -fx-text-fill: #ff6c37; -fx-font-weight: bold; -fx-font-size: 11px; -fx-padding: 4 10 4 10; -fx-background-radius: 6;");
+        Label fontPill = new Label("JetBrains Mono Code Rendering");
+        fontPill.getStyleClass().add("settings-status-badge-muted");
+        Label uiFontPill = new Label("Inter / System UI");
+        uiFontPill.getStyleClass().add("settings-status-badge-muted");
+        tokensRow.getChildren().addAll(accentPill, fontPill, uiFontPill);
+
+        brandCard.getChildren().addAll(brandTitle, brandDesc, tokensRow);
+
+        List<Node> appearancePageNodes = List.of(appHeader, themeCard, brandCard);
+
+        // ============================================================
+        // 2. Updates Page
+        // ============================================================
+        Label updTitle = new Label("Updates");
+        updTitle.getStyleClass().add("settings-page-title");
+        Label updSub = new Label("Manage application updates, release channels, and distribution endpoints.");
+        updSub.getStyleClass().add("settings-page-subtitle");
+        VBox updHeader = new VBox(4, updTitle, updSub);
+
+        // Current Version Card
+        VBox versionCard = new VBox(12);
+        versionCard.getStyleClass().add("settings-card");
+
+        HBox versionRow = new HBox(12);
+        versionRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label rocketIcon = new Label("🚀");
+        rocketIcon.setStyle("-fx-font-size: 24px; -fx-background-color: -accent-soft; -fx-background-radius: 8; -fx-padding: 6 10 6 10;");
+
+        VBox versionInfoBox = new VBox(4);
+        HBox versionBadges = new HBox(8);
+        versionBadges.setAlignment(Pos.CENTER_LEFT);
+        Label appVer = new Label("Thundercall v" + AppUpdateService.CURRENT_VERSION);
+        appVer.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label okBadge = new Label("Up to date");
+        okBadge.getStyleClass().add("settings-status-badge-ok");
+        Label channelBadge = new Label(AppUpdateService.getChannel().toUpperCase() + " CHANNEL");
+        channelBadge.getStyleClass().add("settings-status-badge-muted");
+        versionBadges.getChildren().addAll(appVer, okBadge, channelBadge);
+
+        Label integrityLabel = new Label("Packages are cryptographically verified with SHA-256 before installation.");
+        integrityLabel.getStyleClass().add("settings-card-desc");
+        versionInfoBox.getChildren().addAll(versionBadges, integrityLabel);
+
+        Region vSpacer = new Region();
+        HBox.setHgrow(vSpacer, Priority.ALWAYS);
+
+        Button checkBtn = new Button("Check for Updates...");
+        checkBtn.getStyleClass().add("custom-button");
+        checkBtn.setOnAction(e -> {
+            Window w = dialog.getDialogPane().getScene() != null
+                    ? dialog.getDialogPane().getScene().getWindow() : null;
+            if (w != null) {
+                AppUpdateDialog.check(w, true);
+            }
+        });
+
+        versionRow.getChildren().addAll(rocketIcon, versionInfoBox, vSpacer, checkBtn);
+        versionCard.getChildren().add(versionRow);
+
+        // Auto Update Card
+        VBox autoUpdateCard = new VBox(8);
+        autoUpdateCard.getStyleClass().add("settings-card");
+        CheckBox autoUpdate = new CheckBox("Automatically check for application updates on startup");
+        autoUpdate.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
         autoUpdate.setSelected(AppUpdateService.isAutoCheckEnabled());
+        Label autoUpdateDesc = new Label("Recommended. Thundercall silently checks for bug fixes and security patches on launch.");
+        autoUpdateDesc.getStyleClass().add("settings-card-desc");
+        autoUpdateCard.getChildren().addAll(autoUpdate, autoUpdateDesc);
+
+        // Channels & Endpoints Card
+        VBox endpointsCard = new VBox(12);
+        endpointsCard.getStyleClass().add("settings-card");
+        Label endpointsTitle = new Label("Distribution Channel & Update Mirrors");
+        endpointsTitle.getStyleClass().add("settings-card-title");
+        Label endpointsDesc = new Label("Thundercall supports dual-source update distribution with automatic fallback.");
+        endpointsDesc.getStyleClass().add("settings-card-desc");
 
         ComboBox<String> channel = new ComboBox<>();
         channel.getItems().addAll("Stable", "Beta", "Nightly");
         channel.setValue(AppUpdateService.getChannel());
         channel.setMaxWidth(Double.MAX_VALUE);
+        channel.setOnAction(e -> {
+            if (channel.getValue() != null) {
+                channelBadge.setText(channel.getValue().toUpperCase() + " CHANNEL");
+            }
+        });
 
         TextField endpoint = new TextField(AppUpdateService.getEndpoint());
         endpoint.setPromptText(AppUpdateService.DEFAULT_ENDPOINT);
@@ -5264,148 +5444,555 @@ public class MainController implements Initializable {
         TextField githubRepo = new TextField(AppUpdateService.getGitHubRepo());
         githubRepo.setPromptText(AppUpdateService.DEFAULT_GITHUB_REPO);
 
-        Label updateHint = new Label(
-                "Updates are checked first from the RozeHub website API (Priority 1) with automatic " +
-                "fallback to GitHub Releases (Priority 2). Packages are verified with SHA-256 before installation.");
-        updateHint.setWrapText(true);
-        updateHint.setStyle("-fx-opacity: 0.68;");
+        Label channelLbl = new Label("Release Channel");
+        channelLbl.getStyleClass().add("settings-input-label");
+        Label endpLbl = new Label("RozeHub Update Endpoint (Priority 1)");
+        endpLbl.getStyleClass().add("settings-input-label");
+        Label gitLbl = new Label("GitHub Repository Mirror (Priority 2 Fallback)");
+        gitLbl.getStyleClass().add("settings-input-label");
 
-        Button checkButton = new Button("Check for Updates...");
-        checkButton.setOnAction(e -> {
-            Window owner = dialog.getDialogPane().getScene() != null
-                    ? dialog.getDialogPane().getScene().getWindow() : null;
-            if (owner != null) {
-                AppUpdateDialog.check(owner, true);
-            }
-        });
+        HBox mirrorNotice = new HBox(8);
+        mirrorNotice.setAlignment(Pos.CENTER_LEFT);
+        Label mirrorIcon = new Label("ℹ");
+        mirrorIcon.setStyle("-fx-font-weight: bold; -fx-text-fill: -info;");
+        Label mirrorText = new Label("Updates are checked first against RozeHub website API. If unreachable, Thundercall falls back automatically to GitHub Releases.");
+        mirrorText.getStyleClass().add("settings-card-desc");
+        mirrorText.setWrapText(true);
+        mirrorNotice.getChildren().addAll(mirrorIcon, mirrorText);
 
-        VBox updatesPage = createSettingsPage(
-                "Updates",
-                "Application update and RozeHub settings");
-        updatesPage.getChildren().addAll(
-                autoUpdate,
-                new Separator(),
-                settingsFieldLabel("Update channel:"),
-                channel,
-                settingsFieldLabel("RozeHub endpoint (Priority 1):"),
-                endpoint,
-                settingsFieldLabel("GitHub repository (Priority 2 fallback):"),
-                githubRepo,
-                updateHint,
-                checkButton);
-        VBox.setMargin(autoUpdate, new Insets(4, 0, 0, 0));
-        VBox.setMargin(channel, new Insets(6, 0, 8, 0));
-        VBox.setMargin(endpoint, new Insets(6, 0, 8, 0));
-        VBox.setMargin(githubRepo, new Insets(6, 0, 8, 0));
-        VBox.setMargin(checkButton, new Insets(8, 0, 0, 0));
+        endpointsCard.getChildren().addAll(endpointsTitle, endpointsDesc,
+                channelLbl, channel,
+                endpLbl, endpoint,
+                gitLbl, githubRepo,
+                mirrorNotice);
 
-        final Button settingsMailNav = mailNav;
+        List<Node> updatesPageNodes = List.of(updHeader, versionCard, autoUpdateCard, endpointsCard);
 
-        Runnable showAppearance = () -> {
-            page.getChildren().setAll(appearancePage);
-            selectSettingsNavigation(appearanceNav, appearanceNav, updatesNav, settingsMailNav);
-        };
-        Runnable showUpdates = () -> {
-            page.getChildren().setAll(updatesPage);
-            selectSettingsNavigation(updatesNav, appearanceNav, updatesNav, settingsMailNav);
-        };
-        appearanceNav.setOnAction(e -> showAppearance.run());
-        updatesNav.setOnAction(e -> showUpdates.run());
-        if (mailNav != null) {
-            // Mail uses its existing dedicated SMTP settings dialog/action.
-            // Keep Mail as a flat top-level Settings item, but do not duplicate
-            // the SMTP form inside the generic Settings page.
-            mailNav.setOnAction(e -> {
-                Window owner = dialog.getDialogPane().getScene() != null
-                        ? dialog.getDialogPane().getScene().getWindow() : null;
-                openMailSettingsDialog(owner);
+        // ============================================================
+        // 3. Mail (SMTP) Page (Inside Settings!)
+        // ============================================================
+        List<Node> mailPageNodes = new ArrayList<>();
+        final Runnable[] saveMailSettingsRef = new Runnable[1];
+
+        final Button finalMailNav = mailNav;
+
+        if (TokenManager.isAdmin()) {
+            Label mailPageTitle = new Label("Mail Server");
+            mailPageTitle.getStyleClass().add("settings-page-title");
+            Label mailPageSub = new Label("Configure outgoing SMTP server for team invitations and email OTP verification codes.");
+            mailPageSub.getStyleClass().add("settings-page-subtitle");
+            VBox mailHeader = new VBox(4, mailPageTitle, mailPageSub);
+
+            // Master switch card
+            VBox masterCard = new VBox(8);
+            masterCard.getStyleClass().add("settings-card");
+            HBox masterRow = new HBox(12);
+            masterRow.setAlignment(Pos.CENTER_LEFT);
+
+            CheckBox enabledCheck = new CheckBox("Outgoing Mail Service Enabled");
+            enabledCheck.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+            enabledCheck.setSelected(true);
+
+            Region mSpacer = new Region();
+            HBox.setHgrow(mSpacer, Priority.ALWAYS);
+
+            Label enabledPill = new Label("ACTIVE");
+            enabledPill.getStyleClass().add("settings-status-badge-ok");
+
+            masterRow.getChildren().addAll(enabledCheck, mSpacer, enabledPill);
+
+            Label masterDesc = new Label("Master switch for all outbound emails. When disabled, workspace invitations and password verification emails will be queued or skipped.");
+            masterDesc.getStyleClass().add("settings-card-desc");
+            masterDesc.setWrapText(true);
+            masterCard.getChildren().addAll(masterRow, masterDesc);
+
+            enabledCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal) {
+                    enabledPill.setText("ACTIVE");
+                    enabledPill.getStyleClass().setAll("settings-status-badge-ok");
+                } else {
+                    enabledPill.setText("DISABLED");
+                    enabledPill.getStyleClass().setAll("settings-status-badge-muted");
+                }
+            });
+
+            // Quick Presets
+            HBox presetsBox = new HBox(8);
+            presetsBox.setAlignment(Pos.CENTER_LEFT);
+            Label presetsTitle = new Label("Quick Presets:");
+            presetsTitle.getStyleClass().add("settings-input-label");
+
+            Button gmailPreset = new Button("Gmail");
+            gmailPreset.getStyleClass().add("custom-button");
+
+            Button outlookPreset = new Button("Outlook / Office 365");
+            outlookPreset.getStyleClass().add("custom-button");
+
+            Button sendgridPreset = new Button("SendGrid");
+            sendgridPreset.getStyleClass().add("custom-button");
+
+            presetsBox.getChildren().addAll(presetsTitle, gmailPreset, outlookPreset, sendgridPreset);
+
+            // Server Config Card
+            VBox smtpCard = new VBox(12);
+            smtpCard.getStyleClass().add("settings-card");
+            Label smtpCardTitle = new Label("SMTP Credentials & Encryption");
+            smtpCardTitle.getStyleClass().add("settings-card-title");
+
+            TextField hostField = new TextField();
+            hostField.setPromptText("smtp.gmail.com");
+            TextField portField = new TextField();
+            portField.setPromptText("587");
+            portField.setPrefWidth(90);
+            portField.setMinWidth(90);
+
+            HBox hostPortRow = new HBox(12);
+            VBox hostBox = new VBox(4);
+            HBox.setHgrow(hostBox, Priority.ALWAYS);
+            Label hostLbl = new Label("SMTP Host");
+            hostLbl.getStyleClass().add("settings-input-label");
+            hostBox.getChildren().addAll(hostLbl, hostField);
+
+            VBox portBox = new VBox(4);
+            Label portLbl = new Label("Port");
+            portLbl.getStyleClass().add("settings-input-label");
+            portBox.getChildren().addAll(portLbl, portField);
+            hostPortRow.getChildren().addAll(hostBox, portBox);
+
+            TextField usernameField = new TextField();
+            usernameField.setPromptText("you@domain.com");
+
+            PasswordField passwordField = new PasswordField();
+            passwordField.setPromptText("(leave blank to keep current password)");
+            TextField passwordVisibleField = new TextField();
+            passwordVisibleField.setPromptText("(leave blank to keep current password)");
+            passwordVisibleField.setVisible(false);
+            passwordVisibleField.setManaged(false);
+            passwordVisibleField.textProperty().bindBidirectional(passwordField.textProperty());
+
+            Button eyeToggle = new Button("👁");
+            eyeToggle.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 0 8 0 8; -fx-font-size: 13px;");
+            StackPane.setAlignment(eyeToggle, Pos.CENTER_RIGHT);
+            StackPane.setMargin(eyeToggle, new Insets(0, 4, 0, 0));
+
+            eyeToggle.setOnAction(e -> {
+                boolean show = !passwordVisibleField.isVisible();
+                passwordVisibleField.setVisible(show);
+                passwordVisibleField.setManaged(show);
+                passwordField.setVisible(!show);
+                passwordField.setManaged(!show);
+                eyeToggle.setStyle(show
+                        ? "-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 0 8 0 8; -fx-font-size: 13px; -fx-text-fill: -accent;"
+                        : "-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 0 8 0 8; -fx-font-size: 13px;");
+            });
+
+            StackPane passContainer = new StackPane(passwordField, passwordVisibleField, eyeToggle);
+
+            HBox userPassRow = new HBox(12);
+            VBox userBox = new VBox(4);
+            HBox.setHgrow(userBox, Priority.ALWAYS);
+            Label userLbl = new Label("Username / Email");
+            userLbl.getStyleClass().add("settings-input-label");
+            userBox.getChildren().addAll(userLbl, usernameField);
+
+            VBox passBox = new VBox(4);
+            HBox.setHgrow(passBox, Priority.ALWAYS);
+            Label passLbl = new Label("SMTP Password");
+            passLbl.getStyleClass().add("settings-input-label");
+            passBox.getChildren().addAll(passLbl, passContainer);
+            userPassRow.getChildren().addAll(userBox, passBox);
+
+            TextField fromAddressField = new TextField();
+            fromAddressField.setPromptText("noreply@thundercall.io");
+            TextField fromNameField = new TextField();
+            fromNameField.setPromptText("Thundercall");
+
+            HBox fromRow = new HBox(12);
+            VBox fromAddrBox = new VBox(4);
+            HBox.setHgrow(fromAddrBox, Priority.ALWAYS);
+            Label fromAddrLbl = new Label("Sender Email (From)");
+            fromAddrLbl.getStyleClass().add("settings-input-label");
+            fromAddrBox.getChildren().addAll(fromAddrLbl, fromAddressField);
+
+            VBox fromNameBox = new VBox(4);
+            HBox.setHgrow(fromNameBox, Priority.ALWAYS);
+            Label fromNameLbl = new Label("Sender Display Name");
+            fromNameLbl.getStyleClass().add("settings-input-label");
+            fromNameBox.getChildren().addAll(fromNameLbl, fromNameField);
+            fromRow.getChildren().addAll(fromAddrBox, fromNameBox);
+
+            CheckBox tlsCheck = new CheckBox("Use STARTTLS (port 587)");
+            tlsCheck.setSelected(true);
+            CheckBox sslCheck = new CheckBox("Use SSL/TLS (port 465)");
+            HBox securityRow = new HBox(20, tlsCheck, sslCheck);
+
+            // Preset handlers
+            gmailPreset.setOnAction(e -> {
+                hostField.setText("smtp.gmail.com");
+                portField.setText("587");
+                tlsCheck.setSelected(true);
+                sslCheck.setSelected(false);
+            });
+            outlookPreset.setOnAction(e -> {
+                hostField.setText("smtp.office365.com");
+                portField.setText("587");
+                tlsCheck.setSelected(true);
+                sslCheck.setSelected(false);
+            });
+            sendgridPreset.setOnAction(e -> {
+                hostField.setText("smtp.sendgrid.net");
+                portField.setText("587");
+                tlsCheck.setSelected(true);
+                sslCheck.setSelected(false);
+            });
+
+            smtpCard.getChildren().addAll(smtpCardTitle, presetsBox, hostPortRow, userPassRow, fromRow, securityRow);
+
+            // Diagnostic & Live Test Card
+            VBox testCard = new VBox(10);
+            testCard.getStyleClass().add("settings-card");
+            Label testCardTitle = new Label("Diagnostic SMTP Test");
+            testCardTitle.getStyleClass().add("settings-card-title");
+            Label testCardDesc = new Label("Dispatch a real-time verification test to confirm server connectivity and authentication.");
+            testCardDesc.getStyleClass().add("settings-card-desc");
+
+            TextField testEmailField = new TextField();
+            testEmailField.setPromptText("Enter recipient email address...");
+            HBox.setHgrow(testEmailField, Priority.ALWAYS);
+
+            Button sendTestBtn = new Button("Send Test Email");
+            sendTestBtn.getStyleClass().add("custom-button");
+
+            Button saveMailBtn = new Button("Save Configuration");
+            saveMailBtn.getStyleClass().add("primary-button");
+
+            HBox testRow = new HBox(10, testEmailField, sendTestBtn, saveMailBtn);
+            testRow.setAlignment(Pos.CENTER_LEFT);
+
+            Label mailStatusLabel = new Label();
+            mailStatusLabel.setWrapText(true);
+            mailStatusLabel.setMaxWidth(Double.MAX_VALUE);
+
+            testCard.getChildren().addAll(testCardTitle, testCardDesc, testRow, mailStatusLabel);
+
+            mailPageNodes.addAll(List.of(mailHeader, masterCard, smtpCard, testCard));
+
+            // Load existing mail settings
+            new Thread(() -> {
+                try {
+                    Optional<MailSettingsResponse> current = MailSettingsService.getSettings();
+                    Platform.runLater(() -> current.ifPresent(settings -> {
+                        if (settings.getSmtpHost() != null) hostField.setText(settings.getSmtpHost());
+                        if (settings.getSmtpPort() != null) portField.setText(String.valueOf(settings.getSmtpPort()));
+                        if (settings.getSmtpUsername() != null) usernameField.setText(settings.getSmtpUsername());
+                        if (settings.getFromAddress() != null) fromAddressField.setText(settings.getFromAddress());
+                        if (settings.getFromName() != null) fromNameField.setText(settings.getFromName());
+                        tlsCheck.setSelected(settings.isUseTls());
+                        sslCheck.setSelected(settings.isUseSsl());
+                        enabledCheck.setSelected(settings.isEnabled());
+                        if (settings.isHasPassword()) {
+                            passwordField.setPromptText("(password is saved on server — leave blank to keep)");
+                            passwordVisibleField.setPromptText("(password is saved on server — leave blank to keep)");
+                        }
+                    }));
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        mailStatusLabel.setText("Couldn't fetch current SMTP settings: " + ex.getMessage());
+                        mailStatusLabel.setStyle("-fx-text-fill: -warning;");
+                    });
+                }
+            }).start();
+
+            // Save logic
+            saveMailSettingsRef[0] = () -> {
+                String host = hostField.getText().trim();
+                String portStr = portField.getText().trim();
+                if (host.isEmpty() && portStr.isEmpty()) {
+                    return;
+                }
+                int port = 587;
+                if (!portStr.isEmpty()) {
+                    try {
+                        port = Integer.parseInt(portStr);
+                    } catch (NumberFormatException nfe) {
+                        mailStatusLabel.setText("Port must be a valid integer number (e.g. 587 or 465).");
+                        mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                        return;
+                    }
+                }
+                MailSettingsRequest request = new MailSettingsRequest(
+                        host, port, usernameField.getText().trim(),
+                        passwordField.getText(),
+                        fromAddressField.getText().trim(),
+                        fromNameField.getText().trim(),
+                        tlsCheck.isSelected(), sslCheck.isSelected(), enabledCheck.isSelected());
+
+                mailStatusLabel.setText("Saving mail configuration...");
+                mailStatusLabel.setStyle("-fx-text-fill: -text-secondary;");
+
+                new Thread(() -> {
+                    try {
+                        MailSettingsService.updateSettings(request);
+                        Platform.runLater(() -> {
+                            mailStatusLabel.setText("✓ Mail server settings saved successfully.");
+                            mailStatusLabel.setStyle("-fx-text-fill: -success; -fx-font-weight: bold;");
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> {
+                            mailStatusLabel.setText("Failed to save mail settings: " + ex.getMessage());
+                            mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                        });
+                    }
+                }).start();
+            };
+
+            saveMailBtn.setOnAction(e -> {
+                if (saveMailSettingsRef[0] != null) saveMailSettingsRef[0].run();
+            });
+
+            // Test email logic
+            sendTestBtn.setOnAction(e -> {
+                String to = testEmailField.getText().trim();
+                if (to.isEmpty()) {
+                    mailStatusLabel.setText("Please enter an email address to send the diagnostic test.");
+                    mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                    return;
+                }
+                sendTestBtn.setDisable(true);
+                mailStatusLabel.setText("Connecting to SMTP server and dispatching test email...");
+                mailStatusLabel.setStyle("-fx-text-fill: -text-secondary;");
+
+                new Thread(() -> {
+                    try {
+                        MailSettingsService.sendTestEmail(to);
+                        Platform.runLater(() -> {
+                            sendTestBtn.setDisable(false);
+                            mailStatusLabel.setText("✓ Diagnostic test email sent to " + to + " — check your inbox.");
+                            mailStatusLabel.setStyle("-fx-text-fill: -success; -fx-font-weight: bold;");
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> {
+                            sendTestBtn.setDisable(false);
+                            mailStatusLabel.setText("Test delivery failed: " + ex.getMessage());
+                            mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                        });
+                    }
+                }).start();
             });
         }
 
-        showAppearance.run();
+        // ============================================================
+        // Navigation Switching (In-Page Swap!)
+        // ============================================================
+        appearanceNav.setOnAction(e -> {
+            pageContainer.getChildren().setAll(appearancePageNodes);
+            selectSettingsNav(appearanceNav, appearanceNav, updatesNav, finalMailNav);
+        });
 
-        dialog.getDialogPane().setContent(root);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-        dialog.getDialogPane().setPrefSize(660, 500);
+        updatesNav.setOnAction(e -> {
+            pageContainer.getChildren().setAll(updatesPageNodes);
+            selectSettingsNav(updatesNav, appearanceNav, updatesNav, finalMailNav);
+        });
 
-        Button applyButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.APPLY);
-        Button cancelButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
-        Button okButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        if (mailNav != null) {
+            mailNav.setOnAction(e -> {
+                pageContainer.getChildren().setAll(mailPageNodes);
+                selectSettingsNav(finalMailNav, appearanceNav, updatesNav, finalMailNav);
+            });
+        }
+
+        // Populate appearance by default before root layout
+        pageContainer.getChildren().setAll(appearancePageNodes);
+        selectSettingsNav(appearanceNav, appearanceNav, updatesNav, finalMailNav);
+
+        BorderPane root = new BorderPane();
+        root.setLeft(navigation);
+        root.setCenter(scrollPane);
+        root.setPrefSize(800, 540);
+        root.setMinSize(780, 520);
+
+        dialogPane.setContent(root);
+        dialogPane.setPrefSize(800, 580);
+        dialogPane.setMinSize(780, 540);
+        ThemeManager.styleDialog(dialogPane);
+
+        // Enforce stage dimensions and center on screen
+        dialog.setOnShown(e -> {
+            Window window = dialogPane.getScene() != null ? dialogPane.getScene().getWindow() : null;
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(780);
+                stage.setMinHeight(540);
+                stage.setWidth(800);
+                stage.setHeight(580);
+                stage.centerOnScreen();
+            }
+        });
+
+        // Dialog buttons
+        Button applyButton = (Button) dialogPane.lookupButton(ButtonType.APPLY);
+        Button cancelButton = (Button) dialogPane.lookupButton(ButtonType.CANCEL);
+        Button okButton = (Button) dialogPane.lookupButton(ButtonType.OK);
         if (applyButton != null) applyButton.setText("Apply");
         if (cancelButton != null) cancelButton.setText("Cancel");
         if (okButton != null) okButton.setText("OK");
 
         Runnable applySettings = () -> {
-            if (lightBtn.isSelected() && urlField != null && urlField.getScene() != null) {
-                ThemeManager.setLight(true, urlField.getScene());
-            } else if (darkBtn.isSelected() && urlField != null && urlField.getScene() != null) {
-                ThemeManager.setLight(false, urlField.getScene());
+            if (urlField != null && urlField.getScene() != null) {
+                ThemeManager.setLight(selectedLight[0], urlField.getScene());
             }
             AppUpdateService.setAutoCheckEnabled(autoUpdate.isSelected());
             AppUpdateService.setChannel(channel.getValue());
             AppUpdateService.setEndpoint(endpoint.getText());
             AppUpdateService.setGitHubRepo(githubRepo.getText());
+            if (saveMailSettingsRef[0] != null) {
+                saveMailSettingsRef[0].run();
+            }
             updateStatus("Settings saved");
         };
 
         if (applyButton != null) {
-            applyButton.setOnAction(e -> applySettings.run());
+            applyButton.addEventFilter(ActionEvent.ACTION, e -> {
+                applySettings.run();
+                e.consume(); // keep dialog open on Apply
+            });
         }
         if (okButton != null) {
-            okButton.setOnAction(e -> applySettings.run());
+            okButton.addEventFilter(ActionEvent.ACTION, e -> {
+                applySettings.run();
+            });
         }
 
         dialog.showAndWait();
     }
 
-    private VBox createSettingsPage(String title, String subtitle) {
-        Label titleLabel = new Label(title);
-        titleLabel.setStyle("-fx-font-size: 17px; -fx-font-weight: bold;");
-
-        Label subtitleLabel = new Label(subtitle);
-        subtitleLabel.setStyle("-fx-opacity: 0.70; -fx-font-size: 12px;");
-
-        Separator separator = new Separator();
-        VBox box = new VBox(8, titleLabel, subtitleLabel, separator);
-        box.setFillWidth(true);
-        return box;
-    }
-
-    private Label settingsFieldLabel(String text) {
-        Label label = new Label(text);
-        label.setStyle("-fx-font-size: 13px;");
-        return label;
-    }
-
-    private Button settingsNavigationButton(String text) {
-        Button button = new Button(text);
-        button.setAlignment(Pos.CENTER_LEFT);
-        button.setMaxWidth(Double.MAX_VALUE);
-        button.setPrefHeight(34);
-        button.setPadding(new Insets(0, 14, 0, 14));
-        button.setFocusTraversable(false);
-        return button;
-    }
-
-    private void selectSettingsNavigation(Button selected, Button appearance,
-                                           Button updates, Button mail) {
-        Button[] buttons = {appearance, updates, mail};
-        for (Button button : buttons) {
-            if (button == null) continue;
-            if (button == selected) {
-                button.setStyle(
-                        "-fx-background-color: #2f73e8;" +
-                        "-fx-text-fill: white;" +
-                        "-fx-background-radius: 3;" +
-                        "-fx-border-radius: 3;");
-            } else {
-                button.setStyle(
-                        "-fx-background-color: transparent;" +
-                        "-fx-text-fill: -fx-text-base-color;" +
-                        "-fx-background-radius: 3;" +
-                        "-fx-border-radius: 3;");
-            }
+    private void selectSettingsNav(Button active, Button appearance, Button updates, Button mail) {
+        if (appearance != null) appearance.getStyleClass().remove("active");
+        if (updates != null) updates.getStyleClass().remove("active");
+        if (mail != null) mail.getStyleClass().remove("active");
+        if (active != null && !active.getStyleClass().contains("active")) {
+            active.getStyleClass().add("active");
         }
+    }
+
+    private StackPane createThemeMockup(boolean isLight) {
+        VBox root = new VBox(0);
+        root.setPrefHeight(90);
+        root.setMinHeight(90);
+        root.setMaxHeight(90);
+        root.setStyle(isLight
+                ? "-fx-background-color: #f8f9fa; -fx-background-radius: 6; -fx-border-color: #dcdcdc; -fx-border-radius: 6;"
+                : "-fx-background-color: #1e1e1e; -fx-background-radius: 6; -fx-border-color: #333333; -fx-border-radius: 6;");
+
+        // Top window bar
+        HBox topBar = new HBox(5);
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        topBar.setPadding(new Insets(5, 8, 5, 8));
+        topBar.setStyle(isLight
+                ? "-fx-background-color: #edf0f2; -fx-background-radius: 6 6 0 0;"
+                : "-fx-background-color: #141414; -fx-background-radius: 6 6 0 0;");
+
+        Region dot1 = new Region();
+        dot1.setMinSize(7, 7);
+        dot1.setMaxSize(7, 7);
+        dot1.setStyle("-fx-background-color: #ff5f56; -fx-background-radius: 50%;");
+
+        Region dot2 = new Region();
+        dot2.setMinSize(7, 7);
+        dot2.setMaxSize(7, 7);
+        dot2.setStyle("-fx-background-color: #ffbd2e; -fx-background-radius: 50%;");
+
+        Region dot3 = new Region();
+        dot3.setMinSize(7, 7);
+        dot3.setMaxSize(7, 7);
+        dot3.setStyle("-fx-background-color: #27c93f; -fx-background-radius: 50%;");
+
+        Region topBarTitle = new Region();
+        topBarTitle.setPrefSize(40, 5);
+        topBarTitle.setStyle(isLight
+                ? "-fx-background-color: #cbd5e1; -fx-background-radius: 3;"
+                : "-fx-background-color: #383838; -fx-background-radius: 3;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        topBar.getChildren().addAll(dot1, dot2, dot3, spacer, topBarTitle);
+
+        // Body area: sidebar + editor
+        HBox body = new HBox(0);
+        VBox.setVgrow(body, Priority.ALWAYS);
+
+        // Mini sidebar
+        VBox miniSidebar = new VBox(4);
+        miniSidebar.setPrefWidth(45);
+        miniSidebar.setMinWidth(45);
+        miniSidebar.setPadding(new Insets(6, 4, 6, 4));
+        miniSidebar.setStyle(isLight
+                ? "-fx-background-color: #f1f3f5; -fx-background-radius: 0 0 0 6; -fx-border-color: transparent #e2e8f0 transparent transparent;"
+                : "-fx-background-color: #161616; -fx-background-radius: 0 0 0 6; -fx-border-color: transparent #2a2a2a transparent transparent;");
+
+        Region sideActive = new Region();
+        sideActive.setPrefSize(35, 6);
+        sideActive.setStyle("-fx-background-color: #ff6c37; -fx-background-radius: 2;");
+
+        Region side2 = new Region();
+        side2.setPrefSize(28, 5);
+        side2.setStyle(isLight ? "-fx-background-color: #cbd5e1; -fx-background-radius: 2;" : "-fx-background-color: #383838; -fx-background-radius: 2;");
+
+        Region side3 = new Region();
+        side3.setPrefSize(32, 5);
+        side3.setStyle(isLight ? "-fx-background-color: #cbd5e1; -fx-background-radius: 2;" : "-fx-background-color: #383838; -fx-background-radius: 2;");
+
+        miniSidebar.getChildren().addAll(sideActive, side2, side3);
+
+        // Mini editor
+        VBox miniEditor = new VBox(6);
+        miniEditor.setPadding(new Insets(6, 8, 6, 8));
+        VBox.setVgrow(miniEditor, Priority.ALWAYS);
+        HBox.setHgrow(miniEditor, Priority.ALWAYS);
+        miniEditor.setStyle(isLight
+                ? "-fx-background-color: #ffffff; -fx-background-radius: 0 0 6 0;"
+                : "-fx-background-color: #1e1e1e; -fx-background-radius: 0 0 6 0;");
+
+        // Mini URL bar
+        HBox miniUrlBar = new HBox(4);
+        miniUrlBar.setAlignment(Pos.CENTER_LEFT);
+        miniUrlBar.setPadding(new Insets(3, 4, 3, 4));
+        miniUrlBar.setStyle(isLight
+                ? "-fx-background-color: #f8f9fa; -fx-border-color: #e2e8f0; -fx-border-radius: 3; -fx-background-radius: 3;"
+                : "-fx-background-color: #262626; -fx-border-color: #333333; -fx-border-radius: 3; -fx-background-radius: 3;");
+
+        Label miniMethod = new Label("GET");
+        miniMethod.setStyle(isLight
+                ? "-fx-font-size: 8px; -fx-font-weight: bold; -fx-text-fill: #16a34a;"
+                : "-fx-font-size: 8px; -fx-font-weight: bold; -fx-text-fill: #22c55e;");
+
+        Region miniUrlLine = new Region();
+        miniUrlLine.setPrefSize(70, 4);
+        miniUrlLine.setStyle(isLight
+                ? "-fx-background-color: #94a3b8; -fx-background-radius: 2;"
+                : "-fx-background-color: #525252; -fx-background-radius: 2;");
+
+        miniUrlBar.getChildren().addAll(miniMethod, miniUrlLine);
+
+        // Mini code lines
+        VBox miniLines = new VBox(3);
+        Region line1 = new Region();
+        line1.setPrefSize(95, 4);
+        line1.setStyle(isLight ? "-fx-background-color: #cbd5e1; -fx-background-radius: 2;" : "-fx-background-color: #404040; -fx-background-radius: 2;");
+
+        Region line2 = new Region();
+        line2.setPrefSize(65, 4);
+        line2.setStyle(isLight ? "-fx-background-color: #e2e8f0; -fx-background-radius: 2;" : "-fx-background-color: #2e2e2e; -fx-background-radius: 2;");
+
+        miniLines.getChildren().addAll(line1, line2);
+        miniEditor.getChildren().addAll(miniUrlBar, miniLines);
+
+        body.getChildren().addAll(miniSidebar, miniEditor);
+        root.getChildren().addAll(topBar, body);
+
+        StackPane wrapper = new StackPane(root);
+        wrapper.setPadding(new Insets(2));
+        return wrapper;
     }
 
     /** Lets the project owner configure the app's own outgoing SMTP
@@ -7390,133 +7977,7 @@ public class MainController implements Initializable {
      * The backend rejects this for non-admins, so nothing bad happens if
      * a non-admin somehow opens it; they'll just see a clear error. */
     private void openMailSettingsDialog(Window owner) {
-        Dialog<Void> dialog = new Dialog<>();
-        if (owner != null) {
-            dialog.initOwner(owner);
-        }
-        dialog.setTitle("Mail Server Settings");
-        dialog.setHeaderText("Outgoing mail (SMTP) — used for verification emails and team invitations");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CLOSE);
-
-        TextField hostField = new TextField();
-        hostField.setPromptText("smtp.gmail.com");
-        TextField portField = new TextField();
-        portField.setPromptText("587");
-        TextField usernameField2 = new TextField();
-        usernameField2.setPromptText("you@example.com");
-        PasswordField passwordField2 = new PasswordField();
-        passwordField2.setPromptText("(leave blank to keep the current password)");
-        TextField fromAddressField = new TextField();
-        fromAddressField.setPromptText("noreply@yourapp.com");
-        TextField fromNameField = new TextField();
-        fromNameField.setPromptText("Thundercall");
-        CheckBox tlsCheck = new CheckBox("Use STARTTLS");
-        tlsCheck.setSelected(true);
-        CheckBox sslCheck = new CheckBox("Use SSL");
-        // FIX: this used to sit in the same row as the STARTTLS/SSL
-        // protocol checkboxes — easy to miss as "just another technical
-        // toggle" when it's actually the master on/off switch. It's now
-        // its own bold, top-of-form row, and defaults to checked (a fresh
-        // setup should just work once real details are filled in, not
-        // silently stay off).
-        CheckBox enabledCheck = new CheckBox("Mail sending enabled");
-        enabledCheck.setSelected(true);
-        enabledCheck.setStyle("-fx-font-weight: bold;");
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(360);
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(8);
-        grid.setPadding(new Insets(10));
-        int row = 0;
-        grid.add(enabledCheck, 0, row, 2, 1);
-        row++;
-        grid.addRow(row++, new Label("SMTP Host"), hostField);
-        grid.addRow(row++, new Label("SMTP Port"), portField);
-        grid.addRow(row++, new Label("Username"), usernameField2);
-        grid.addRow(row++, new Label("Password"), passwordField2);
-        grid.addRow(row++, new Label("From Address"), fromAddressField);
-        grid.addRow(row++, new Label("From Name"), fromNameField);
-        grid.add(new HBox(12, tlsCheck, sslCheck), 1, row++);
-
-        TextField testEmailField = new TextField();
-        testEmailField.setPromptText("Send a test to...");
-        Button testBtn = new Button("Send test email");
-        Button saveBtn = new Button("Save");
-        HBox actionsRow = new HBox(8, testEmailField, testBtn, new Region(), saveBtn);
-        HBox.setHgrow(testEmailField, Priority.ALWAYS);
-        HBox.setHgrow((Region) actionsRow.getChildren().get(2), Priority.ALWAYS);
-
-        VBox content = new VBox(10, grid, actionsRow, statusLabel);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-
-        // Load current values
-        new Thread(() -> {
-            try {
-                Optional<MailSettingsResponse> current = MailSettingsService.getSettings();
-                Platform.runLater(() -> current.ifPresent(settings -> {
-                    hostField.setText(settings.getSmtpHost());
-                    portField.setText(settings.getSmtpPort() != null ? String.valueOf(settings.getSmtpPort()) : "");
-                    usernameField2.setText(settings.getSmtpUsername());
-                    fromAddressField.setText(settings.getFromAddress());
-                    fromNameField.setText(settings.getFromName());
-                    tlsCheck.setSelected(settings.isUseTls());
-                    sslCheck.setSelected(settings.isUseSsl());
-                    enabledCheck.setSelected(settings.isEnabled());
-                    if (settings.isHasPassword()) {
-                        passwordField2.setPromptText("(a password is already saved — leave blank to keep it)");
-                    }
-                }));
-            } catch (IOException e) {
-                Platform.runLater(() -> statusLabel.setText("Couldn't load current settings: " + e.getMessage()));
-            }
-        }).start();
-
-        saveBtn.setOnAction(e -> {
-            int port;
-            try {
-                port = Integer.parseInt(portField.getText().trim());
-            } catch (NumberFormatException ex) {
-                statusLabel.setText("Port must be a number, e.g. 587.");
-                return;
-            }
-            MailSettingsRequest request = new MailSettingsRequest(
-                    hostField.getText().trim(), port, usernameField2.getText().trim(),
-                    passwordField2.getText(), fromAddressField.getText().trim(), fromNameField.getText().trim(),
-                    tlsCheck.isSelected(), sslCheck.isSelected(), enabledCheck.isSelected());
-            statusLabel.setText("Saving...");
-            new Thread(() -> {
-                try {
-                    MailSettingsService.updateSettings(request);
-                    Platform.runLater(() -> statusLabel.setText("Saved."));
-                } catch (IOException ex) {
-                    Platform.runLater(() -> statusLabel.setText("Couldn't save: " + ex.getMessage()));
-                }
-            }).start();
-        });
-
-        testBtn.setOnAction(e -> {
-            String toAddress = testEmailField.getText().trim();
-            if (toAddress.isEmpty()) {
-                statusLabel.setText("Enter an address to send the test email to.");
-                return;
-            }
-            statusLabel.setText("Sending test email...");
-            new Thread(() -> {
-                try {
-                    MailSettingsService.sendTestEmail(toAddress);
-                    Platform.runLater(() -> statusLabel.setText("Test email sent to " + toAddress + " — check the inbox."));
-                } catch (IOException ex) {
-                    Platform.runLater(() -> statusLabel.setText("Couldn't send: " + ex.getMessage()));
-                }
-            }).start();
-        });
-
-        dialog.showAndWait();
+        handleSettings();
     }
 
     @FXML

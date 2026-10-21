@@ -1881,3 +1881,154 @@
     -fx-text-fill: -text-muted;
     -fx-font-size: 11px;
 }
+
+/* ============================================================
+   Settings Dialog (Appearance, Updates, Mail)
+   ============================================================ */
+.settings-dialog-pane {
+    -fx-background-color: -bg-base;
+    -fx-pref-width: 800px;
+    -fx-pref-height: 580px;
+    -fx-min-width: 780px;
+    -fx-min-height: 540px;
+}
+.settings-dialog-pane > .button-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 18 10 18;
+}
+
+.settings-scroll-pane {
+    -fx-background: -bg-base;
+    -fx-background-color: -bg-base;
+    -fx-border-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.settings-nav-sidebar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: transparent -border-subtle transparent transparent;
+    -fx-border-width: 0 1 0 0;
+    -fx-padding: 18 10 18 10;
+}
+.settings-nav-header {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 12 10 12;
+}
+.settings-nav-item {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-alignment: center-left;
+    -fx-padding: 9 14 9 14;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-border-radius: 6;
+    -fx-cursor: hand;
+}
+.settings-nav-item:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+.settings-nav-item.active {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent transparent transparent -accent;
+    -fx-border-width: 0 0 0 3;
+}
+.settings-admin-badge {
+    -fx-background-color: rgba(255, 108, 55, 0.15);
+    -fx-text-fill: #ff835a;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(255, 108, 55, 0.3);
+    -fx-border-radius: 8;
+    -fx-padding: 1 5 1 5;
+}
+
+.settings-scroll-pane {
+    -fx-background: -bg-base;
+    -fx-background-color: -bg-base;
+    -fx-border-color: transparent;
+}
+.settings-scroll-pane .viewport {
+    -fx-background-color: -bg-base;
+}
+
+.settings-page-container {
+    -fx-background-color: -bg-base;
+    -fx-padding: 22 26 26 26;
+}
+.settings-page-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+.settings-page-subtitle {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+}
+
+.settings-card {
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 8;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8;
+    -fx-padding: 14 16 14 16;
+}
+.settings-card-title {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+.settings-card-desc {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+}
+.settings-input-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.settings-theme-card {
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 8;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 8;
+    -fx-padding: 14;
+    -fx-cursor: hand;
+}
+.settings-theme-card:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: rgba(255, 108, 55, 0.4);
+}
+.settings-theme-card.selected {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -accent;
+    -fx-border-width: 1.5;
+    -fx-effect: dropshadow(gaussian, rgba(255, 108, 55, 0.25), 8, 0, 0, 1);
+}
+
+.settings-status-badge-ok {
+    -fx-background-color: -success-soft;
+    -fx-text-fill: -success;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 10;
+    -fx-padding: 2 8 2 8;
+}
+.settings-status-badge-muted {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-radius: 10;
+    -fx-padding: 2 8 2 8;
+}
