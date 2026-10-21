@@ -2078,3 +2078,235 @@
     -fx-background-radius: 10;
     -fx-padding: 2 8 2 8;
 }
+
+/* ============================================================
+   Modern Interactive Share Workspace Modal
+   ============================================================ */
+.share-dialog-pane {
+    -fx-background-color: -bg-base;
+    -fx-pref-width: 720px;
+    -fx-pref-height: 600px;
+    -fx-min-width: 690px;
+    -fx-min-height: 560px;
+}
+.share-dialog-pane > .button-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 18 10 18;
+}
+
+.share-header-badge {
+    -fx-background-color: -accent-soft;
+    -fx-background-radius: 10px;
+    -fx-min-width: 38px;
+    -fx-max-width: 38px;
+    -fx-min-height: 38px;
+    -fx-max-height: 38px;
+    -fx-alignment: center;
+}
+.share-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-primary;
+}
+.share-subtitle {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-secondary;
+}
+.share-ws-chip {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 3 8 3 8;
+    -fx-alignment: center-left;
+}
+.share-ws-label {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+}
+.share-ws-combo {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-font-size: 12px;
+}
+
+.share-card {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 14 16 14 16;
+}
+.share-card-header {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+}
+
+.share-text-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -accent;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 2 6 2 6;
+    -fx-cursor: hand;
+    -fx-border-width: 0;
+}
+.share-text-btn:hover {
+    -fx-underline: true;
+}
+
+.share-env-btn {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 6 12 6 12;
+    -fx-cursor: hand;
+}
+.share-env-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -accent;
+}
+
+.share-env-btn-active {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: -accent;
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+}
+
+.share-status-banner {
+    -fx-background-radius: 6px;
+    -fx-border-radius: 6px;
+    -fx-padding: 8 12 8 12;
+    -fx-font-size: 12px;
+}
+.share-status-success {
+    -fx-background-color: -success-soft;
+    -fx-border-color: rgba(86, 201, 159, 0.4);
+    -fx-text-fill: -success;
+}
+.share-status-error {
+    -fx-background-color: -danger-soft;
+    -fx-border-color: rgba(229, 114, 106, 0.4);
+    -fx-text-fill: -danger;
+}
+
+.share-tab-pane {
+    -fx-background-color: transparent;
+}
+.share-tab-pane .tab-header-area {
+    -fx-padding: 0 0 6 0;
+}
+.share-tab-pane .tab-header-background {
+    -fx-background-color: transparent;
+}
+.share-tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 6 16 6 16;
+    -fx-cursor: hand;
+}
+.share-tab-pane .tab:selected {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -accent transparent;
+    -fx-border-width: 0 0 2 0;
+}
+.share-tab-pane .tab .tab-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+.share-tab-pane .tab:selected .tab-label {
+    -fx-text-fill: -text-primary;
+}
+
+.share-scroll-area {
+    -fx-background: -bg-base;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.share-scroll-area .viewport {
+    -fx-background-color: transparent;
+}
+
+.share-row {
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 8px;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-padding: 10 14 10 14;
+    -fx-alignment: center-left;
+}
+.share-row:hover {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+}
+
+.share-avatar {
+    -fx-background-radius: 16px;
+    -fx-min-width: 32px;
+    -fx-max-width: 32px;
+    -fx-min-height: 32px;
+    -fx-max-height: 32px;
+    -fx-alignment: center;
+}
+.share-avatar-text {
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+}
+
+.share-role-combo {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-font-size: 11px;
+    -fx-pref-width: 105px;
+}
+
+.share-remove-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+    -fx-padding: 4 10 4 10;
+    -fx-cursor: hand;
+}
+.share-remove-btn:hover {
+    -fx-background-color: -danger-soft;
+    -fx-border-color: -danger;
+    -fx-text-fill: -danger;
+}
+
+.share-empty-box {
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 8px;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-padding: 30 20 30 20;
+    -fx-alignment: center;
+}
+.share-empty-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+}
+.share-empty-desc {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-muted;
+}
+
