@@ -183,6 +183,10 @@ public class MainController implements Initializable {
     @FXML
     private Label bodyPromptLabel;
     @FXML
+    private VBox noneBodyPane;
+    @FXML
+    private HBox bodyTableButtonBar;
+    @FXML
     private ToggleGroup bodyTypeGroup;
     @FXML
     private Label statusLabel;
@@ -566,45 +570,7 @@ public class MainController implements Initializable {
 
     private void setupBodyTypeHandling() {
         bodyTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
-            if (newToggle != null) {
-                String selectedType = ((ToggleButton) newToggle).getText();
-                switch (selectedType) {
-                    case "Form Data":
-                        formDataTable.setVisible(true);
-                        urlEncodedTable.setVisible(false);
-                        bodyTextArea.setVisible(false);
-                        graphqlPane.setVisible(false);
-                        break;
-                    case "x-www-form-urlencoded":
-                        // FIX: this used to fall into the same "default"
-                        // branch as Raw/None and show the plain text
-                        // area — meaning there was no key/value table at
-                        // all for this body type, unlike every other
-                        // Postman-style client.
-                        formDataTable.setVisible(false);
-                        urlEncodedTable.setVisible(true);
-                        bodyTextArea.setVisible(false);
-                        graphqlPane.setVisible(false);
-                        break;
-                    case "GraphQL":
-                        formDataTable.setVisible(false);
-                        urlEncodedTable.setVisible(false);
-                        bodyTextArea.setVisible(false);
-                        graphqlPane.setVisible(true);
-                        // GraphQL always goes over POST — matches Postman,
-                        // which doesn't even offer a method choice for it.
-                        if (methodCombo != null) {
-                            methodCombo.setValue("POST");
-                        }
-                        break;
-                    default:
-                        formDataTable.setVisible(false);
-                        urlEncodedTable.setVisible(false);
-                        bodyTextArea.setVisible(true);
-                        graphqlPane.setVisible(false);
-                        break;
-                }
-            }
+            updateBodyViewsVisibility(newToggle != null ? ((ToggleButton) newToggle).getText() : "None");
         });
 
         // Initialize form data table
@@ -617,19 +583,60 @@ public class MainController implements Initializable {
         // Default to "None" so the state is always visible
         if (bodyTypeGroup.getSelectedToggle() == null && noneBodyTypeButton != null) {
             noneBodyTypeButton.setSelected(true);
+        } else {
+            updateBodyViewsVisibility(bodyTypeGroup.getSelectedToggle() != null
+                    ? ((ToggleButton) bodyTypeGroup.getSelectedToggle()).getText() : "None");
         }
 
-        // FIX: typing a body while "None" is selected silently sent NO body
-        // (your login JSON never left the app → server said "Required request
-        // body is missing"). Typing now auto-selects "Raw", like Postman.
+        // When user types in raw body while Raw is active, keep Raw selected
         bodyTextArea.textProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null && !newVal.isBlank() && rawBodyTypeButton != null) {
+            if (!restoringTabState && newVal != null && !newVal.isBlank() && rawBodyTypeButton != null && bodyTextArea.isVisible()) {
                 Toggle selected = bodyTypeGroup.getSelectedToggle();
                 if (selected == null || selected == noneBodyTypeButton) {
                     rawBodyTypeButton.setSelected(true);
                 }
             }
         });
+    }
+
+    private void updateBodyViewsVisibility(String selectedType) {
+        if (selectedType == null) {
+            selectedType = "None";
+        }
+        boolean isNone = "None".equalsIgnoreCase(selectedType);
+        boolean isRaw = "Raw".equalsIgnoreCase(selectedType);
+        boolean isFormData = "Form Data".equalsIgnoreCase(selectedType);
+        boolean isUrlEncoded = "x-www-form-urlencoded".equalsIgnoreCase(selectedType);
+        boolean isGraphql = "GraphQL".equalsIgnoreCase(selectedType);
+
+        if (noneBodyPane != null) {
+            noneBodyPane.setVisible(isNone);
+            noneBodyPane.setManaged(isNone);
+        }
+        if (bodyTextArea != null) {
+            bodyTextArea.setVisible(isRaw);
+            bodyTextArea.setManaged(isRaw);
+        }
+        if (formDataTable != null) {
+            formDataTable.setVisible(isFormData);
+            formDataTable.setManaged(isFormData);
+        }
+        if (urlEncodedTable != null) {
+            urlEncodedTable.setVisible(isUrlEncoded);
+            urlEncodedTable.setManaged(isUrlEncoded);
+        }
+        if (graphqlPane != null) {
+            graphqlPane.setVisible(isGraphql);
+            graphqlPane.setManaged(isGraphql);
+        }
+        if (bodyTableButtonBar != null) {
+            boolean showButtons = isFormData || isUrlEncoded;
+            bodyTableButtonBar.setVisible(showButtons);
+            bodyTableButtonBar.setManaged(showButtons);
+        }
+        if (isGraphql && methodCombo != null) {
+            methodCombo.setValue("POST");
+        }
     }
 
     private void loadCollectionsFromServer() {
@@ -1107,7 +1114,9 @@ public class MainController implements Initializable {
         if (bodyPromptLabel != null) {
             bodyPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> bodyTextArea.getText().isEmpty(), bodyTextArea.textProperty()));
+                            () -> bodyTextArea.isVisible() && bodyTextArea.getText().isEmpty(),
+                            bodyTextArea.visibleProperty(), bodyTextArea.textProperty()));
+            bodyPromptLabel.managedProperty().bind(bodyPromptLabel.visibleProperty());
         }
         // Postman-style right-click menu: Comment, Set as variable, Cut/Copy/
         // Paste, EncodeURIComponent/DecodeURIComponent, Find.
@@ -7087,6 +7096,7 @@ public class MainController implements Initializable {
         String method = "GET";
         String url = "";
         String body = "";
+        String bodyType = "None";
         String preScript = "";
         String testsScript = "";
         String authType = "No Auth";
@@ -7118,6 +7128,7 @@ public class MainController implements Initializable {
             copy.method = this.method;
             copy.url = this.url;
             copy.body = this.body;
+            copy.bodyType = this.bodyType;
             copy.preScript = this.preScript;
             copy.testsScript = this.testsScript;
             copy.authType = this.authType;
@@ -7553,6 +7564,8 @@ public class MainController implements Initializable {
         state.method = methodCombo.getValue();
         state.url = urlField.getText();
         state.body = bodyTextArea.getText();
+        Toggle selToggle = bodyTypeGroup != null ? bodyTypeGroup.getSelectedToggle() : null;
+        state.bodyType = (selToggle instanceof ToggleButton btn) ? btn.getText() : "None";
         state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
         state.testsScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : "";
         state.authType = authTypeCombo.getValue();
@@ -7647,6 +7660,20 @@ public class MainController implements Initializable {
             } else {
                 socketIoEventsData.add(new SocketIoEventItem("", true, ""));
             }
+            String bType = state.bodyType;
+            if (bType == null || bType.isBlank()) {
+                bType = (state.body != null && !state.body.isBlank()) ? "Raw" : "None";
+            }
+            if (bodyTypeGroup != null) {
+                for (Toggle toggle : bodyTypeGroup.getToggles()) {
+                    if (toggle instanceof ToggleButton tb && tb.getText().equalsIgnoreCase(bType)) {
+                        tb.setSelected(true);
+                        break;
+                    }
+                }
+            }
+            updateBodyViewsVisibility(bType);
+
             updateRequestBuilderTabs(state.method);
             updateResponseTabs(state.method);
         } finally {

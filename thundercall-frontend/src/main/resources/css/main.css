@@ -508,6 +508,19 @@
     -fx-font-weight: bold;
 }
 
+.body-none-pane {
+    -fx-alignment: center;
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 8;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8;
+}
+.body-none-label {
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 13px;
+    -fx-font-weight: normal;
+}
+
 .body-textarea, .tests-textarea, .scripts-textarea, .text-area {
     -fx-background-color: -bg-panel;
     -fx-background-radius: 8;

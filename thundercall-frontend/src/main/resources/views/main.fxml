@@ -668,9 +668,12 @@
                                                       styleClass="body-type-btn"/>
                                     </HBox>
                                     <StackPane VBox.vgrow="ALWAYS">
+                                        <VBox fx:id="noneBodyPane" alignment="CENTER" styleClass="body-none-pane">
+                                            <Label text="This request does not have a body" styleClass="body-none-label"/>
+                                        </VBox>
                                         <Label fx:id="bodyPromptLabel" styleClass="body-prompt-label"
-                                               text="Request body content" mouseTransparent="true"/>
-                                        <CodeArea fx:id="bodyTextArea" styleClass="body-textarea"/>
+                                               text="Request body content" mouseTransparent="true" visible="false"/>
+                                        <CodeArea fx:id="bodyTextArea" styleClass="body-textarea" visible="false"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false"/>
                                         <TableView fx:id="urlEncodedTable" styleClass="key-value-table" visible="false"/>
                                         <SplitPane fx:id="graphqlPane" orientation="VERTICAL" dividerPositions="0.65"
@@ -687,7 +690,7 @@
                                             </VBox>
                                         </SplitPane>
                                     </StackPane>
-                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
+                                    <HBox fx:id="bodyTableButtonBar" alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8" visible="false" managed="false">
                                         <Button text="Add Row" onAction="#handleAddFormDataRow"
                                                 styleClass="add-row-button"/>
                                         <Button text="Delete Row" onAction="#handleDeleteFormDataRow"
