@@ -35,8 +35,49 @@
 .scroll-bar .thumb:hover { -fx-background-color: #ababab; }
 
 .tooltip {
-    -fx-background-color: #2b2b2b;
-    -fx-text-fill: #ffffff;
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 6 10 6 10;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 3);
+}
+.tooltip .label {
+    -fx-text-fill: #212121;
+}
+
+.graphql-warning-tooltip {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 8 12 8 12;
+    -fx-line-spacing: 2px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.12), 10, 0, 0, 3);
+}
+.graphql-warning-tooltip .label {
+    -fx-text-fill: #212121;
+}
+
+.custom-hover-tooltip {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 6 10 6 10;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 3);
+}
+.custom-hover-tooltip .label {
+    -fx-text-fill: #212121;
 }
 
 .send-button { -fx-text-fill: white; }

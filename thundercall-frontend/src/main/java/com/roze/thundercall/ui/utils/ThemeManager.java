@@ -37,15 +37,29 @@ public final class ThemeManager {
 
     /** Applies the persisted theme to the given scene. Safe to call any time. */
     public static void apply(Scene scene) {
-        if (scene == null || scene.getRoot() == null) {
+        if (scene == null) {
             return;
         }
+        String mainCss = mainCss();
         String lightCss = lightCss();
-        scene.getRoot().getStylesheets().remove(lightCss);
+
+        // Ensure scene-level stylesheets contain main.css and (when in light theme) light.css.
+        // In JavaFX, Tooltips and Popups inherit stylesheets from scene.getStylesheets().
+        if (!scene.getStylesheets().contains(mainCss)) {
+            scene.getStylesheets().add(mainCss);
+        }
+        scene.getStylesheets().remove(lightCss);
         if (isLight()) {
-            // Root stylesheets outrank scene stylesheets; appending after
-            // main.css (declared in FXML) makes the light tokens win.
-            scene.getRoot().getStylesheets().add(lightCss);
+            scene.getStylesheets().add(lightCss);
+        }
+
+        if (scene.getRoot() != null) {
+            scene.getRoot().getStylesheets().remove(lightCss);
+            if (isLight()) {
+                // Root stylesheets outrank scene stylesheets; appending after
+                // main.css (declared in FXML) makes the light tokens win.
+                scene.getRoot().getStylesheets().add(lightCss);
+            }
         }
     }
 

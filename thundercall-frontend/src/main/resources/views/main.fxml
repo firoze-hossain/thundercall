@@ -15,9 +15,13 @@
 
     <fx:define>
         <ToggleGroup fx:id="sidebarRailGroup"/>
+        <Tooltip fx:id="graphqlWarningTooltip"
+                 styleClass="graphql-warning-tooltip"
+                 wrapText="true" prefWidth="250"
+                 text="Could not auto fetch. Make sure Authorization, URL &amp; selected environment are valid. Check console for more details."/>
     </fx:define>
 
-    <BorderPane>
+    <BorderPane fx:id="mainRootPane">
         <!-- ============ TOP: menu bar + header + workspace bar (Postman rows 1-3) ============ -->
         <top>
             <VBox>
@@ -78,7 +82,7 @@
                             <Tooltip text="Settings"/>
                         </tooltip>
                         <graphic>
-                            <Label text="⚙" styleClass="gear-icon"/>
+                            <Label text="⚙" styleClass="gear-icon" mouseTransparent="true"/>
                         </graphic>
                     </Button>
                     <MenuButton fx:id="userMenuBtn" text="User" styleClass="user-menu">
@@ -222,14 +226,14 @@
                                     <Tooltip text="New request"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
                             </Button>
                             <MenuButton styleClass="icon-button" fx:id="collectionsMenuBtn">
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/more-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -261,7 +265,7 @@
                                     <Tooltip text="Import environment from JSON"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/folder-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -271,7 +275,7 @@
                                     <Tooltip text="New environment"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -295,7 +299,7 @@
                                     <Tooltip text="Clear history"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/clear-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -317,7 +321,7 @@
                                     <Tooltip text="Join a team with an invite code"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/folder-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -327,7 +331,7 @@
                                     <Tooltip text="Create a team"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -351,7 +355,7 @@
                                     <Tooltip text="Create a mock server"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -375,7 +379,7 @@
                                     <Tooltip text="Create a monitor"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -399,7 +403,7 @@
                                     <Tooltip text="Enter an invite code"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -409,7 +413,7 @@
                                     <Tooltip text="Refresh"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/clear-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -452,24 +456,18 @@
                                 minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleWsConnectToggle"/>
                         <Button text="Connect" fx:id="socketIoConnectBtn" styleClass="send-button" visible="false" managed="false"
                                 minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleSocketIoConnectToggle"/>
-                        <Button styleClass="icon-button" onAction="#handleSaveRequest"
+                        <Button fx:id="saveRequestBtn" styleClass="icon-button" onAction="#handleSaveRequest"
                                 minHeight="38" prefHeight="38" maxHeight="38" prefWidth="38">
-                            <tooltip>
-                                <Tooltip text="Save request"/>
-                            </tooltip>
                             <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
+                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/save-icon.png"/>
                                 </ImageView>
                             </graphic>
                         </Button>
-                        <Button styleClass="icon-button" onAction="#handleSamplePostRequest"
+                        <Button fx:id="samplePostBtn" styleClass="icon-button" onAction="#handleSamplePostRequest"
                                 minHeight="38" prefHeight="38" maxHeight="38" prefWidth="38">
-                            <tooltip>
-                                <Tooltip text="Load sample POST request"/>
-                            </tooltip>
                             <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
+                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/sample-icon.png"/>
                                 </ImageView>
                             </graphic>
@@ -656,7 +654,7 @@
 
                             <Tab text="Body" fx:id="bodyTab">
                                 <VBox>
-                                    <HBox styleClass="body-type-selector">
+                                    <HBox styleClass="body-type-selector" alignment="CENTER_LEFT" spacing="6">
                                         <ToggleButton fx:id="noneBodyTypeButton" text="None"
                                                       styleClass="body-type-btn"/>
                                         <ToggleButton fx:id="rawBodyTypeButton" text="Raw" styleClass="body-type-btn"/>
@@ -666,6 +664,19 @@
                                                       styleClass="body-type-btn"/>
                                         <ToggleButton fx:id="graphqlBodyTypeButton" text="GraphQL"
                                                       styleClass="body-type-btn"/>
+                                        <HBox fx:id="graphqlToolbar" alignment="CENTER_LEFT" spacing="6" styleClass="graphql-toolbar" visible="false" managed="false">
+                                            <Button fx:id="graphqlAutoFetchBtn" text="Auto Fetch ▾" styleClass="graphql-toolbar-btn"/>
+                                            <Button fx:id="graphqlRefreshBtn" styleClass="graphql-icon-btn">
+                                                <graphic>
+                                                    <Region styleClass="graphql-refresh-icon" mouseTransparent="true"/>
+                                                </graphic>
+                                            </Button>
+                                            <Label fx:id="graphqlWarningLabel" styleClass="graphql-warning-container" visible="true">
+                                                <graphic>
+                                                    <Region styleClass="graphql-warning-icon" mouseTransparent="true"/>
+                                                </graphic>
+                                            </Label>
+                                        </HBox>
                                     </HBox>
                                     <StackPane VBox.vgrow="ALWAYS">
                                         <VBox fx:id="noneBodyPane" alignment="CENTER" styleClass="body-none-pane">
@@ -676,15 +687,24 @@
                                         <CodeArea fx:id="bodyTextArea" styleClass="body-textarea" visible="false"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false"/>
                                         <TableView fx:id="urlEncodedTable" styleClass="key-value-table" visible="false"/>
-                                        <SplitPane fx:id="graphqlPane" orientation="VERTICAL" dividerPositions="0.65"
+                                        <SplitPane fx:id="graphqlPane" orientation="HORIZONTAL" dividerPositions="0.5"
                                                    visible="false" styleClass="graphql-split">
-                                            <VBox spacing="4">
-                                                <Label text="Query" styleClass="graphql-section-label"/>
+                                            <VBox spacing="0" HBox.hgrow="ALWAYS" styleClass="graphql-pane-column">
+                                                <HBox alignment="CENTER_LEFT" styleClass="graphql-section-header">
+                                                    <Label text="QUERY" styleClass="graphql-section-title"/>
+                                                </HBox>
                                                 <CodeArea fx:id="graphqlQueryArea" styleClass="body-textarea"
                                                           VBox.vgrow="ALWAYS"/>
                                             </VBox>
-                                            <VBox spacing="4">
-                                                <Label text="Query Variables (JSON)" styleClass="graphql-section-label"/>
+                                            <VBox spacing="0" HBox.hgrow="ALWAYS" styleClass="graphql-pane-column">
+                                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="graphql-section-header">
+                                                    <Label text="GRAPHQL VARIABLES" styleClass="graphql-section-title"/>
+                                                    <Label text="ⓘ" styleClass="graphql-info-icon">
+                                                        <tooltip>
+                                                            <Tooltip text="Variables must be valid JSON"/>
+                                                        </tooltip>
+                                                    </Label>
+                                                </HBox>
                                                 <CodeArea fx:id="graphqlVariablesArea" styleClass="body-textarea"
                                                           VBox.vgrow="ALWAYS"/>
                                             </VBox>
@@ -731,7 +751,7 @@
                                 <Tooltip text="Copy response"/>
                             </tooltip>
                             <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
+                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/copy-icon.png"/>
                                 </ImageView>
                             </graphic>
@@ -741,7 +761,7 @@
                                 <Tooltip text="Save response"/>
                             </tooltip>
                             <graphic>
-                                <ImageView fitWidth="16" fitHeight="16" preserveRatio="true">
+                                <ImageView fitWidth="16" fitHeight="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/save-icon.png"/>
                                 </ImageView>
                             </graphic>

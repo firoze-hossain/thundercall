@@ -162,7 +162,7 @@ public final class CommentThreadPopup {
             boolean resolved = Boolean.TRUE.equals(rootThread.getResolved());
             Button resolveButton = new Button(resolved ? "\u21BA" : "\u2713");
             resolveButton.getStyleClass().add("comment-icon-button");
-            resolveButton.setTooltip(new Tooltip(resolved ? "Reopen" : "Resolve"));
+            HoverTooltip.attach(resolveButton, resolved ? "Reopen" : "Resolve");
             resolveButton.setOnAction(e -> callback.onToggleResolve(!resolved));
             topRow.getChildren().add(resolveButton);
         }

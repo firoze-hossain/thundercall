@@ -19,6 +19,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.geometry.Side;
 import javafx.scene.Node;
@@ -32,6 +33,7 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
@@ -50,7 +52,12 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
+import javafx.animation.PauseTransition;
+import javafx.animation.RotateTransition;
+import javafx.util.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -59,6 +66,10 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class MainController implements Initializable {
+    @FXML
+    private BorderPane mainRootPane;
+    @FXML
+    private Button addRequestBtn;
     @FXML
     private TreeView<String> collectionsTree;
     @FXML
@@ -73,6 +84,10 @@ public class MainController implements Initializable {
     private Button sendBtn;
     @FXML
     private Button wsConnectBtn;
+    @FXML
+    private Button saveRequestBtn;
+    @FXML
+    private Button samplePostBtn;
     @FXML
     private TabPane responseTabPane;
     @FXML
@@ -341,6 +356,20 @@ public class MainController implements Initializable {
     private CodeArea graphqlQueryArea;
     @FXML
     private CodeArea graphqlVariablesArea;
+    @FXML
+    private HBox graphqlToolbar;
+    @FXML
+    private Button graphqlAutoFetchBtn;
+    @FXML
+    private Button graphqlRefreshBtn;
+    @FXML
+    private Label graphqlWarningLabel;
+    @FXML
+    private Tooltip graphqlWarningTooltip;
+
+    private boolean isGraphqlAutoFetchEnabled = true;
+    private String graphqlSchemaStatusText = "No schema";
+    private final List<String> introspectedTypeNames = new ArrayList<>();
     // Postman-style sidebar rail (may be null with the old FXML — always null-checked)
     @FXML
     private VBox collectionsPane;
@@ -441,6 +470,7 @@ public class MainController implements Initializable {
         }
         setupRequestTabs();
         setupUrlField();
+        setupTopBarTooltips();
         setupBodyCodeArea();
         setupGraphqlCodeAreas();
         setupResponseCodeArea();
@@ -579,6 +609,7 @@ public class MainController implements Initializable {
         // Initialize form data and urlencoded tables
         setupFormDataTable();
         setupUrlEncodedTable();
+        setupGraphqlToolbar();
 
         // Default to "None" so the state is always visible
         if (bodyTypeGroup.getSelectedToggle() == null && noneBodyTypeButton != null) {
@@ -639,13 +670,25 @@ public class MainController implements Initializable {
             graphqlPane.setVisible(isGraphql);
             graphqlPane.setManaged(isGraphql);
         }
+        if (graphqlToolbar != null) {
+            graphqlToolbar.setVisible(isGraphql);
+            graphqlToolbar.setManaged(isGraphql);
+        }
         if (bodyTableButtonBar != null) {
             boolean showButtons = isFormData || isUrlEncoded;
             bodyTableButtonBar.setVisible(showButtons);
             bodyTableButtonBar.setManaged(showButtons);
         }
-        if (isGraphql && methodCombo != null) {
-            methodCombo.setValue("POST");
+        if (!isGraphql && graphqlWarningTooltip != null && graphqlWarningTooltip.isShowing()) {
+            graphqlWarningTooltip.hide();
+        }
+        if (isGraphql) {
+            if (methodCombo != null) {
+                methodCombo.setValue("POST");
+            }
+            if (isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
         }
     }
 
@@ -1034,6 +1077,7 @@ public class MainController implements Initializable {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/views/feature-tour.fxml"));
             Parent tourView = loader.load();
+            HoverTooltip.convertAll(tourView);
             FeatureTourController controller = loader.getController();
             controller.setMainController(this);
 
@@ -1109,6 +1153,11 @@ public class MainController implements Initializable {
                 e.consume();
             }
         });
+        urlField.focusedProperty().addListener((obs, oldVal, isFocused) -> {
+            if (!isFocused && isGraphqlActive() && isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
+        });
     }
 
     /** Request body editor: full JSON + {{variable}} coloring, autocomplete,
@@ -1163,6 +1212,296 @@ public class MainController implements Initializable {
         EditorContextMenu.attach(TextEditTarget.of(graphqlVariablesArea), false, false, bodyMenuExtensions());
         attachCommentToggleShortcut(graphqlQueryArea, TextEditTarget.of(graphqlQueryArea));
         attachCommentToggleShortcut(graphqlVariablesArea, TextEditTarget.of(graphqlVariablesArea));
+    }
+
+    private void setupGraphqlToolbar() {
+        if (graphqlAutoFetchBtn == null || graphqlRefreshBtn == null) {
+            return;
+        }
+
+        // Context menu for Auto Fetch button
+        ContextMenu autoFetchMenu = new ContextMenu();
+        CheckMenuItem autoFetchItem = new CheckMenuItem("Auto Fetch");
+        autoFetchItem.setSelected(isGraphqlAutoFetchEnabled);
+        autoFetchItem.setOnAction(e -> {
+            isGraphqlAutoFetchEnabled = autoFetchItem.isSelected();
+            if (isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
+        });
+
+        MenuItem schemaStatusItem = new MenuItem(graphqlSchemaStatusText);
+        schemaStatusItem.setDisable(true);
+
+        autoFetchMenu.getItems().addAll(autoFetchItem, new SeparatorMenuItem(), schemaStatusItem);
+
+        autoFetchMenu.setOnShowing(e -> {
+            autoFetchItem.setSelected(isGraphqlAutoFetchEnabled);
+            schemaStatusItem.setText(graphqlSchemaStatusText);
+        });
+
+        graphqlAutoFetchBtn.setOnAction(e -> {
+            if (autoFetchMenu.isShowing()) {
+                autoFetchMenu.hide();
+            } else {
+                schemaStatusItem.setText(graphqlSchemaStatusText);
+                autoFetchItem.setSelected(isGraphqlAutoFetchEnabled);
+                autoFetchMenu.show(graphqlAutoFetchBtn, Side.BOTTOM, 0, 4);
+            }
+        });
+
+        graphqlRefreshBtn.setOnAction(e -> {
+            triggerGraphqlAutoFetch(true);
+        });
+
+        if (graphqlRefreshBtn != null) {
+            attachHoverTooltip(graphqlRefreshBtn, "Refresh");
+        }
+
+        if (graphqlWarningLabel != null) {
+            graphqlWarningLabel.setVisible(true);
+            graphqlWarningLabel.setManaged(true);
+            graphqlWarningLabel.setTooltip(null); // Detach default TooltipBehavior to eliminate any flickering
+
+            if (graphqlWarningTooltip != null) {
+                graphqlWarningTooltip.setText(
+                        "Could not auto fetch. Make sure Authorization, URL & selected environment are valid. Check console for more details.");
+                graphqlWarningTooltip.setAutoHide(false);
+            }
+
+            PauseTransition showDelay = new PauseTransition(Duration.millis(80));
+            PauseTransition hideDelay = new PauseTransition(Duration.millis(150));
+
+            showDelay.setOnFinished(e -> {
+                if (!graphqlWarningLabel.isVisible() || graphqlWarningTooltip == null) {
+                    return;
+                }
+                Point2D p = graphqlWarningLabel.localToScreen(0, graphqlWarningLabel.getHeight());
+                if (p != null) {
+                    double x = Math.max(10, p.getX() - 110);
+                    double y = p.getY() + 6;
+                    if (!graphqlWarningTooltip.isShowing()) {
+                        graphqlWarningTooltip.show(graphqlWarningLabel, x, y);
+                    }
+                }
+            });
+
+            hideDelay.setOnFinished(e -> {
+                if (graphqlWarningTooltip != null && graphqlWarningTooltip.isShowing()) {
+                    graphqlWarningTooltip.hide();
+                }
+            });
+
+            graphqlWarningLabel.setOnMouseEntered(e -> {
+                hideDelay.stop();
+                if (graphqlWarningTooltip != null && !graphqlWarningTooltip.isShowing()) {
+                    showDelay.playFromStart();
+                }
+            });
+
+            graphqlWarningLabel.setOnMouseExited(e -> {
+                showDelay.stop();
+                hideDelay.playFromStart();
+            });
+
+            if (graphqlWarningTooltip != null) {
+                graphqlWarningTooltip.setOnShowing(ev -> {
+                    if (graphqlWarningTooltip.getScene() != null) {
+                        ThemeManager.apply(graphqlWarningTooltip.getScene());
+                        if (graphqlWarningTooltip.getScene().getRoot() != null) {
+                            Node root = graphqlWarningTooltip.getScene().getRoot();
+                            root.setOnMouseEntered(me -> hideDelay.stop());
+                            root.setOnMouseExited(me -> hideDelay.playFromStart());
+                        }
+                    }
+                });
+            }
+
+            // Also allow clicking the warning icon to toggle/pin the tooltip
+            graphqlWarningLabel.setOnMouseClicked(e -> {
+                showDelay.stop();
+                hideDelay.stop();
+                if (graphqlWarningTooltip != null) {
+                    if (graphqlWarningTooltip.isShowing()) {
+                        graphqlWarningTooltip.hide();
+                    } else {
+                        Point2D p = graphqlWarningLabel.localToScreen(0, graphqlWarningLabel.getHeight());
+                        if (p != null) {
+                            graphqlWarningTooltip.show(graphqlWarningLabel, Math.max(10, p.getX() - 110), p.getY() + 6);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    private void setupTopBarTooltips() {
+        if (saveRequestBtn != null) {
+            HoverTooltip.attach(saveRequestBtn, "Save request");
+        }
+        if (samplePostBtn != null) {
+            HoverTooltip.attach(samplePostBtn, "Load sample POST request");
+        }
+        if (addRequestBtn != null) {
+            HoverTooltip.attach(addRequestBtn, "New request");
+        }
+        if (mainRootPane != null) {
+            HoverTooltip.convertAll(mainRootPane);
+        }
+        Platform.runLater(() -> {
+            if (mainRootPane != null) {
+                HoverTooltip.convertAll(mainRootPane);
+            }
+        });
+    }
+
+    /**
+     * Attaches a zero-flicker, persistent hover tooltip to a control.
+     */
+    private void attachHoverTooltip(Control control, String text) {
+        HoverTooltip.attach(control, text);
+    }
+
+    private void triggerGraphqlAutoFetch(boolean userTriggered) {
+        String rawUrl = buildFullUrl();
+        if (rawUrl == null || rawUrl.isBlank()) {
+            rawUrl = urlField != null ? urlField.getText().trim() : "";
+        }
+
+        Map<String, String> vars = currentEnvironmentVariables();
+        String resolvedUrl = VariableResolver.resolve(rawUrl, vars);
+        Set<String> unresolved = VariableResolver.findUnresolved(resolvedUrl, vars);
+
+        if (rawUrl.isBlank() || !unresolved.isEmpty() || !isValidHttpUrl(resolvedUrl)) {
+            Platform.runLater(() -> {
+                graphqlSchemaStatusText = "No schema";
+                if (graphqlWarningLabel != null) {
+                    graphqlWarningLabel.setVisible(true);
+                    graphqlWarningLabel.setManaged(true);
+                }
+            });
+            if (userTriggered) {
+                logger.warning("GraphQL auto fetch failed: URL is empty, contains unresolved variables, or is not a valid HTTP URL: " + rawUrl);
+            }
+            return;
+        }
+
+        Map<String, String> resolvedHeaders = VariableResolver.resolveMap(buildHeadersForSend(), vars);
+
+        // Spin refresh button for visual feedback
+        if (graphqlRefreshBtn != null && graphqlRefreshBtn.getGraphic() != null) {
+            RotateTransition rt = new RotateTransition(Duration.millis(800), graphqlRefreshBtn.getGraphic());
+            rt.setByAngle(360);
+            rt.setCycleCount(2);
+            rt.play();
+        }
+
+        String introspectionPayload = "{\"query\":\"query IntrospectionQuery { __schema { queryType { name } mutationType { name } subscriptionType { name } types { kind name description } } }\"}";
+
+        Thread t = new Thread(() -> {
+            try {
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(java.time.Duration.ofSeconds(4))
+                        .build();
+
+                HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+                        .uri(URI.create(resolvedUrl))
+                        .timeout(java.time.Duration.ofSeconds(5))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(introspectionPayload, StandardCharsets.UTF_8));
+
+                if (resolvedHeaders != null) {
+                    for (Map.Entry<String, String> entry : resolvedHeaders.entrySet()) {
+                        String k = entry.getKey();
+                        if (k != null && !k.equalsIgnoreCase("Content-Type")
+                                && !k.equalsIgnoreCase("Content-Length")
+                                && !k.equalsIgnoreCase("Host")) {
+                            try {
+                                reqBuilder.header(k, entry.getValue() != null ? entry.getValue() : "");
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                }
+
+                HttpResponse<String> resp = client.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("__schema")) {
+                    JSONObject json = new JSONObject(resp.body());
+                    JSONObject data = json.optJSONObject("data");
+                    JSONObject schema = data != null ? data.optJSONObject("__schema") : null;
+                    JSONArray types = schema != null ? schema.optJSONArray("types") : null;
+                    int count = types != null ? types.length() : 0;
+                    List<String> names = new ArrayList<>();
+                    if (types != null) {
+                        for (int i = 0; i < types.length(); i++) {
+                            JSONObject typeObj = types.optJSONObject(i);
+                            if (typeObj != null && typeObj.has("name")) {
+                                String name = typeObj.getString("name");
+                                if (!name.startsWith("__")) {
+                                    names.add(name);
+                                }
+                            }
+                        }
+                    }
+                    int displayCount = names.isEmpty() ? count : names.size();
+                    Platform.runLater(() -> {
+                        introspectedTypeNames.clear();
+                        introspectedTypeNames.addAll(names);
+                        graphqlSchemaStatusText = "Schema loaded (" + displayCount + " types)";
+                        if (graphqlWarningTooltip != null && graphqlWarningTooltip.isShowing()) {
+                            graphqlWarningTooltip.hide();
+                        }
+                        if (graphqlWarningLabel != null) {
+                            graphqlWarningLabel.setVisible(false);
+                            graphqlWarningLabel.setManaged(false);
+                        }
+                    });
+                    logger.info("GraphQL schema introspected successfully: " + displayCount + " types");
+                } else {
+                    Platform.runLater(() -> {
+                        graphqlSchemaStatusText = "No schema";
+                        if (graphqlWarningLabel != null) {
+                            graphqlWarningLabel.setVisible(true);
+                            graphqlWarningLabel.setManaged(true);
+                        }
+                    });
+                    logger.warning("GraphQL auto fetch returned HTTP " + resp.statusCode());
+                }
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    graphqlSchemaStatusText = "No schema";
+                    if (graphqlWarningLabel != null) {
+                        graphqlWarningLabel.setVisible(true);
+                        graphqlWarningLabel.setManaged(true);
+                    }
+                });
+                logger.warning("GraphQL auto fetch failed: " + ex.getMessage());
+            }
+        }, "graphql-schema-autofetch");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private boolean isValidHttpUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        String lower = url.trim().toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(url.trim());
+            return uri.getHost() != null && !uri.getHost().isBlank();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isGraphqlActive() {
+        Toggle sel = bodyTypeGroup != null ? bodyTypeGroup.getSelectedToggle() : null;
+        return sel instanceof ToggleButton tb && "GraphQL".equalsIgnoreCase(tb.getText());
     }
 
     /** Postman-style right-click menu for the Pre-request/Tests script
@@ -3285,7 +3624,7 @@ public class MainController implements Initializable {
 
                 chooseFileBtn.getStyleClass().add("form-data-file-btn");
                 clearFileBtn.getStyleClass().add("form-data-file-clear-btn");
-                clearFileBtn.setTooltip(new Tooltip("Clear selected file"));
+                HoverTooltip.attach(clearFileBtn, "Clear selected file");
 
                 fileBox.getChildren().addAll(fileNameLabel, chooseFileBtn, clearFileBtn);
 
@@ -4168,6 +4507,9 @@ public class MainController implements Initializable {
         environmentCombo.getSelectionModel().select(0);
         environmentCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
             updateEnvironmentVariables(newVal);
+            if (isGraphqlActive() && isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
         });
     }
 
@@ -4421,11 +4763,43 @@ public class MainController implements Initializable {
                             requestResponse.getTestsScript() != null
                                     ? requestResponse.getTestsScript() : "");
                 }
-                if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
-                        && rawBodyTypeButton != null) {
-                    rawBodyTypeButton.setSelected(true);
-                } else if (noneBodyTypeButton != null) {
-                    noneBodyTypeButton.setSelected(true);
+                boolean isGraphqlBody = false;
+                if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()) {
+                    String rawBody = requestResponse.getBody().trim();
+                    if (rawBody.startsWith("{") && rawBody.contains("\"query\"")) {
+                        try {
+                            JSONObject obj = new JSONObject(rawBody);
+                            if (obj.has("query")) {
+                                isGraphqlBody = true;
+                                String q = obj.optString("query", "");
+                                if (graphqlQueryArea != null) {
+                                    graphqlQueryArea.replaceText(q);
+                                }
+                                if (graphqlVariablesArea != null) {
+                                    Object vars = obj.opt("variables");
+                                    if (vars instanceof JSONObject jo) {
+                                        graphqlVariablesArea.replaceText(jo.toString(2));
+                                    } else if (vars != null) {
+                                        graphqlVariablesArea.replaceText(vars.toString());
+                                    } else {
+                                        graphqlVariablesArea.replaceText("");
+                                    }
+                                }
+                                if (graphqlBodyTypeButton != null) {
+                                    graphqlBodyTypeButton.setSelected(true);
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                if (!isGraphqlBody) {
+                    if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
+                            && rawBodyTypeButton != null) {
+                        rawBodyTypeButton.setSelected(true);
+                    } else if (noneBodyTypeButton != null) {
+                        noneBodyTypeButton.setSelected(true);
+                    }
                 }
 
                 // Authorization tab (saved WITH the request too)
@@ -4719,7 +5093,7 @@ public class MainController implements Initializable {
             HBox chip = new HBox(5, dot, name);
             chip.setAlignment(Pos.CENTER_LEFT);
             chip.getStyleClass().add("online-user-chip");
-            Tooltip.install(chip, new Tooltip(user.getUsername() + " is online now"));
+            HoverTooltip.attach(chip, user.getUsername() + " is online now");
             onlineUsersBox.getChildren().add(chip);
         }
     }
@@ -5110,7 +5484,7 @@ public class MainController implements Initializable {
                 Label nameLabel = new Label(username);
                 HBox row = new HBox(6, dot, nameLabel);
                 row.setAlignment(Pos.CENTER_LEFT);
-                Tooltip.install(row, new Tooltip(username + (online ? " is online" : " is offline")));
+                HoverTooltip.attach(row, username + (online ? " is online" : " is offline"));
                 setGraphic(row);
                 setText(null);
             }
@@ -8079,6 +8453,8 @@ public class MainController implements Initializable {
         String url = "";
         String body = "";
         String bodyType = "None";
+        String graphqlQuery = "";
+        String graphqlVariables = "";
         String preScript = "";
         String testsScript = "";
         String authType = "No Auth";
@@ -8113,6 +8489,8 @@ public class MainController implements Initializable {
             copy.url = this.url;
             copy.body = this.body;
             copy.bodyType = this.bodyType;
+            copy.graphqlQuery = this.graphqlQuery;
+            copy.graphqlVariables = this.graphqlVariables;
             copy.preScript = this.preScript;
             copy.testsScript = this.testsScript;
             copy.authType = this.authType;
@@ -8213,6 +8591,12 @@ public class MainController implements Initializable {
             }
         });
         headersData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        if (graphqlQueryArea != null) {
+            graphqlQueryArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (graphqlVariablesArea != null) {
+            graphqlVariablesArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
 
         openRequestTab("Untitled Request", null);
     }
@@ -8560,6 +8944,8 @@ public class MainController implements Initializable {
         state.method = methodCombo.getValue();
         state.url = urlField.getText();
         state.body = bodyTextArea.getText();
+        state.graphqlQuery = graphqlQueryArea != null ? graphqlQueryArea.getText() : "";
+        state.graphqlVariables = graphqlVariablesArea != null ? graphqlVariablesArea.getText() : "";
         Toggle selToggle = bodyTypeGroup != null ? bodyTypeGroup.getSelectedToggle() : null;
         state.bodyType = (selToggle instanceof ToggleButton btn) ? btn.getText() : "None";
         state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
@@ -8623,6 +9009,12 @@ public class MainController implements Initializable {
                 urlField.replaceText(stateUrl);
             }
             bodyTextArea.replaceText(state.body == null ? "" : state.body);
+            if (graphqlQueryArea != null) {
+                graphqlQueryArea.replaceText(state.graphqlQuery != null ? state.graphqlQuery : "");
+            }
+            if (graphqlVariablesArea != null) {
+                graphqlVariablesArea.replaceText(state.graphqlVariables != null ? state.graphqlVariables : "");
+            }
             if (preRequestScriptsArea != null) {
                 preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
             }
@@ -8755,8 +9147,8 @@ public class MainController implements Initializable {
                 methodLabel.getStyleClass().add("tree-method");
                 plusBtn.getStyleClass().add("tree-inline-btn");
                 moreBtn.getStyleClass().add("tree-inline-btn");
-                plusBtn.setTooltip(new Tooltip("Add request"));
-                moreBtn.setTooltip(new Tooltip("More actions"));
+                HoverTooltip.attach(plusBtn, "Add request");
+                HoverTooltip.attach(moreBtn, "More actions");
                 HBox.setHgrow(spacer, Priority.ALWAYS);
                 box.setAlignment(Pos.CENTER_LEFT);
 
