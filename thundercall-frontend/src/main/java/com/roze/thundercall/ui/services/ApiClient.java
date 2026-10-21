@@ -222,15 +222,29 @@ public class ApiClient {
         return responseCode == 401 || responseCode == 403;
     }
 
+    private static volatile long lastRefreshTime = 0;
+
     /**
      * Calls the backend's existing /auth/refresh endpoint (already
      * implemented server-side, just never used by the client) to get a new
      * access token without forcing a re-login. Returns false if there's no
-     * refresh token, or it's also expired — at which point the person is
+     * refresh token, or the 7-day session has expired — at which point the person is
      * returned to the login screen with a clear explanation instead of a
      * confusing per-request error.
      */
     private static synchronized boolean attemptTokenRefresh() {
+        if (TokenManager.isSessionExpired()) {
+            System.out.println("[ApiClient] 7-day session has expired. Halting refresh and redirecting to login.");
+            handleSessionExpired();
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - lastRefreshTime < 4000 && token != null && !token.isEmpty()) {
+            // Already refreshed by a concurrent background task
+            return true;
+        }
+
         if (refreshToken == null || refreshToken.isEmpty()) {
             System.out.println("[ApiClient] Refresh skipped: no refresh token in memory "
                     + "(likely already logged out, or a session that started before this build)");
@@ -253,9 +267,9 @@ public class ApiClient {
                             body, new TypeReference<BaseResponse<AuthResponse>>() {
                             });
                     if (wrapper != null && wrapper.getData() != null && wrapper.getData().getToken() != null) {
-                        // Persists the new access + refresh token pair and
-                        // updates this class's in-memory token too.
+                        // Persists the new access token while preserving the 7-day session window
                         TokenManager.storeTokens(wrapper.getData());
+                        lastRefreshTime = System.currentTimeMillis();
                         System.out.println("[ApiClient] Token refreshed successfully");
                         return true;
                     }

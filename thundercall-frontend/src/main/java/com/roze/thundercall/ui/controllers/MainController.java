@@ -4897,9 +4897,34 @@ public class MainController implements Initializable {
             if (username != null && !username.isBlank()) {
                 userMenuBtn.setText(username);
             }
+            updateUserMenuSessionItem();
+            userMenuBtn.setOnShowing(ev -> updateUserMenuSessionItem());
         }
         new Thread(() -> UserService.getMe().ifPresent(profile ->
                 Platform.runLater(() -> applyProfileToHeader(profile)))).start();
+    }
+
+    private void updateUserMenuSessionItem() {
+        if (userMenuBtn == null) {
+            return;
+        }
+        MenuItem sessionItem = null;
+        for (MenuItem item : userMenuBtn.getItems()) {
+            if ("sessionInfoItem".equals(item.getId())) {
+                sessionItem = item;
+                break;
+            }
+        }
+        String remaining = TokenManager.getSessionTimeRemainingHumanReadable();
+        if (sessionItem == null) {
+            sessionItem = new MenuItem("Session: " + remaining);
+            sessionItem.setId("sessionInfoItem");
+            sessionItem.setDisable(true);
+            userMenuBtn.getItems().add(0, sessionItem);
+            userMenuBtn.getItems().add(1, new SeparatorMenuItem());
+        } else {
+            sessionItem.setText("Session: " + remaining);
+        }
     }
 
     private void applyProfileToHeader(UserProfile profile) {

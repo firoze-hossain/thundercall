@@ -181,7 +181,7 @@ public class AuthController {
                     } else {
                         CredentialStore.clear();
                     }
-                    TokenManager.storeTokens(response);
+                    TokenManager.startNewSession(response);
                     Main.showMainView();
                 });
             } catch (IOException e) {

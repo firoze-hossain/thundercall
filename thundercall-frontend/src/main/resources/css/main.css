@@ -955,10 +955,19 @@
    ============================================================ */
 .auth-root { -fx-background-color: -bg-base; }
 
+.auth-shell {
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 14;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 14;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.55), 32, 0, 0, 10);
+}
+
 .brand-panel {
     -fx-background-color: linear-gradient(to bottom, #131722, #0d1017);
     -fx-border-color: transparent -border-color transparent transparent;
     -fx-border-width: 0 1 0 0;
+    -fx-background-radius: 14 0 0 14;
 }
 .brand-logo-image {
     -fx-effect: dropshadow(gaussian, rgba(0, 195, 235, 0.35), 24, 0.1, 0, 4);
@@ -1026,14 +1035,15 @@
     -fx-font-size: 11px;
 }
 
-.auth-form-side { -fx-background-color: -bg-base; }
+.auth-form-side {
+    -fx-background-color: -bg-panel;
+    -fx-background-radius: 0 14 14 0;
+}
 
 .auth-card {
-    -fx-background-color: -bg-panel;
-    -fx-background-radius: 12;
-    -fx-border-color: -border-color;
-    -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.55), 28, 0, 0, 10);
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-effect: none;
 }
 .auth-title {
     -fx-text-fill: -text-primary;
