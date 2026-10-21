@@ -521,6 +521,60 @@
     -fx-font-weight: normal;
 }
 
+/* ============ Form Data Table Components ============ */
+.form-data-type-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 2 7 2 7;
+    -fx-cursor: hand;
+}
+.form-data-type-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: -accent;
+    -fx-text-fill: -accent;
+}
+
+.form-data-file-btn {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 11px;
+    -fx-padding: 3 10 3 10;
+    -fx-cursor: hand;
+}
+.form-data-file-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: -accent;
+    -fx-text-fill: -accent;
+}
+
+.form-data-file-label {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-font-weight: 500;
+}
+
+.form-data-file-clear-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 4 0 4;
+    -fx-cursor: hand;
+    -fx-background-radius: 4;
+}
+.form-data-file-clear-btn:hover {
+    -fx-background-color: rgba(229, 114, 106, 0.2);
+    -fx-text-fill: -danger;
+}
+
 .body-textarea, .tests-textarea, .scripts-textarea, .text-area {
     -fx-background-color: -bg-panel;
     -fx-background-radius: 8;

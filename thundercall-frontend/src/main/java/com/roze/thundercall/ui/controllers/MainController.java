@@ -20,6 +20,7 @@ import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Side;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.*;
@@ -29,6 +30,8 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
@@ -573,12 +576,9 @@ public class MainController implements Initializable {
             updateBodyViewsVisibility(newToggle != null ? ((ToggleButton) newToggle).getText() : "None");
         });
 
-        // Initialize form data table
+        // Initialize form data and urlencoded tables
         setupFormDataTable();
-        // x-www-form-urlencoded is plain key/value pairs only — no file
-        // attachments make sense here, so the generic table (same as
-        // Params/Headers) is the right fit, not the Form Data one.
-        setupKeyValueTable(urlEncodedTable, urlEncodedData, "Key", "Value", "Description");
+        setupUrlEncodedTable();
 
         // Default to "None" so the state is always visible
         if (bodyTypeGroup.getSelectedToggle() == null && noneBodyTypeButton != null) {
@@ -620,10 +620,20 @@ public class MainController implements Initializable {
         if (formDataTable != null) {
             formDataTable.setVisible(isFormData);
             formDataTable.setManaged(isFormData);
+            if (isFormData) {
+                ensureFormDataPlaceholderRow();
+                updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                updateFormDataMasterSelectBox(formDataMasterSelectBox);
+            }
         }
         if (urlEncodedTable != null) {
             urlEncodedTable.setVisible(isUrlEncoded);
             urlEncodedTable.setManaged(isUrlEncoded);
+            if (isUrlEncoded) {
+                ensureUrlEncodedPlaceholderRow();
+                updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+            }
         }
         if (graphqlPane != null) {
             graphqlPane.setVisible(isGraphql);
@@ -1937,6 +1947,14 @@ public class MainController implements Initializable {
     private CheckBox headersMasterSelectBox;
     private int pendingFocusHeaderRow = -1;
 
+    private CheckBox formDataMasterCheckBox;
+    private CheckBox formDataMasterSelectBox;
+    private int pendingFocusFormDataRow = -1;
+
+    private CheckBox urlEncodedMasterCheckBox;
+    private CheckBox urlEncodedMasterSelectBox;
+    private int pendingFocusUrlEncodedRow = -1;
+
     private void setupParamsTable() {
         paramsTable.getColumns().clear();
         paramsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -2289,9 +2307,11 @@ public class MainController implements Initializable {
         String k = kv.getKey();
         String v = kv.getValue();
         String d = kv.getDescription();
+        String fp = kv.getFilePath();
         return (k == null || k.trim().isEmpty())
                 && (v == null || v.trim().isEmpty())
-                && (d == null || d.trim().isEmpty());
+                && (d == null || d.trim().isEmpty())
+                && (fp == null || fp.trim().isEmpty());
     }
 
     private void ensurePlaceholderRow() {
@@ -2890,131 +2910,1091 @@ public class MainController implements Initializable {
 
     /** Form-data gets its own table (not the generic key/value one) so
      * each row can be either plain text or a real file attachment —
-     * matching Postman's Text/File toggle, with actual file bytes read
-     * off disk at send time (CSV, Excel, images, anything). */
+     * matching Postman's Text/File toggle, with single-click editing,
+     * left tickmark, right row selection, and auto-growing placeholder row. */
     private void setupFormDataTable() {
         formDataTable.getColumns().clear();
         formDataTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         formDataTable.setItems(formData);
         formDataTable.setEditable(true);
+        formDataTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 
-        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
-        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
-        keyCol.setCellFactory(col -> commitOnFocusLossCell());
-        keyCol.setOnEditCommit(event -> event.getRowValue().setKey(event.getNewValue()));
-        keyCol.setPrefWidth(150);
+        // Row factory applies soft pink selection color dynamically via listener
+        formDataTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
 
-        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
-        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
-        valueCol.setCellFactory(col -> createFormDataValueCell());
-        valueCol.setOnEditCommit(event -> event.getRowValue().setValue(event.getNewValue()));
-        valueCol.setPrefWidth(220);
-
-        TableColumn<KeyValuePair, String> typeCol = new TableColumn<>("Type");
-        typeCol.setCellValueFactory(cellData -> cellData.getValue().typeProperty());
-        typeCol.setCellFactory(javafx.scene.control.cell.ComboBoxTableCell.forTableColumn("Text", "File"));
-        typeCol.setOnEditCommit(event -> {
-            event.getRowValue().setType(event.getNewValue());
-            // The Value column's rendering (text field vs. file picker)
-            // depends on this row's type, and TableView doesn't know to
-            // re-check a SIBLING column on its own — force it to.
-            formDataTable.refresh();
-        });
-        typeCol.setPrefWidth(80);
-
-        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
-        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
-        descCol.setCellFactory(col -> commitOnFocusLossCell());
-        descCol.setOnEditCommit(event -> event.getRowValue().setDescription(event.getNewValue()));
-        descCol.setPrefWidth(150);
-
-        formDataTable.getColumns().addAll(keyCol, valueCol, typeCol, descCol);
-
-        ContextMenu contextMenu = new ContextMenu();
-        MenuItem addItem = new MenuItem("Add Row");
-        MenuItem deleteItem = new MenuItem("Delete Row");
-        addItem.setOnAction(e -> formData.add(new KeyValuePair("", "", "")));
-        deleteItem.setOnAction(e -> {
-            KeyValuePair selected = formDataTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                formData.remove(selected);
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
             }
         });
-        contextMenu.getItems().addAll(addItem, deleteItem);
-        formDataTable.setContextMenu(contextMenu);
-    }
 
-    /** Behaves exactly like the normal editable text cell for "Text"
-     * rows (reuses TextFieldTableCell's own machinery), but for "File"
-     * rows shows the chosen file name plus a "Choose File..." button
-     * instead — clicking it opens a real file picker. */
-    private TableCell<KeyValuePair, String> createFormDataValueCell() {
-        return new TextFieldTableCell<>(new javafx.util.converter.DefaultStringConverter()) {
-            private final Button chooseFileBtn = new Button("Choose File...");
-            private final Label fileLabel = new Label();
-            private final HBox fileBox = new HBox(6, fileLabel, chooseFileBtn);
+        // 1. Tick mark (enable/disable row in request)
+        CheckBox masterCheckBox = new CheckBox();
+        this.formDataMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : formData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            formDataTable.refresh();
+            onEditorFieldChanged();
+        });
+
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
 
             {
-                fileBox.setAlignment(Pos.CENTER_LEFT);
-                chooseFileBtn.setOnAction(e -> {
-                    if (!(getTableRow() != null && getTableRow().getItem() instanceof KeyValuePair kv)) {
-                        return;
-                    }
-                    FileChooser chooser = new FileChooser();
-                    chooser.setTitle("Choose File");
-                    chooser.getExtensionFilters().addAll(
-                            new FileChooser.ExtensionFilter("CSV Files", "*.csv"),
-                            new FileChooser.ExtensionFilter("Excel Files", "*.xlsx", "*.xls"),
-                            new FileChooser.ExtensionFilter("All Files", "*.*"));
-                    File file = chooser.showOpenDialog(Main.getPrimaryStage());
-                    if (file != null) {
-                        kv.setFilePath(file.getAbsolutePath());
-                        kv.setFileName(file.getName());
-                        kv.setValue(file.getName());
-                        fileLabel.setText(file.getName());
-                        getTableView().refresh();
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        onEditorFieldChanged();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
                     }
                 });
             }
 
-            private boolean isFileRow() {
-                return getTableRow() != null && getTableRow().getItem() instanceof KeyValuePair kv
-                        && "File".equalsIgnoreCase(kv.getType());
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Key column with inline Postman-style Type dropdown (Text ▾ / File ▾)
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(160);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createFormDataKeyCell());
+
+        // 3. Value column (single-click text field or file picker button depending on type)
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(180);
+        valueCol.setPrefWidth(260);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createFormDataValueCell());
+
+        // 4. Description column
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createFormDataDescCell());
+
+        // 5. Select column
+        CheckBox masterSelectBox = new CheckBox();
+        this.formDataMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : formData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            formDataTable.getSelectionModel().clearSelection();
+            formDataTable.refresh();
+        });
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                });
             }
 
             @Override
-            public void startEdit() {
-                if (isFileRow()) {
-                    return; // file rows use the button, not the normal text editor
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
                 }
-                super.startEdit();
-                if (getGraphic() instanceof TextField field) {
-                    field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
-                        if (!isFocused && isEditing()) {
-                            commitEdit(field.getText());
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        formDataTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddFormDataRow());
+        deleteItem.setOnAction(e -> handleDeleteFormDataRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        formDataTable.setContextMenu(contextMenu);
+
+        ensureFormDataPlaceholderRow();
+        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createFormDataKeyCell() {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private final Button typeBtn = new Button("Text \u25BE");
+            private final HBox cellBox = new HBox(4, textField, typeBtn);
+            private boolean updating = false;
+
+            {
+                textField.setPromptText("Key");
+                textField.getStyleClass().add("param-cell-field");
+                HBox.setHgrow(textField, Priority.ALWAYS);
+
+                typeBtn.getStyleClass().add("form-data-type-btn");
+                typeBtn.setFocusTraversable(false);
+
+                cellBox.setAlignment(Pos.CENTER_LEFT);
+                cellBox.setPadding(new Insets(0, 4, 0, 0));
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(cellBox);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> {
+                    if (e.getTarget() != typeBtn) {
+                        textField.requestFocus();
+                    }
+                });
+
+                typeBtn.setOnAction(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    ContextMenu typeMenu = new ContextMenu();
+                    MenuItem textItem = new MenuItem("Text");
+                    MenuItem fileItem = new MenuItem("File");
+                    textItem.setOnAction(ev -> {
+                        row.setType("Text");
+                        typeBtn.setText("Text \u25BE");
+                        if (row.isPlaceholder()) {
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) row.setEnabled(true);
+                            ensureFormDataPlaceholderRow();
+                            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                            updateFormDataMasterSelectBox(formDataMasterSelectBox);
                         }
+                        formDataTable.refresh();
+                        onEditorFieldChanged();
                     });
-                }
+                    fileItem.setOnAction(ev -> {
+                        row.setType("File");
+                        typeBtn.setText("File \u25BE");
+                        if (row.isPlaceholder()) {
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) row.setEnabled(true);
+                            ensureFormDataPlaceholderRow();
+                            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                        }
+                        formDataTable.refresh();
+                        onEditorFieldChanged();
+                    });
+                    typeMenu.getItems().addAll(textItem, fileItem);
+                    typeMenu.show(typeBtn, Side.BOTTOM, 0, 2);
+                });
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    row.setKey(newVal != null ? newVal : "");
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureFormDataPlaceholderRow();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        focusFormDataCell(getIndex(), 2);
+                    }
+                });
             }
 
             @Override
-            public void updateItem(String value, boolean empty) {
-                super.updateItem(value, empty);
-                if (empty) {
-                    setGraphic(null);
-                    setText(null);
-                    return;
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        cellBox.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    cellBox.setVisible(true);
+                    String current = row.getKey();
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    boolean isFile = "File".equalsIgnoreCase(row.getType());
+                    typeBtn.setText(isFile ? "File \u25BE" : "Text \u25BE");
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                        typeBtn.setOpacity(0.5);
+                    } else {
+                        textField.setStyle("");
+                        typeBtn.setOpacity(1.0);
+                    }
+
+                    if (getIndex() == pendingFocusFormDataRow) {
+                        pendingFocusFormDataRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
                 }
-                if (isFileRow()) {
-                    KeyValuePair kv = (KeyValuePair) getTableRow().getItem();
-                    fileLabel.setText(kv.getFileName() == null || kv.getFileName().isEmpty()
-                            ? "(no file chosen)" : kv.getFileName());
-                    setGraphic(fileBox);
-                    setText(null);
-                }
-                // else: super.updateItem() above already set the normal text correctly
             }
         };
+    }
+
+    private TableCell<KeyValuePair, String> createFormDataValueCell() {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private final HBox fileBox = new HBox(6);
+            private final Label fileNameLabel = new Label();
+            private final Button chooseFileBtn = new Button("Select Files");
+            private final Button clearFileBtn = new Button("\u00D7");
+            private final StackPane container = new StackPane();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText("Value");
+                textField.getStyleClass().add("param-cell-field");
+
+                fileBox.setAlignment(Pos.CENTER_LEFT);
+                fileBox.setPadding(new Insets(2, 8, 2, 8));
+
+                fileNameLabel.getStyleClass().add("form-data-file-label");
+                HBox.setHgrow(fileNameLabel, Priority.ALWAYS);
+
+                chooseFileBtn.getStyleClass().add("form-data-file-btn");
+                clearFileBtn.getStyleClass().add("form-data-file-clear-btn");
+                clearFileBtn.setTooltip(new Tooltip("Clear selected file"));
+
+                fileBox.getChildren().addAll(fileNameLabel, chooseFileBtn, clearFileBtn);
+
+                container.setAlignment(Pos.CENTER_LEFT);
+                container.getChildren().addAll(textField, fileBox);
+
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(container);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row != null && !"File".equalsIgnoreCase(row.getType())) {
+                        textField.requestFocus();
+                    }
+                });
+
+                chooseFileBtn.setOnAction(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    FileChooser chooser = new FileChooser();
+                    chooser.setTitle("Select File");
+                    chooser.getExtensionFilters().addAll(
+                            new FileChooser.ExtensionFilter("All Files", "*.*"),
+                            new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"),
+                            new FileChooser.ExtensionFilter("PDF Documents", "*.pdf"),
+                            new FileChooser.ExtensionFilter("Text / CSV / JSON", "*.txt", "*.csv", "*.json"),
+                            new FileChooser.ExtensionFilter("Excel Spreadsheets", "*.xlsx", "*.xls")
+                    );
+                    File file = chooser.showOpenDialog(Main.getPrimaryStage());
+                    if (file != null) {
+                        row.setFilePath(file.getAbsolutePath());
+                        row.setFileName(file.getName());
+                        row.setValue(file.getName());
+                        if (row.isPlaceholder()) {
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) row.setEnabled(true);
+                            ensureFormDataPlaceholderRow();
+                            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                        }
+                        formDataTable.refresh();
+                        onEditorFieldChanged();
+                    }
+                });
+
+                clearFileBtn.setOnAction(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    row.setFilePath("");
+                    row.setFileName("");
+                    row.setValue("");
+                    formDataTable.refresh();
+                    onEditorFieldChanged();
+                });
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null || "File".equalsIgnoreCase(row.getType())) {
+                        return;
+                    }
+                    row.setValue(newVal != null ? newVal : "");
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureFormDataPlaceholderRow();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        focusFormDataCell(getIndex(), 3);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        container.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    container.setVisible(true);
+                    boolean isFile = "File".equalsIgnoreCase(row.getType());
+                    if (isFile) {
+                        textField.setVisible(false);
+                        fileBox.setVisible(true);
+                        boolean hasFile = row.getFilePath() != null && !row.getFilePath().isBlank();
+                        if (hasFile) {
+                            fileNameLabel.setText(row.getFileName() != null ? row.getFileName() : new File(row.getFilePath()).getName());
+                            fileNameLabel.setVisible(true);
+                            fileNameLabel.setManaged(true);
+                            chooseFileBtn.setText("Change");
+                            clearFileBtn.setVisible(true);
+                            clearFileBtn.setManaged(true);
+                        } else {
+                            fileNameLabel.setText("");
+                            fileNameLabel.setVisible(false);
+                            fileNameLabel.setManaged(false);
+                            chooseFileBtn.setText("Select Files");
+                            clearFileBtn.setVisible(false);
+                            clearFileBtn.setManaged(false);
+                        }
+                    } else {
+                        fileBox.setVisible(false);
+                        textField.setVisible(true);
+                        String current = row.getValue();
+                        String safeCurrent = current != null ? current : "";
+                        if (!safeCurrent.equals(textField.getText())) {
+                            updating = true;
+                            try {
+                                textField.setText(safeCurrent);
+                            } finally {
+                                updating = false;
+                            }
+                        }
+                    }
+
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                        fileBox.setOpacity(0.6);
+                    } else {
+                        textField.setStyle("");
+                        fileBox.setOpacity(1.0);
+                    }
+                }
+            }
+        };
+    }
+
+    private TableCell<KeyValuePair, String> createFormDataDescCell() {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText("Description");
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    row.setDescription(newVal != null ? newVal : "");
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureFormDataPlaceholderRow();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        int nextRow = getIndex() + 1;
+                        if (nextRow < formData.size()) {
+                            focusFormDataCell(nextRow, 1);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = row.getDescription();
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusFormDataCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            formDataTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < formDataTable.getColumns().size()) {
+                formDataTable.getFocusModel().focus(rowIdx, formDataTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < formDataTable.getColumns().size()) {
+                    var targetCol = formDataTable.getColumns().get(colIdx);
+                    for (Node n : formDataTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            } else if (tc.getGraphic() instanceof Pane pane) {
+                                for (Node child : pane.getChildren()) {
+                                    if (child instanceof TextField tf && tf.isVisible()) {
+                                        tf.requestFocus();
+                                        tf.selectAll();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void ensureFormDataPlaceholderRow() {
+        if (formData.isEmpty()) {
+            KeyValuePair ph = new KeyValuePair(true, "", "", "", true);
+            ph.setType("Text");
+            formData.add(ph);
+            return;
+        }
+        while (formData.size() > 1) {
+            KeyValuePair last = formData.get(formData.size() - 1);
+            KeyValuePair secondLast = formData.get(formData.size() - 2);
+            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
+                formData.remove(formData.size() - 1);
+            } else {
+                break;
+            }
+        }
+        KeyValuePair last = formData.get(formData.size() - 1);
+        if (!last.isPlaceholder()) {
+            KeyValuePair ph = new KeyValuePair(true, "", "", "", true);
+            ph.setType("Text");
+            formData.add(ph);
+        }
+    }
+
+    private void updateFormDataMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) return;
+        long totalActive = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateFormDataMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) return;
+        long totalActive = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
+    }
+
+    private void setupUrlEncodedTable() {
+        urlEncodedTable.getColumns().clear();
+        urlEncodedTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        urlEncodedTable.setItems(urlEncodedData);
+        urlEncodedTable.setEditable(true);
+        urlEncodedTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        urlEncodedTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        CheckBox masterCheckBox = new CheckBox();
+        this.urlEncodedMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : urlEncodedData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            urlEncodedTable.refresh();
+            onEditorFieldChanged();
+        });
+
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        onEditorFieldChanged();
+                        updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(140);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createUrlEncodedCell("Key", 0, KeyValuePair::getKey, KeyValuePair::setKey));
+
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(140);
+        valueCol.setPrefWidth(240);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createUrlEncodedCell("Value", 1, KeyValuePair::getValue, KeyValuePair::setValue));
+
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createUrlEncodedCell("Description", 2, KeyValuePair::getDescription, KeyValuePair::setDescription));
+
+        CheckBox masterSelectBox = new CheckBox();
+        this.urlEncodedMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : urlEncodedData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            urlEncodedTable.getSelectionModel().clearSelection();
+            urlEncodedTable.refresh();
+        });
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        urlEncodedTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddFormDataRow());
+        deleteItem.setOnAction(e -> handleDeleteFormDataRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        urlEncodedTable.setContextMenu(contextMenu);
+
+        ensureUrlEncodedPlaceholderRow();
+        updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+        updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createUrlEncodedCell(String placeholder,
+                                                                 int colIndex,
+                                                                 Function<KeyValuePair, String> getter,
+                                                                 BiConsumer<KeyValuePair, String> setter) {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    setter.accept(row, newVal != null ? newVal : "");
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureUrlEncodedPlaceholderRow();
+                        updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                        updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        if (colIndex < 2) {
+                            focusUrlEncodedCell(getIndex(), colIndex + 2);
+                        } else {
+                            int nextRow = getIndex() + 1;
+                            if (nextRow < urlEncodedData.size()) {
+                                focusUrlEncodedCell(nextRow, 1);
+                            }
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    if (colIndex == 0 && getIndex() == pendingFocusUrlEncodedRow) {
+                        pendingFocusUrlEncodedRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusUrlEncodedCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            urlEncodedTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < urlEncodedTable.getColumns().size()) {
+                urlEncodedTable.getFocusModel().focus(rowIdx, urlEncodedTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < urlEncodedTable.getColumns().size()) {
+                    var targetCol = urlEncodedTable.getColumns().get(colIdx);
+                    for (Node n : urlEncodedTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void ensureUrlEncodedPlaceholderRow() {
+        if (urlEncodedData.isEmpty()) {
+            urlEncodedData.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        while (urlEncodedData.size() > 1) {
+            KeyValuePair last = urlEncodedData.get(urlEncodedData.size() - 1);
+            KeyValuePair secondLast = urlEncodedData.get(urlEncodedData.size() - 2);
+            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
+                urlEncodedData.remove(urlEncodedData.size() - 1);
+            } else {
+                break;
+            }
+        }
+        KeyValuePair last = urlEncodedData.get(urlEncodedData.size() - 1);
+        if (!last.isPlaceholder()) {
+            urlEncodedData.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateUrlEncodedMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) return;
+        long totalActive = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateUrlEncodedMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) return;
+        long totalActive = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
     }
 
     private void setupSocketIoEventsTable() {
@@ -3425,6 +4405,8 @@ public class MainController implements Initializable {
                 ensureHeadersPlaceholderRow();
                 updateHeadersMasterCheckBox(headersMasterCheckBox);
                 updateHeadersMasterSelectBox(headersMasterSelectBox);
+                ensureFormDataPlaceholderRow();
+                ensureUrlEncodedPlaceholderRow();
 
                 // Load body
                 bodyTextArea.replaceText(requestResponse.getBody() != null ? requestResponse.getBody() : "");
@@ -7105,6 +8087,8 @@ public class MainController implements Initializable {
         String authPassword = "";
         List<KeyValuePair> params = new ArrayList<>();
         List<KeyValuePair> headers = new ArrayList<>();
+        List<KeyValuePair> formData = new ArrayList<>();
+        List<KeyValuePair> urlEncoded = new ArrayList<>();
         String socketIoNamespace = "";
         String socketIoEventName = "";
         String socketIoMessageBody = "";
@@ -7142,6 +8126,18 @@ public class MainController implements Initializable {
             copy.headers = new ArrayList<>();
             for (KeyValuePair kv : this.headers) {
                 copy.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+            }
+            copy.formData = new ArrayList<>();
+            for (KeyValuePair kv : this.formData) {
+                KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder());
+                item.setType(kv.getType());
+                item.setFilePath(kv.getFilePath());
+                item.setFileName(kv.getFileName());
+                copy.formData.add(item);
+            }
+            copy.urlEncoded = new ArrayList<>();
+            for (KeyValuePair kv : this.urlEncoded) {
+                copy.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
             }
             copy.socketIoNamespace = this.socketIoNamespace;
             copy.socketIoEventName = this.socketIoEventName;
@@ -7580,6 +8576,18 @@ public class MainController implements Initializable {
         for (KeyValuePair kv : headersData) {
             state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
         }
+        state.formData = new ArrayList<>();
+        for (KeyValuePair kv : formData) {
+            KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder());
+            item.setType(kv.getType());
+            item.setFilePath(kv.getFilePath());
+            item.setFileName(kv.getFileName());
+            state.formData.add(item);
+        }
+        state.urlEncoded = new ArrayList<>();
+        for (KeyValuePair kv : urlEncodedData) {
+            state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+        }
         state.socketIoNamespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : "";
         state.socketIoEventName = socketIoEventNameField != null ? socketIoEventNameField.getText() : "";
         state.socketIoMessageBody = socketIoMessageComposeArea != null ? socketIoMessageComposeArea.getText() : "";
@@ -7642,6 +8650,30 @@ public class MainController implements Initializable {
             ensureHeadersPlaceholderRow();
             updateHeadersMasterCheckBox(headersMasterCheckBox);
             updateHeadersMasterSelectBox(headersMasterSelectBox);
+
+            formData.clear();
+            if (state.formData != null && !state.formData.isEmpty()) {
+                for (KeyValuePair kv : state.formData) {
+                    KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder());
+                    item.setType(kv.getType());
+                    item.setFilePath(kv.getFilePath());
+                    item.setFileName(kv.getFileName());
+                    formData.add(item);
+                }
+            }
+            ensureFormDataPlaceholderRow();
+            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+
+            urlEncodedData.clear();
+            if (state.urlEncoded != null && !state.urlEncoded.isEmpty()) {
+                for (KeyValuePair kv : state.urlEncoded) {
+                    urlEncodedData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+                }
+            }
+            ensureUrlEncodedPlaceholderRow();
+            updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+            updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
 
             if (socketIoNamespaceField != null) {
                 socketIoNamespaceField.setText(state.socketIoNamespace != null ? state.socketIoNamespace : "");
@@ -9487,6 +10519,9 @@ public class MainController implements Initializable {
     private List<FormDataField> buildFormDataFields(Map<String, String> vars) {
         List<FormDataField> fields = new ArrayList<>();
         for (KeyValuePair kv : formData) {
+            if (kv.isPlaceholder() || !kv.isEnabled()) {
+                continue;
+            }
             if (kv.getKey() == null || kv.getKey().isBlank()) {
                 continue;
             }
@@ -9576,6 +10611,9 @@ public class MainController implements Initializable {
     private String convertFormDataToJson(ObservableList<KeyValuePair> formData) {
         JSONObject json = new JSONObject();
         for (KeyValuePair pair : formData) {
+            if (pair.isPlaceholder() || !pair.isEnabled()) {
+                continue;
+            }
             if (!pair.getKey().isEmpty() && !pair.getValue().isEmpty()) {
                 json.put(pair.getKey(), pair.getValue());
             }
@@ -9586,10 +10624,15 @@ public class MainController implements Initializable {
     private String convertFormDataToUrlEncoded(ObservableList<KeyValuePair> formData) {
         try {
             StringBuilder result = new StringBuilder();
+            boolean first = true;
             for (int i = 0; i < formData.size(); i++) {
                 KeyValuePair pair = formData.get(i);
+                if (pair.isPlaceholder() || !pair.isEnabled()) {
+                    continue;
+                }
                 if (!pair.getKey().isEmpty() && !pair.getValue().isEmpty()) {
-                    if (i > 0) result.append("&");
+                    if (!first) result.append("&");
+                    first = false;
                     result.append(URLEncoder.encode(pair.getKey(), StandardCharsets.UTF_8.toString()))
                             .append("=")
                             .append(URLEncoder.encode(pair.getValue(), StandardCharsets.UTF_8.toString()));
@@ -9755,30 +10798,81 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleAddFormDataRow() {
-        // FIX: this button bar is shared between Form Data and
-        // x-www-form-urlencoded (same HBox in the FXML) — it used to
-        // always add to the Form Data list even while looking at the
-        // url-encoded table. It now acts on whichever table is actually
-        // visible.
         if (urlEncodedTable != null && urlEncodedTable.isVisible()) {
-            urlEncodedData.add(new KeyValuePair("", "", ""));
-        } else {
-            formData.add(new KeyValuePair("", "", ""));
+            KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+            newRow.setSelected(false);
+            int targetIndex;
+            if (!urlEncodedData.isEmpty() && urlEncodedData.get(urlEncodedData.size() - 1).isPlaceholder()) {
+                targetIndex = urlEncodedData.size() - 1;
+                urlEncodedData.add(targetIndex, newRow);
+            } else {
+                urlEncodedData.add(newRow);
+                targetIndex = urlEncodedData.size() - 1;
+            }
+            ensureUrlEncodedPlaceholderRow();
+            pendingFocusUrlEncodedRow = targetIndex;
+            urlEncodedTable.getSelectionModel().clearSelection();
+            focusUrlEncodedCell(targetIndex, 1);
+            onEditorFieldChanged();
+            return;
         }
+
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+        int targetIndex;
+        if (!formData.isEmpty() && formData.get(formData.size() - 1).isPlaceholder()) {
+            targetIndex = formData.size() - 1;
+            formData.add(targetIndex, newRow);
+        } else {
+            formData.add(newRow);
+            targetIndex = formData.size() - 1;
+        }
+        ensureFormDataPlaceholderRow();
+        pendingFocusFormDataRow = targetIndex;
+        formDataTable.getSelectionModel().clearSelection();
+        focusFormDataCell(targetIndex, 1);
+        onEditorFieldChanged();
     }
 
     @FXML
     private void handleDeleteFormDataRow() {
         if (urlEncodedTable != null && urlEncodedTable.isVisible()) {
-            KeyValuePair selected = urlEncodedTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                urlEncodedData.remove(selected);
+            List<KeyValuePair> toDelete = urlEncodedData.stream()
+                    .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                    .collect(Collectors.toList());
+            if (toDelete.isEmpty()) {
+                KeyValuePair active = urlEncodedTable.getSelectionModel().getSelectedItem();
+                if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                    toDelete.add(active);
+                }
+            }
+            if (!toDelete.isEmpty()) {
+                urlEncodedData.removeAll(toDelete);
+                ensureUrlEncodedPlaceholderRow();
+                onEditorFieldChanged();
+                updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+                urlEncodedTable.refresh();
             }
             return;
         }
-        KeyValuePair selected = formDataTable.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            formData.remove(selected);
+
+        List<KeyValuePair> toDelete = formData.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = formDataTable.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+        if (!toDelete.isEmpty()) {
+            formData.removeAll(toDelete);
+            ensureFormDataPlaceholderRow();
+            onEditorFieldChanged();
+            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+            formDataTable.refresh();
         }
     }
 
