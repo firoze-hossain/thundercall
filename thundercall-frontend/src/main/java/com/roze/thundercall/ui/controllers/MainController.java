@@ -314,6 +314,10 @@ public class MainController implements Initializable {
     private ListView<EnvironmentResponse> environmentsList;
     private final Map<Tab, RequestTabState> tabStates = new HashMap<>();
     private boolean switchingTabs = false;
+    private SessionData currentSession;
+    private boolean restoringSession = false;
+    private boolean restoringTreeSelection = false;
+    private final PauseTransition sessionSaveDebounce = new PauseTransition(Duration.millis(500));
     private final Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
     private final Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
 
@@ -510,6 +514,7 @@ public class MainController implements Initializable {
             setupAuthCombo();
             setUpMethodCombo();
             setupBodyTypeHandling();
+            setupSessionPersistence();
             loadUserData();
             loadUserProfile();
             startPresenceUpdates();
@@ -604,6 +609,7 @@ public class MainController implements Initializable {
     private void setupBodyTypeHandling() {
         bodyTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             updateBodyViewsVisibility(newToggle != null ? ((ToggleButton) newToggle).getText() : "None");
+            onEditorFieldChanged();
         });
 
         // Initialize form data and urlencoded tables
@@ -744,7 +750,11 @@ public class MainController implements Initializable {
             // ISSUE 1 FIX: remember which collections/folders were expanded,
             // restore after rebuild — no more everything-expands-on-reload
             Set<String> expandedKeys = new HashSet<>();
-            captureExpandedKeys(fullCollectionsRoot, expandedKeys);
+            if (fullCollectionsRoot != null) {
+                captureExpandedKeys(fullCollectionsRoot, expandedKeys);
+            } else if (currentSession != null && currentSession.getExpandedTreeKeys() != null) {
+                expandedKeys.addAll(currentSession.getExpandedTreeKeys());
+            }
 
             collectionIdMap.clear();
             folderIdMap.clear();
@@ -823,6 +833,19 @@ public class MainController implements Initializable {
                     && !collectionsSearchField.getText().isBlank()) {
                 applyCollectionsFilter(collectionsSearchField.getText());
             }
+
+            // Restore sidebar tree selection (active tab or saved tree key)
+            String targetKey = (currentSession != null) ? currentSession.getSelectedTreeKey() : null;
+            if (targetKey == null) {
+                Tab active = activeRequestTab();
+                RequestTabState activeState = active != null ? tabStates.get(active) : null;
+                if (activeState != null && activeState.requestId != null) {
+                    targetKey = "r:" + activeState.requestId;
+                }
+            }
+            if (targetKey != null) {
+                restoreCollectionsTreeSelection(targetKey);
+            }
         });
     }
 
@@ -885,11 +908,13 @@ public class MainController implements Initializable {
                         environments.stream().filter(e -> !"Globals".equals(e.getName())).toList());
             }
 
-            // Keep whatever was selected before if it still exists (e.g.
-            // after renaming/reloading); otherwise default to "No
-            // Environment" rather than silently picking one for the user.
-            if (previousSelection != null && environmentCombo.getItems().contains(previousSelection)) {
+            String savedEnv = (currentSession != null) ? currentSession.getSelectedEnvironment() : null;
+            if (savedEnv != null && environmentCombo.getItems().contains(savedEnv)) {
+                environmentCombo.setValue(savedEnv);
+                updateEnvironmentVariables(savedEnv);
+            } else if (previousSelection != null && environmentCombo.getItems().contains(previousSelection)) {
                 environmentCombo.setValue(previousSelection);
+                updateEnvironmentVariables(previousSelection);
             } else {
                 environmentCombo.getSelectionModel().select(0);
                 updateEnvironmentVariables(environmentCombo.getValue());
@@ -933,7 +958,18 @@ public class MainController implements Initializable {
                     } else {
                         Platform.runLater(() -> {
                             if (WorkspaceManager.getCurrentWorkspace() == null) {
-                                WorkspaceManager.setCurrentWorkspace(workspaces.get(0));
+                                Workspace target = null;
+                                if (currentSession != null && currentSession.getActiveWorkspaceId() != null) {
+                                    Long savedWsId = currentSession.getActiveWorkspaceId();
+                                    target = workspaces.stream()
+                                            .filter(w -> savedWsId.equals(w.getId()))
+                                            .findFirst()
+                                            .orElse(null);
+                                }
+                                if (target == null) {
+                                    target = workspaces.get(0);
+                                }
+                                WorkspaceManager.setCurrentWorkspace(target);
                             }
                             refreshWorkspacesMenu(workspaces);
                             updateWorkspaceLabels();
@@ -1012,6 +1048,7 @@ public class MainController implements Initializable {
         updateWorkspaceLabels();
         reloadWorkspacesAndCollections();
         updateStatus("Workspace: " + workspace.getName());
+        scheduleSessionSave();
     }
 
     /** Switches the whole app into a workspace someone else shared
@@ -4510,6 +4547,9 @@ public class MainController implements Initializable {
             if (isGraphqlActive() && isGraphqlAutoFetchEnabled) {
                 triggerGraphqlAutoFetch(false);
             }
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
         });
     }
 
@@ -4660,11 +4700,28 @@ public class MainController implements Initializable {
         // Handle collection selection
         collectionsTree.getSelectionModel().selectedItemProperty().addListener(
                 (observable, oldValue, newValue) -> {
+                    if (restoringTreeSelection) {
+                        return;
+                    }
                     if (newValue != null && newValue.isLeaf()) {
                         handleItemSelected(newValue);
                     }
+                    if (!restoringSession) {
+                        scheduleSessionSave();
+                    }
                 }
         );
+
+        collectionsTree.addEventHandler(TreeItem.branchExpandedEvent(), e -> {
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+        });
+        collectionsTree.addEventHandler(TreeItem.branchCollapsedEvent(), e -> {
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+        });
     }
 
     private void handleItemSelected(TreeItem<String> item) {
@@ -4821,6 +4878,7 @@ public class MainController implements Initializable {
             if (currentTab != null) {
                 refreshTabGraphic(currentTab);
             }
+            scheduleSessionSave();
 
             updateStatus("Request loaded: " + requestResponse.getName());
         });
@@ -8548,8 +8606,16 @@ public class MainController implements Initializable {
                     }
                     if (newTab != null && tabStates.containsKey(newTab)) {
                         restoreTabState(newTab);
+                        syncCollectionsTreeSelectionToActiveTab(newTab);
                     }
+                    scheduleSessionSave();
                 });
+
+        requestTabPane.getTabs().addListener((javafx.collections.ListChangeListener<Tab>) c -> {
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+        });
 
         TabDragReorderHelper.install(requestTabPane, isMoving -> switchingTabs = isMoving);
 
@@ -8566,6 +8632,7 @@ public class MainController implements Initializable {
             if (state != null && nv != null) {
                 state.method = nv;
                 markDirty(active);
+                scheduleSessionSave();
             }
         });
         urlField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
@@ -8588,19 +8655,19 @@ public class MainController implements Initializable {
         socketIoEventsData.addListener((javafx.collections.ListChangeListener<SocketIoEventItem>) c -> onEditorFieldChanged());
         paramsData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> {
             onEditorFieldChanged();
-            if (!syncingUrlAndParams) {
+            if (!syncingUrlAndParams && !restoringTabState) {
                 syncParamsToUrl();
             }
         });
         headersData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        formData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        urlEncodedData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
         if (graphqlQueryArea != null) {
             graphqlQueryArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         }
         if (graphqlVariablesArea != null) {
             graphqlVariablesArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         }
-
-        openRequestTab("Untitled Request", null);
     }
 
     /** True while the URL<->Params sync itself is writing to either side —
@@ -8719,6 +8786,7 @@ public class MainController implements Initializable {
             return;
         }
         markDirty(requestTabPane.getSelectionModel().getSelectedItem());
+        scheduleSessionSave();
     }
 
     private void markDirty(Tab tab) {
@@ -8761,6 +8829,7 @@ public class MainController implements Initializable {
 
         restoreTabState(tab); // blank editor for a fresh tab
         refreshTabGraphic(tab);
+        scheduleSessionSave();
         return tab;
     }
 
@@ -8782,6 +8851,7 @@ public class MainController implements Initializable {
             if (requestTabPane.getTabs().isEmpty()) {
                 openRequestTab("Untitled Request", null);
             }
+            scheduleSessionSave();
         });
         setupTabContextMenu(tab);
         return tab;
@@ -8848,6 +8918,7 @@ public class MainController implements Initializable {
 
         restoreTabState(newTab);
         refreshTabGraphic(newTab);
+        scheduleSessionSave();
     }
 
     /** Closes a single tab. Unless {@code force} is true, a tab with
@@ -8870,6 +8941,7 @@ public class MainController implements Initializable {
         if (requestTabPane.getTabs().isEmpty()) {
             openRequestTab("Untitled Request", null);
         }
+        scheduleSessionSave();
     }
 
     /** Closes every tab matched by {@code which} — backs "Close Other
@@ -8910,6 +8982,7 @@ public class MainController implements Initializable {
         if (requestTabPane.getTabs().isEmpty()) {
             openRequestTab("Untitled Request", null);
         }
+        scheduleSessionSave();
     }
 
     /** Postman-style tab label: colored method badge + name + unsaved dot. */
@@ -9136,6 +9209,332 @@ public class MainController implements Initializable {
             }
         }
         return null;
+    }
+
+    // ==================== Postman-style session persistence ====================
+
+    private void setupSessionPersistence() {
+        sessionSaveDebounce.setOnFinished(e -> saveCurrentSession());
+        currentSession = SessionStateManager.loadSession(TokenManager.getUserId());
+        restoreSessionTabs();
+
+        Platform.runLater(() -> {
+            Stage stage = Main.getPrimaryStage();
+            if (stage != null) {
+                javafx.event.EventHandler<javafx.stage.WindowEvent> prev = stage.getOnCloseRequest();
+                stage.setOnCloseRequest(e -> {
+                    saveCurrentSession();
+                    if (prev != null) {
+                        prev.handle(e);
+                    }
+                });
+            }
+        });
+    }
+
+    private void restoreSessionTabs() {
+        if (requestTabPane == null) {
+            return;
+        }
+        restoringSession = true;
+        try {
+            if (currentSession == null) {
+                currentSession = SessionStateManager.loadSession(TokenManager.getUserId());
+            }
+            List<TabStateDto> tabDtos = (currentSession != null) ? currentSession.getTabs() : null;
+
+            if (tabDtos != null && !tabDtos.isEmpty()) {
+                requestTabPane.getTabs().clear();
+                tabStates.clear();
+
+                for (TabStateDto dto : tabDtos) {
+                    RequestTabState state = fromTabDto(dto);
+                    Tab tab = createManagedTab(state);
+                    refreshTabGraphic(tab);
+                    requestTabPane.getTabs().add(tab);
+                }
+
+                int targetIndex = currentSession.getActiveTabIndex();
+                if (targetIndex < 0 || targetIndex >= requestTabPane.getTabs().size()) {
+                    targetIndex = 0;
+                }
+                Tab activeTab = requestTabPane.getTabs().get(targetIndex);
+                requestTabPane.getSelectionModel().select(activeTab);
+                restoreTabState(activeTab);
+                refreshTabGraphic(activeTab);
+            } else {
+                if (requestTabPane.getTabs().isEmpty()) {
+                    openRequestTab("Untitled Request", null);
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Failed to restore session tabs: " + e.getMessage());
+            if (requestTabPane.getTabs().isEmpty()) {
+                openRequestTab("Untitled Request", null);
+            }
+        } finally {
+            restoringSession = false;
+        }
+    }
+
+    private void saveCurrentSession() {
+        if (restoringSession || requestTabPane == null) {
+            return;
+        }
+        try {
+            Tab active = activeRequestTab();
+            if (active != null && tabStates.containsKey(active)) {
+                captureTabState(active);
+            }
+            SessionData session = new SessionData();
+
+            // 1. Tabs
+            List<TabStateDto> tabDtos = new ArrayList<>();
+            for (Tab tab : requestTabPane.getTabs()) {
+                RequestTabState state = tabStates.get(tab);
+                if (state != null) {
+                    tabDtos.add(toTabDto(state));
+                }
+            }
+            session.setTabs(tabDtos);
+            int activeIdx = requestTabPane.getSelectionModel().getSelectedIndex();
+            session.setActiveTabIndex(Math.max(0, activeIdx));
+
+            // 2. Environment
+            if (environmentCombo != null && environmentCombo.getValue() != null) {
+                session.setSelectedEnvironment(environmentCombo.getValue());
+            }
+
+            // 3. Collections tree expanded keys
+            Set<String> expandedKeys = new HashSet<>();
+            captureExpandedKeys(fullCollectionsRoot != null ? fullCollectionsRoot : collectionsTree.getRoot(), expandedKeys);
+            session.setExpandedTreeKeys(expandedKeys);
+
+            // 4. Collections tree selected item
+            if (collectionsTree != null && collectionsTree.getSelectionModel().getSelectedItem() != null) {
+                TreeItem<String> sel = collectionsTree.getSelectionModel().getSelectedItem();
+                Long reqId = requestIdMap.get(sel);
+                if (reqId != null) {
+                    session.setSelectedTreeKey("r:" + reqId);
+                } else {
+                    Long folderId = folderIdMap.get(sel);
+                    if (folderId != null) {
+                        session.setSelectedTreeKey("f:" + folderId);
+                    } else {
+                        Long colId = collectionIdMap.get(sel);
+                        if (colId != null) {
+                            session.setSelectedTreeKey("c:" + colId);
+                        }
+                    }
+                }
+            }
+
+            // 5. Active Workspace
+            if (WorkspaceManager.getCurrentWorkspace() != null) {
+                session.setActiveWorkspaceId(WorkspaceManager.getCurrentWorkspace().getId());
+            }
+
+            this.currentSession = session;
+            SessionStateManager.saveSession(TokenManager.getUserId(), session);
+        } catch (Exception e) {
+            logger.warning("Error saving current session: " + e.getMessage());
+        }
+    }
+
+    private void scheduleSessionSave() {
+        if (restoringSession) {
+            return;
+        }
+        Platform.runLater(() -> {
+            sessionSaveDebounce.stop();
+            sessionSaveDebounce.playFromStart();
+        });
+    }
+
+    private TabStateDto toTabDto(RequestTabState state) {
+        TabStateDto dto = new TabStateDto();
+        dto.setName(state.name);
+        dto.setRequestId(state.requestId);
+        dto.setCollectionId(state.collectionId);
+        dto.setMethod(state.method);
+        dto.setUrl(state.url);
+        dto.setBody(state.body);
+        dto.setBodyType(state.bodyType);
+        dto.setGraphqlQuery(state.graphqlQuery);
+        dto.setGraphqlVariables(state.graphqlVariables);
+        dto.setPreScript(state.preScript);
+        dto.setTestsScript(state.testsScript);
+        dto.setAuthType(state.authType);
+        dto.setAuthToken(state.authToken);
+        dto.setAuthUsername(state.authUsername);
+        dto.setAuthPassword(state.authPassword);
+        dto.setDirty(state.dirty);
+
+        if (state.params != null) {
+            for (KeyValuePair kv : state.params) {
+                if (!kv.isPlaceholder()) {
+                    dto.getParams().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
+                }
+            }
+        }
+        if (state.headers != null) {
+            for (KeyValuePair kv : state.headers) {
+                if (!kv.isPlaceholder()) {
+                    dto.getHeaders().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
+                }
+            }
+        }
+        if (state.formData != null) {
+            for (KeyValuePair kv : state.formData) {
+                if (!kv.isPlaceholder()) {
+                    dto.getFormData().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, kv.getType(), kv.getFilePath(), kv.getFileName()));
+                }
+            }
+        }
+        if (state.urlEncoded != null) {
+            for (KeyValuePair kv : state.urlEncoded) {
+                if (!kv.isPlaceholder()) {
+                    dto.getUrlEncoded().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
+                }
+            }
+        }
+        dto.setSocketIoNamespace(state.socketIoNamespace);
+        dto.setSocketIoEventName(state.socketIoEventName);
+        dto.setSocketIoMessageBody(state.socketIoMessageBody);
+        if (state.socketIoEvents != null) {
+            for (SocketIoEventItem item : state.socketIoEvents) {
+                dto.getSocketIoEvents().add(new SocketIoEventDto(item.getEventName(), item.isListen(), item.getDescription()));
+            }
+        }
+        return dto;
+    }
+
+    private RequestTabState fromTabDto(TabStateDto dto) {
+        RequestTabState state = new RequestTabState();
+        state.name = dto.getName() != null ? dto.getName() : "Untitled Request";
+        state.requestId = dto.getRequestId();
+        state.collectionId = dto.getCollectionId();
+        state.method = dto.getMethod() != null ? dto.getMethod() : "GET";
+        state.url = dto.getUrl() != null ? dto.getUrl() : "";
+        state.body = dto.getBody() != null ? dto.getBody() : "";
+        state.bodyType = dto.getBodyType() != null ? dto.getBodyType() : "None";
+        state.graphqlQuery = dto.getGraphqlQuery() != null ? dto.getGraphqlQuery() : "";
+        state.graphqlVariables = dto.getGraphqlVariables() != null ? dto.getGraphqlVariables() : "";
+        state.preScript = dto.getPreScript() != null ? dto.getPreScript() : "";
+        state.testsScript = dto.getTestsScript() != null ? dto.getTestsScript() : "";
+        state.authType = dto.getAuthType() != null ? dto.getAuthType() : "No Auth";
+        state.authToken = dto.getAuthToken() != null ? dto.getAuthToken() : "";
+        state.authUsername = dto.getAuthUsername() != null ? dto.getAuthUsername() : "";
+        state.authPassword = dto.getAuthPassword() != null ? dto.getAuthPassword() : "";
+        state.dirty = dto.isDirty();
+
+        state.params = new ArrayList<>();
+        if (dto.getParams() != null) {
+            for (KeyValuePairDto kv : dto.getParams()) {
+                state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+            }
+        }
+        state.headers = new ArrayList<>();
+        if (dto.getHeaders() != null) {
+            for (KeyValuePairDto kv : dto.getHeaders()) {
+                state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
+        }
+        state.formData = new ArrayList<>();
+        if (dto.getFormData() != null) {
+            for (KeyValuePairDto kv : dto.getFormData()) {
+                KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                item.setType(kv.getType() != null ? kv.getType() : "Text");
+                item.setFilePath(kv.getFilePath() != null ? kv.getFilePath() : "");
+                item.setFileName(kv.getFileName() != null ? kv.getFileName() : "");
+                state.formData.add(item);
+            }
+        }
+        state.urlEncoded = new ArrayList<>();
+        if (dto.getUrlEncoded() != null) {
+            for (KeyValuePairDto kv : dto.getUrlEncoded()) {
+                state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
+        }
+        state.socketIoNamespace = dto.getSocketIoNamespace() != null ? dto.getSocketIoNamespace() : "";
+        state.socketIoEventName = dto.getSocketIoEventName() != null ? dto.getSocketIoEventName() : "";
+        state.socketIoMessageBody = dto.getSocketIoMessageBody() != null ? dto.getSocketIoMessageBody() : "";
+        state.socketIoEvents = new ArrayList<>();
+        if (dto.getSocketIoEvents() != null) {
+            for (SocketIoEventDto item : dto.getSocketIoEvents()) {
+                state.socketIoEvents.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
+            }
+        }
+        return state;
+    }
+
+    private TreeItem<String> findTreeItemByKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        if (key.startsWith("r:")) {
+            try {
+                Long reqId = Long.parseLong(key.substring(2));
+                for (Map.Entry<TreeItem<String>, Long> entry : requestIdMap.entrySet()) {
+                    if (reqId.equals(entry.getValue())) {
+                        return entry.getKey();
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        } else if (key.startsWith("f:")) {
+            try {
+                Long folderId = Long.parseLong(key.substring(2));
+                for (Map.Entry<TreeItem<String>, Long> entry : folderIdMap.entrySet()) {
+                    if (folderId.equals(entry.getValue())) {
+                        return entry.getKey();
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        } else if (key.startsWith("c:")) {
+            try {
+                Long colId = Long.parseLong(key.substring(2));
+                for (Map.Entry<TreeItem<String>, Long> entry : collectionIdMap.entrySet()) {
+                    if (colId.equals(entry.getValue())) {
+                        return entry.getKey();
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    private void restoreCollectionsTreeSelection(String key) {
+        if (key == null || collectionsTree == null) {
+            return;
+        }
+        TreeItem<String> item = findTreeItemByKey(key);
+        if (item != null) {
+            TreeItem<String> p = item.getParent();
+            while (p != null) {
+                p.setExpanded(true);
+                p = p.getParent();
+            }
+            restoringTreeSelection = true;
+            try {
+                collectionsTree.getSelectionModel().select(item);
+                int row = collectionsTree.getRow(item);
+                if (row >= 0) {
+                    collectionsTree.scrollTo(row);
+                }
+            } finally {
+                restoringTreeSelection = false;
+            }
+        }
+    }
+
+    private void syncCollectionsTreeSelectionToActiveTab(Tab tab) {
+        if (tab == null || collectionsTree == null) {
+            return;
+        }
+        RequestTabState state = tabStates.get(tab);
+        if (state != null && state.requestId != null) {
+            restoreCollectionsTreeSelection("r:" + state.requestId);
+        }
     }
 
     // ==================== Postman-style collections tree ====================
@@ -9834,6 +10233,7 @@ public class MainController implements Initializable {
                             if (tabToClear != null) {
                                 refreshTabGraphic(tabToClear);
                             }
+                            scheduleSessionSave();
                         } else {
                             AlertUtils.showError("Failed to save request");
                         }
@@ -9901,6 +10301,7 @@ public class MainController implements Initializable {
                                 state.name = name;
                                 state.dirty = false;
                                 refreshTabGraphic(tabBeingSaved);
+                                scheduleSessionSave();
                             }
                         }
                     });
