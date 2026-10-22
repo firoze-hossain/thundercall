@@ -589,8 +589,6 @@
     -fx-border-color: #d6d6d6;
     -fx-text-fill: #212121;
 }
-    -fx-text-fill: #e85a25;
-}
 
 .body-format-btn {
     -fx-background-color: #f0f0f0;
@@ -606,5 +604,67 @@
     -fx-background-color: rgba(255, 108, 55, 0.10);
 }
 
+/* XML / HTML Syntax Highlighting (Postman Light) */
+.text.xml-tag, .text.html-tag,
+.xml-tag, .html-tag {
+    -fx-fill: #22863a;
+    -fx-font-weight: bold;
+}
+.text.xml-attribute, .text.html-attribute,
+.xml-attribute, .html-attribute {
+    -fx-fill: #6f42c1;
+}
+.text.xml-value, .text.html-value,
+.xml-value, .html-value {
+    -fx-fill: #032f62;
+}
+.text.xml-comment, .text.html-comment,
+.xml-comment, .html-comment {
+    -fx-fill: #6a737d;
+    -fx-font-style: italic;
+}
+
+/* JavaScript Syntax Highlighting (Postman Light) */
+.text.js-keyword,
+.js-keyword {
+    -fx-fill: #d73a49;
+    -fx-font-weight: bold;
+}
+.text.js-string,
+.js-string {
+    -fx-fill: #032f62;
+}
+.text.js-number,
+.js-number {
+    -fx-fill: #005cc5;
+}
+.text.js-comment,
+.js-comment {
+    -fx-fill: #6a737d;
+    -fx-font-style: italic;
+}
+
+/* Hex View Syntax Highlighting (Postman Light) */
+.text.hex-offset,
+.hex-offset {
+    -fx-fill: #800656;
+    -fx-font-weight: bold;
+}
+.text.hex-byte,
+.hex-byte {
+    -fx-fill: #212121;
+}
+.text.hex-ascii,
+.hex-ascii {
+    -fx-fill: #5c8cbc;
+    -fx-font-weight: 500;
+}
+
+/* Base64 View Syntax Highlighting (Postman Light) */
+.text.base64-text,
+.base64-text {
+    -fx-fill: #800656;
+    -fx-font-weight: 500;
+}
 
 

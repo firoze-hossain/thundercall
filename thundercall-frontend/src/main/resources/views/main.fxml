@@ -791,11 +791,14 @@
                                     <HBox styleClass="response-body-toolbar" alignment="CENTER_LEFT" spacing="6">
                                         <MenuButton fx:id="responseFormatMenu" text="{ } JSON" styleClass="response-toolbar-menu">
                                             <items>
-                                                <MenuItem text="JSON" onAction="#handleSelectResponseJson"/>
-                                                <MenuItem text="XML" onAction="#handleSelectResponseXml"/>
-                                                <MenuItem text="HTML" onAction="#handleSelectResponseHtml"/>
-                                                <MenuItem text="Text" onAction="#handleSelectResponseText"/>
-                                                <MenuItem text="Raw" onAction="#handleSelectResponseRaw"/>
+                                                <MenuItem fx:id="responseFormatJsonItem" text="✓   { } JSON" onAction="#handleSelectResponseJson"/>
+                                                <MenuItem fx:id="responseFormatXmlItem" text="     &lt;/&gt; XML" onAction="#handleSelectResponseXml"/>
+                                                <MenuItem fx:id="responseFormatHtmlItem" text="     &lt;i/&gt; HTML" onAction="#handleSelectResponseHtml"/>
+                                                <MenuItem fx:id="responseFormatJsItem" text="     JS JavaScript" onAction="#handleSelectResponseJs"/>
+                                                <SeparatorMenuItem/>
+                                                <MenuItem fx:id="responseFormatRawItem" text="     [=] Raw" onAction="#handleSelectResponseRaw"/>
+                                                <MenuItem fx:id="responseFormatHexItem" text="     0x Hex" onAction="#handleSelectResponseHex"/>
+                                                <MenuItem fx:id="responseFormatBase64Item" text="     64 Base64" onAction="#handleSelectResponseBase64"/>
                                             </items>
                                         </MenuButton>
                                         <ToggleButton fx:id="responsePreviewToggle" text="▷ Preview" styleClass="response-toolbar-toggle" onAction="#handleToggleResponsePreview"/>

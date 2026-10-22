@@ -74,6 +74,7 @@ public final class JsonFoldManager {
     }
 
     private final CodeArea codeArea;
+    private String currentFormat = "JSON";
     private String originalFullText = "";
     private List<String> originalLines = new ArrayList<>();
     private final Map<Integer, Block> blockByStartLine = new HashMap<>();
@@ -102,6 +103,19 @@ public final class JsonFoldManager {
 
     public static JsonFoldManager attach(CodeArea codeArea) {
         return new JsonFoldManager(codeArea);
+    }
+
+    public void setFormat(String format) {
+        this.currentFormat = (format != null) ? format : "JSON";
+    }
+
+    public String getFormat() {
+        return currentFormat;
+    }
+
+    public synchronized void setFullText(String fullText, String format) {
+        this.currentFormat = (format != null) ? format : "JSON";
+        setFullText(fullText);
     }
 
     public synchronized void setFullText(String fullText) {
@@ -151,6 +165,9 @@ public final class JsonFoldManager {
 
     private void reparseBlocks() {
         blockByStartLine.clear();
+        if (!"JSON".equalsIgnoreCase(currentFormat)) {
+            return;
+        }
         Deque<BlockStart> stack = new ArrayDeque<>();
 
         for (int lineNum = 1; lineNum <= originalLines.size(); lineNum++) {
@@ -235,7 +252,7 @@ public final class JsonFoldManager {
         isUpdating = true;
         try {
             codeArea.replaceText(combined);
-            codeArea.setStyleSpans(0, JsonSyntaxHighlighter.computeHighlighting(combined));
+            codeArea.setStyleSpans(0, ResponseSyntaxHighlighter.computeHighlighting(combined, currentFormat));
             if (caret >= 0 && caret <= codeArea.getLength()) {
                 codeArea.displaceCaret(caret);
             }

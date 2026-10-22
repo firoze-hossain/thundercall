@@ -241,6 +241,21 @@ public class MainController implements Initializable {
     @FXML
     private MenuButton responseFormatMenu;
     @FXML
+    private MenuItem responseFormatJsonItem;
+    @FXML
+    private MenuItem responseFormatXmlItem;
+    @FXML
+    private MenuItem responseFormatHtmlItem;
+    @FXML
+    private MenuItem responseFormatJsItem;
+    @FXML
+    private MenuItem responseFormatRawItem;
+    @FXML
+    private MenuItem responseFormatHexItem;
+    @FXML
+    private MenuItem responseFormatBase64Item;
+    private String currentResponseFormat = "JSON";
+    @FXML
     private ToggleButton responsePreviewToggle;
     @FXML
     private ToggleButton responseVisualizerToggle;
@@ -1931,7 +1946,7 @@ public class MainController implements Initializable {
                 return;
             }
             responseBodyArea.setStyleSpans(0,
-                    JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+                    ResponseSyntaxHighlighter.computeHighlighting(responseBodyArea.getText(), currentResponseFormat));
         });
         if (responsePromptLabel != null) {
             responsePromptLabel.visibleProperty().bind(
@@ -1956,8 +1971,10 @@ public class MainController implements Initializable {
         responseContextMenu.getItems().addAll(copyItem, new SeparatorMenuItem(), foldAllItem, unfoldAllItem, new SeparatorMenuItem(), findItem);
         responseBodyArea.setContextMenu(responseContextMenu);
 
+        updateFormatMenuSelection(currentResponseFormat);
+
         if (responseBodyArea.getText() != null && !responseBodyArea.getText().isEmpty()) {
-            responseFoldManager.setFullText(responseBodyArea.getText());
+            responseFoldManager.setFullText(responseBodyArea.getText(), currentResponseFormat);
         }
 
         // When in Preview or Visualization mode, clicking { } JSON acts as a direct button to switch back to code view
@@ -12465,21 +12482,24 @@ public class MainController implements Initializable {
             }
         } else {
             responseBodyArea.setEditable(true);
-            formatResponseBody(apiResponse.getResponse());
             clearResponsePreview();
-            if (responseFormatMenu != null) {
+            String detectedFormat = "JSON";
+            if (apiResponse.getResponse() != null) {
                 String ctype = apiResponse.getContentType() != null ? apiResponse.getContentType().toLowerCase(Locale.ROOT) : "";
-                String body = apiResponse.getResponse() != null ? apiResponse.getResponse().trim() : "";
+                String body = apiResponse.getResponse().trim();
                 if (ctype.contains("json") || body.startsWith("{") || body.startsWith("[")) {
-                    responseFormatMenu.setText("{ } JSON");
+                    detectedFormat = "JSON";
                 } else if (ctype.contains("xml") || body.startsWith("<xml") || body.startsWith("<?xml")) {
-                    responseFormatMenu.setText("XML");
+                    detectedFormat = "XML";
                 } else if (ctype.contains("html") || body.toLowerCase(Locale.ROOT).startsWith("<!doctype html") || body.toLowerCase(Locale.ROOT).startsWith("<html")) {
-                    responseFormatMenu.setText("HTML");
+                    detectedFormat = "HTML";
+                } else if (ctype.contains("javascript")) {
+                    detectedFormat = "JAVASCRIPT";
                 } else {
-                    responseFormatMenu.setText("Text");
+                    detectedFormat = "RAW";
                 }
             }
+            applyResponseFormat(detectedFormat);
         }
 
         responseHeadersData.clear();
@@ -12500,7 +12520,7 @@ public class MainController implements Initializable {
         }
         responseBodyArea.setEditable(true);
         if (responseFoldManager != null) {
-            responseFoldManager.setFullText("");
+            responseFoldManager.setFullText("", currentResponseFormat);
         } else {
             responseBodyArea.replaceText("");
         }
@@ -12508,53 +12528,125 @@ public class MainController implements Initializable {
         clearResponsePreview();
     }
 
-    private void formatResponseBody(String responseBody) {
-        try {
-            if (responseBody == null || responseBody.isBlank()) {
-                if (responseFoldManager != null) {
-                    responseFoldManager.setFullText("");
-                } else {
-                    responseBodyArea.replaceText("");
-                }
-                return;
-            }
-            String trimmed = responseBody.trim();
-            String formattedText = null;
-            if (trimmed.startsWith("{")) {
-                try {
-                    JSONObject json = new JSONObject(trimmed);
-                    formattedText = json.toString(2);
-                } catch (Exception ignored) {
-                }
-            } else if (trimmed.startsWith("[")) {
-                try {
-                    JSONArray json = new JSONArray(trimmed);
-                    formattedText = json.toString(2);
-                } catch (Exception ignored) {
-                }
-            } else if (trimmed.startsWith("<")) {
-                try {
-                    JSONObject json = XML.toJSONObject(trimmed);
-                } catch (Exception ignored) {
-                }
-            }
+    private String getFormatButtonLabel(String fmt) {
+        if (fmt == null) return "{ } JSON";
+        return switch (fmt.toUpperCase(Locale.ROOT)) {
+            case "JSON" -> "{ } JSON";
+            case "XML" -> "</> XML";
+            case "HTML" -> "<i/> HTML";
+            case "JAVASCRIPT", "JS" -> "JS JavaScript";
+            case "RAW" -> "[=] Raw";
+            case "HEX" -> "0x Hex";
+            case "BASE64" -> "64 Base64";
+            default -> "{ } JSON";
+        };
+    }
 
-            String finalText = (formattedText != null) ? formattedText : responseBody;
+    private void updateFormatMenuSelection(String format) {
+        if (format == null) format = "JSON";
+        String fmt = format.toUpperCase(Locale.ROOT);
+
+        if (responseFormatMenu != null) {
+            responseFormatMenu.setText(getFormatButtonLabel(fmt));
+        }
+
+        if (responseFormatJsonItem != null) {
+            responseFormatJsonItem.setText((fmt.equals("JSON") ? "✓   " : "     ") + "{ } JSON");
+        }
+        if (responseFormatXmlItem != null) {
+            responseFormatXmlItem.setText((fmt.equals("XML") ? "✓   " : "     ") + "</> XML");
+        }
+        if (responseFormatHtmlItem != null) {
+            responseFormatHtmlItem.setText((fmt.equals("HTML") ? "✓   " : "     ") + "<i/> HTML");
+        }
+        if (responseFormatJsItem != null) {
+            responseFormatJsItem.setText((fmt.equals("JAVASCRIPT") || fmt.equals("JS") ? "✓   " : "     ") + "JS JavaScript");
+        }
+        if (responseFormatRawItem != null) {
+            responseFormatRawItem.setText((fmt.equals("RAW") ? "✓   " : "     ") + "[=] Raw");
+        }
+        if (responseFormatHexItem != null) {
+            responseFormatHexItem.setText((fmt.equals("HEX") ? "✓   " : "     ") + "0x Hex");
+        }
+        if (responseFormatBase64Item != null) {
+            responseFormatBase64Item.setText((fmt.equals("BASE64") ? "✓   " : "     ") + "64 Base64");
+        }
+
+        boolean isJson = fmt.equals("JSON");
+        if (responseCollapseAllBtn != null) {
+            responseCollapseAllBtn.setVisible(isJson);
+            responseCollapseAllBtn.setManaged(isJson);
+        }
+        if (responseExpandAllBtn != null) {
+            responseExpandAllBtn.setVisible(isJson);
+            responseExpandAllBtn.setManaged(isJson);
+        }
+    }
+
+    private String formatJsonString(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) return "";
+        String trimmed = responseBody.trim();
+        if (trimmed.startsWith("{")) {
+            try {
+                return new JSONObject(trimmed).toString(2);
+            } catch (Exception ignored) {
+            }
+        } else if (trimmed.startsWith("[")) {
+            try {
+                return new JSONArray(trimmed).toString(2);
+            } catch (Exception ignored) {
+            }
+        }
+        return responseBody;
+    }
+
+    private void applyResponseFormat(String format) {
+        if (format == null) format = "JSON";
+        this.currentResponseFormat = format;
+        updateFormatMenuSelection(format);
+        showResponseCodeView(getFormatButtonLabel(format));
+
+        if (format.equalsIgnoreCase("HEX")) {
+            if (responseWrapToggle != null) responseWrapToggle.setSelected(false);
+            if (responseBodyArea != null) responseBodyArea.setWrapText(false);
+        } else if (format.equalsIgnoreCase("BASE64")) {
+            if (responseWrapToggle != null) responseWrapToggle.setSelected(true);
+            if (responseBodyArea != null) responseBodyArea.setWrapText(true);
+        }
+
+        if (lastApiResponse == null || lastApiResponse.getResponse() == null) {
             if (responseFoldManager != null) {
-                responseFoldManager.setFullText(finalText);
+                responseFoldManager.setFullText("", format);
             } else {
-                responseBodyArea.replaceText(finalText);
-                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                    responseBodyArea.setStyleSpans(0,
-                            JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+                responseBodyArea.replaceText("");
+            }
+            return;
+        }
+
+        String rawText = lastApiResponse.getResponse();
+        byte[] rawBytes = rawText.getBytes(StandardCharsets.UTF_8);
+
+        String displayText;
+        switch (format.toUpperCase(Locale.ROOT)) {
+            case "JSON" -> displayText = formatJsonString(rawText);
+            case "XML" -> {
+                if (rawText.trim().startsWith("<")) {
+                    displayText = ResponseSyntaxHighlighter.formatXml(rawText);
+                } else {
+                    displayText = rawText;
                 }
             }
-        } catch (Exception e) {
-            if (responseFoldManager != null) {
-                responseFoldManager.setFullText(responseBody != null ? responseBody : "");
-            } else {
-                responseBodyArea.replaceText(responseBody != null ? responseBody : "");
-            }
+            case "HTML", "JAVASCRIPT", "JS", "RAW" -> displayText = rawText;
+            case "HEX" -> displayText = ResponseSyntaxHighlighter.formatHexDump(rawBytes);
+            case "BASE64" -> displayText = ResponseSyntaxHighlighter.formatBase64(rawBytes);
+            default -> displayText = rawText;
+        }
+
+        if (responseFoldManager != null) {
+            responseFoldManager.setFullText(displayText, format);
+        } else {
+            responseBodyArea.replaceText(displayText);
+            responseBodyArea.setStyleSpans(0, ResponseSyntaxHighlighter.computeHighlighting(displayText, format));
         }
     }
 
@@ -12662,37 +12754,42 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSelectResponseJson() {
-        showResponseCodeView("{ } JSON");
-        if (lastApiResponse != null && !lastApiResponse.isBinary() && lastApiResponse.getResponse() != null) {
-            formatResponseBody(lastApiResponse.getResponse());
-        }
+        applyResponseFormat("JSON");
     }
 
     @FXML
     private void handleSelectResponseXml() {
-        showResponseCodeView("XML");
+        applyResponseFormat("XML");
     }
 
     @FXML
     private void handleSelectResponseHtml() {
-        showResponseCodeView("HTML");
+        applyResponseFormat("HTML");
     }
 
     @FXML
-    private void handleSelectResponseText() {
-        showResponseCodeView("Text");
+    private void handleSelectResponseJs() {
+        applyResponseFormat("JAVASCRIPT");
     }
 
     @FXML
     private void handleSelectResponseRaw() {
-        showResponseCodeView("Raw");
-        if (lastApiResponse != null && !lastApiResponse.isBinary() && lastApiResponse.getResponse() != null) {
-            if (responseFoldManager != null) {
-                responseFoldManager.setFullText(lastApiResponse.getResponse());
-            } else {
-                responseBodyArea.replaceText(lastApiResponse.getResponse());
-            }
-        }
+        applyResponseFormat("RAW");
+    }
+
+    @FXML
+    private void handleSelectResponseHex() {
+        applyResponseFormat("HEX");
+    }
+
+    @FXML
+    private void handleSelectResponseBase64() {
+        applyResponseFormat("BASE64");
+    }
+
+    @FXML
+    private void handleSelectResponseText() {
+        applyResponseFormat("RAW");
     }
 
     @FXML

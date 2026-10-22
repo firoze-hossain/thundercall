@@ -1713,6 +1713,69 @@
     -rtfx-background-color: #262c36;
 }
 
+/* ============ XML / HTML Syntax Highlighting (Dark Theme) ============ */
+.text.xml-tag, .text.html-tag,
+.xml-tag, .html-tag {
+    -fx-fill: #7ee787;
+    -fx-font-weight: bold;
+}
+.text.xml-attribute, .text.html-attribute,
+.xml-attribute, .html-attribute {
+    -fx-fill: #d2a8ff;
+}
+.text.xml-value, .text.html-value,
+.xml-value, .html-value {
+    -fx-fill: #a5d6ff;
+}
+.text.xml-comment, .text.html-comment,
+.xml-comment, .html-comment {
+    -fx-fill: #8b949e;
+    -fx-font-style: italic;
+}
+
+/* ============ JavaScript Syntax Highlighting (Dark Theme) ============ */
+.text.js-keyword,
+.js-keyword {
+    -fx-fill: #ff7b72;
+    -fx-font-weight: bold;
+}
+.text.js-string,
+.js-string {
+    -fx-fill: #a5d6ff;
+}
+.text.js-number,
+.js-number {
+    -fx-fill: #79c0ff;
+}
+.text.js-comment,
+.js-comment {
+    -fx-fill: #8b949e;
+    -fx-font-style: italic;
+}
+
+/* ============ Hex View Syntax Highlighting (Dark Theme) ============ */
+.text.hex-offset,
+.hex-offset {
+    -fx-fill: #d2a8ff;
+    -fx-font-weight: bold;
+}
+.text.hex-byte,
+.hex-byte {
+    -fx-fill: #c9d1d9;
+}
+.text.hex-ascii,
+.hex-ascii {
+    -fx-fill: #79c0ff;
+    -fx-font-weight: 500;
+}
+
+/* ============ Base64 View Syntax Highlighting (Dark Theme) ============ */
+.text.base64-text,
+.base64-text {
+    -fx-fill: #ff7b72;
+    -fx-font-weight: 500;
+}
+
 /* Postman Gutter Row & Chevron Styles */
 .gutter-row {
     -fx-background-color: -bg-panel;
