@@ -24,7 +24,7 @@ public class RequestHistoryServiceImpl implements RequestHistoryService {
 
     @Override
     public List<RequestHistoryResponse> getUserRequestHistory(User user) {
-        List<RequestHistory> history = requestHistoryRepository.findByRequestCollectionWorkspaceOwnerOrderByTimestampDesc(user);
+        List<RequestHistory> history = requestHistoryRepository.findByUserOrWorkspaceOwnerOrderByTimestampDesc(user);
         return history.stream()
                 .map(requestHistoryMapper::toResponse)
                 .toList();
@@ -32,7 +32,7 @@ public class RequestHistoryServiceImpl implements RequestHistoryService {
 
     @Override
     public Page<RequestHistoryResponse> getUserRequestHistory(User user, Pageable pageable) {
-        Page<RequestHistory> historyPage = requestHistoryRepository.findByRequestCollectionWorkspaceOwnerOrderByTimestampDesc(user, pageable);
+        Page<RequestHistory> historyPage = requestHistoryRepository.findByUserOrWorkspaceOwnerOrderByTimestampDesc(user, pageable);
         return historyPage.map(requestHistoryMapper::toResponse);
     }
 
@@ -61,7 +61,13 @@ public class RequestHistoryServiceImpl implements RequestHistoryService {
     @Override
     @Transactional
     public void clearUserHistory(User user) {
-        requestHistoryRepository.deleteByRequestCollectionWorkspaceOwner(user);
+        requestHistoryRepository.deleteAllForUser(user);
+    }
+
+    @Override
+    @Transactional
+    public void deleteHistoryItem(Long id, User user) {
+        requestHistoryRepository.deleteByIdAndUser(id, user);
     }
 
     @Override

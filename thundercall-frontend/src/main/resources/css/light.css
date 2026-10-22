@@ -103,16 +103,16 @@
     -fx-font-size: 10px;
     -fx-font-weight: bold;
     -fx-text-fill: white;
-    -fx-padding: 2 7 2 7;
+    -fx-padding: 2 4 2 4;
     -fx-background-radius: 4px;
     -fx-alignment: CENTER;
-    -fx-min-width: 46px;
-    -fx-pref-width: 46px;
+    -fx-min-width: 48px;
+    -fx-pref-width: 48px;
 }
 .tab-method-badge {
-    -fx-min-width: 38px;
-    -fx-pref-width: 38px;
-    -fx-padding: 1 6 1 6;
+    -fx-min-width: 48px;
+    -fx-pref-width: 48px;
+    -fx-padding: 1 4 1 4;
 }
 
 .method-chip-get,
@@ -666,5 +666,49 @@
     -fx-fill: #800656;
     -fx-font-weight: 500;
 }
+
+/* History list & tree */
+.history-list, .history-tree {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.history-date-header {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #6b7280;
+    -fx-padding: 3 0 2 0;
+}
+.history-url-label {
+    -fx-text-fill: #1f2937;
+    -fx-font-size: 12px;
+}
+.history-status-chip {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #6b7280;
+    -fx-padding: 1 5 1 5;
+    -fx-background-radius: 4px;
+    -fx-background-color: #f3f4f6;
+}
+.history-status-chip.status-2xx {
+    -fx-text-fill: #059669;
+    -fx-background-color: rgba(16, 185, 129, 0.12);
+    -fx-border-color: rgba(16, 185, 129, 0.35);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+}
+.history-status-chip.status-4xx,
+.history-status-chip.status-5xx {
+    -fx-text-fill: #dc2626;
+    -fx-background-color: rgba(239, 68, 68, 0.12);
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+}
+.tree-inline-btn.tree-delete-btn:hover {
+    -fx-background-color: rgba(239, 68, 68, 0.18);
+    -fx-text-fill: #dc2626;
+}
+
 
 

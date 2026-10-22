@@ -83,6 +83,13 @@ public class RequestHistoryController extends BaseController {
         return noContent("History cleared successfully");
     }
 
+    @DeleteMapping("/{id}")
+    public ResponseEntity<BaseResponse<Void>> deleteHistoryItem(@PathVariable Long id, Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        requestHistoryService.deleteHistoryItem(id, user);
+        return ok(null, "History item deleted successfully");
+    }
+
     @DeleteMapping("/request/{requestId}")
     public ResponseEntity<BaseResponse<Void>> clearRequestHistory(
             @PathVariable Long requestId,

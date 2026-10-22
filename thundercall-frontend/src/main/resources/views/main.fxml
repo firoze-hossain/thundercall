@@ -297,7 +297,7 @@
                             <Region HBox.hgrow="ALWAYS"/>
                             <Button styleClass="icon-button" onAction="#handleClearHistory">
                                 <tooltip>
-                                    <Tooltip text="Clear history"/>
+                                    <Tooltip text="Clear all history"/>
                                 </tooltip>
                                 <graphic>
                                     <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
@@ -306,7 +306,10 @@
                                 </graphic>
                             </Button>
                         </HBox>
-                        <ListView fx:id="historyList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                        <TextField fx:id="historySearchField" promptText="Search history"
+                                   styleClass="sidebar-search" maxWidth="10000"/>
+                        <TreeView fx:id="historyTree" styleClass="history-tree, tree-view"
+                                  showRoot="false" VBox.vgrow="ALWAYS"/>
                     </VBox>
 
                     <!-- Teams pane -->

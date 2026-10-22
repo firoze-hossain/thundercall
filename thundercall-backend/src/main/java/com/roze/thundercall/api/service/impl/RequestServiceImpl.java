@@ -360,7 +360,8 @@ public class RequestServiceImpl implements RequestService {
 
     private void saveRequestHistory(ApiRequest apiRequest, ApiResponse apiResponse, User user) {
         try {
-            RequestHistory history = RequestHistory.builder()
+            RequestHistory.RequestHistoryBuilder builder = RequestHistory.builder()
+                    .user(user)
                     .timestamp(LocalDateTime.now())
                     .statusCode(apiResponse.getStatusCode())
                     .duration(apiResponse.getDuration())
@@ -368,13 +369,21 @@ public class RequestServiceImpl implements RequestService {
                             ? "[binary response: " + apiResponse.getContentType()
                                     + ", " + apiResponse.getSizeBytes() + " bytes — not stored]"
                             : apiResponse.getResponse())
-                    .responseHeaders(apiResponse.getResponseHeaders() != null ? apiResponse.getResponseHeaders() : "")
-                    .build();
-            if (apiRequest.name() != null && !apiRequest.name().isEmpty()) {
-                requestRepository.findByNameAndCollectionWorkspaceOwner(apiRequest.name(), user)
-                        .ifPresent(history::setRequest);
+                    .responseHeaders(apiResponse.getResponseHeaders() != null ? apiResponse.getResponseHeaders() : "");
+
+            if (apiRequest != null) {
+                builder.url(apiRequest.url())
+                        .method(apiRequest.method() != null ? apiRequest.method().name() : "GET")
+                        .requestName(apiRequest.name())
+                        .requestHeaders(apiRequest.headers())
+                        .requestBody(apiRequest.body());
+
+                if (apiRequest.name() != null && !apiRequest.name().isEmpty()) {
+                    requestRepository.findByNameAndCollectionWorkspaceOwner(apiRequest.name(), user)
+                            .ifPresent(builder::request);
+                }
             }
-            requestHistoryRepository.save(history);
+            requestHistoryRepository.save(builder.build());
         } catch (Exception e) {
             log.warn("Failed to save request history: {}", e.getMessage());
         }

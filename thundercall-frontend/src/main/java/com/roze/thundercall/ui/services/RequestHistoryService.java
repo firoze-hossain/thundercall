@@ -83,6 +83,17 @@ public class RequestHistoryService {
         }
     }
 
+    public static boolean deleteHistoryItem(Long historyId) {
+        try {
+            BaseResponse<Void> response = ApiClient.delete(BASE_URL + "/" + historyId,
+                    new TypeReference<BaseResponse<Void>>() {
+                    });
+            return response != null && response.isSuccess();
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     public static boolean clearRequestHistory(Long requestId) {
         try {
             BaseResponse<Void> response = ApiClient.delete(BASE_URL + "/request/" + requestId,

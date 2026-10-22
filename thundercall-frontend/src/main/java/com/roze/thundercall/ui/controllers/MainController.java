@@ -45,6 +45,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.XML;
 
+import java.time.LocalDateTime;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -222,7 +223,10 @@ public class MainController implements Initializable {
     private CodeAreaSearch responseSearch;
     private JsonFoldManager responseFoldManager;
     @FXML
-    private ListView<String> historyList;
+    private TreeView<HistoryNode> historyTree;
+    @FXML
+    private TextField historySearchField;
+    private final List<HistoryEntry> allHistoryEntries = new ArrayList<>();
     @FXML
     private TextArea preRequestScriptsArea;
     @FXML
@@ -542,6 +546,7 @@ public class MainController implements Initializable {
         setupMockServersList();
         setupMonitorsList();
         setupTeamWorkspacesList();
+        setupHistoryView();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -999,23 +1004,465 @@ public class MainController implements Initializable {
         });
     }
 
+    private void setupHistoryView() {
+        if (historyTree == null) {
+            return;
+        }
+        historyTree.setCellFactory(tv -> createHistoryTreeCell());
+        historyTree.setShowRoot(false);
+
+        // Single click on a history request item opens it in a new tab (Postman style)
+        historyTree.setOnMouseClicked(event -> {
+            if (event.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                TreeItem<HistoryNode> selected = historyTree.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.getValue() != null && !selected.getValue().isGroupHeader()) {
+                    HistoryEntry entry = selected.getValue().getEntry();
+                    if (entry != null) {
+                        openHistoryInNewTab(entry);
+                    }
+                }
+            }
+        });
+
+        historyTree.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ENTER) {
+                TreeItem<HistoryNode> selected = historyTree.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.getValue() != null && !selected.getValue().isGroupHeader()) {
+                    HistoryEntry entry = selected.getValue().getEntry();
+                    if (entry != null) {
+                        openHistoryInNewTab(entry);
+                        event.consume();
+                    }
+                }
+            }
+        });
+
+        if (historySearchField != null) {
+            historySearchField.textProperty().addListener((obs, oldV, newV) -> renderHistoryTree(newV));
+        }
+
+        // Instant local startup load — history never disappears upon reopen
+        List<HistoryEntry> local = HistoryStorageService.loadLocalHistory();
+        allHistoryEntries.clear();
+        allHistoryEntries.addAll(local);
+        renderHistoryTree(null);
+    }
+
+    private void renderHistoryTree(String query) {
+        if (historyTree == null) {
+            return;
+        }
+
+        TreeItem<HistoryNode> root = new TreeItem<>(HistoryNode.group("ROOT"));
+        root.setExpanded(true);
+
+        String filter = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
+        Map<String, List<HistoryEntry>> groups = new LinkedHashMap<>();
+
+        for (HistoryEntry entry : allHistoryEntries) {
+            if (entry == null) continue;
+            if (!filter.isEmpty()) {
+                String m = entry.getMethod() != null ? entry.getMethod().toLowerCase(Locale.ROOT) : "";
+                String u = entry.getUrl() != null ? entry.getUrl().toLowerCase(Locale.ROOT) : "";
+                String n = entry.getName() != null ? entry.getName().toLowerCase(Locale.ROOT) : "";
+                if (!m.contains(filter) && !u.contains(filter) && !n.contains(filter)) {
+                    continue;
+                }
+            }
+            String groupHeader = entry.getDateGroupHeader();
+            groups.computeIfAbsent(groupHeader, k -> new ArrayList<>()).add(entry);
+        }
+
+        for (Map.Entry<String, List<HistoryEntry>> grp : groups.entrySet()) {
+            TreeItem<HistoryNode> groupItem = new TreeItem<>(HistoryNode.group(grp.getKey()));
+            groupItem.setExpanded(true);
+            for (HistoryEntry item : grp.getValue()) {
+                groupItem.getChildren().add(new TreeItem<>(HistoryNode.item(item)));
+            }
+            root.getChildren().add(groupItem);
+        }
+
+        historyTree.setRoot(root);
+    }
+
+    private TreeCell<HistoryNode> createHistoryTreeCell() {
+        return new TreeCell<>() {
+            private final Label headerLabel = new Label();
+            private final Label methodChip = new Label();
+            private final Label urlLabel = new Label();
+            private final Label statusChip = new Label();
+            private final Button addBtn = new Button("+");
+            private final Button deleteBtn = new Button("🗑");
+            private final Button moreBtn = new Button("⋯");
+            private final Region spacer = new Region();
+            private final HBox rowBox = new HBox(6);
+
+            {
+                methodChip.getStyleClass().addAll("method-chip", "tree-method-chip");
+                methodChip.setMinWidth(48);
+                methodChip.setPrefWidth(48);
+                methodChip.setMaxWidth(Region.USE_PREF_SIZE);
+                methodChip.setTextOverrun(OverrunStyle.CLIP);
+                methodChip.setAlignment(Pos.CENTER);
+
+                urlLabel.getStyleClass().add("history-url-label");
+                HBox.setHgrow(urlLabel, Priority.ALWAYS);
+
+                statusChip.getStyleClass().add("history-status-chip");
+
+                addBtn.getStyleClass().add("tree-inline-btn");
+                HoverTooltip.attach(addBtn, "Add requests to Collection");
+
+                deleteBtn.getStyleClass().addAll("tree-inline-btn", "tree-delete-btn");
+                HoverTooltip.attach(deleteBtn, "Delete request");
+
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                HoverTooltip.attach(moreBtn, "More actions");
+
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                rowBox.setAlignment(Pos.CENTER_LEFT);
+
+                addBtn.setOnAction(e -> {
+                    e.consume();
+                    HistoryNode node = getItem();
+                    if (node != null && node.getEntry() != null) {
+                        saveHistoryToCollection(node.getEntry());
+                    }
+                });
+
+                deleteBtn.setOnAction(e -> {
+                    e.consume();
+                    HistoryNode node = getItem();
+                    if (node != null && node.getEntry() != null) {
+                        deleteSingleHistoryEntry(node.getEntry());
+                    }
+                });
+
+                moreBtn.setOnAction(e -> {
+                    e.consume();
+                    HistoryNode node = getItem();
+                    if (node != null && node.getEntry() != null) {
+                        showHistoryItemContextMenu(moreBtn, node.getEntry());
+                    }
+                });
+
+                // Hover buttons only (Postman style)
+                addBtn.visibleProperty().bind(hoverProperty());
+                addBtn.managedProperty().bind(addBtn.visibleProperty());
+                deleteBtn.visibleProperty().bind(hoverProperty());
+                deleteBtn.managedProperty().bind(deleteBtn.visibleProperty());
+                moreBtn.visibleProperty().bind(hoverProperty());
+                moreBtn.managedProperty().bind(moreBtn.visibleProperty());
+
+                statusChip.visibleProperty().bind(hoverProperty().not());
+                statusChip.managedProperty().bind(statusChip.visibleProperty());
+            }
+
+            @Override
+            protected void updateItem(HistoryNode node, boolean empty) {
+                super.updateItem(node, empty);
+                if (empty || node == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setTooltip(null);
+                    return;
+                }
+                if (node.isGroupHeader()) {
+                    headerLabel.setText(node.getHeaderTitle());
+                    headerLabel.getStyleClass().setAll("history-date-header");
+                    setText(null);
+                    setGraphic(headerLabel);
+                    setTooltip(null);
+                } else {
+                    HistoryEntry entry = node.getEntry();
+                    if (entry == null) {
+                        setText(null);
+                        setGraphic(null);
+                        setTooltip(null);
+                        return;
+                    }
+                    String method = entry.getMethod() != null ? entry.getMethod().toUpperCase(Locale.ROOT) : "GET";
+                    methodChip.setText(methodBadge(method));
+                    methodChip.getStyleClass().removeIf(s -> s.startsWith("method-chip-") || s.startsWith("method-"));
+                    methodChip.getStyleClass().addAll("method-chip", "tree-method-chip", "method-chip-" + method.toLowerCase(Locale.ROOT));
+
+                    String displayUrl = formatHistoryDisplayUrl(entry.getUrl());
+                    urlLabel.setText(displayUrl);
+
+                    rowBox.getChildren().clear();
+                    rowBox.getChildren().addAll(methodChip, urlLabel, spacer);
+
+                    if (entry.getStatusCode() != null && entry.getStatusCode() > 0) {
+                        statusChip.setText(String.valueOf(entry.getStatusCode()));
+                        statusChip.getStyleClass().removeIf(s -> s.startsWith("status-"));
+                        int code = entry.getStatusCode();
+                        if (code >= 200 && code < 300) statusChip.getStyleClass().add("status-2xx");
+                        else if (code >= 400 && code < 500) statusChip.getStyleClass().add("status-4xx");
+                        else if (code >= 500) statusChip.getStyleClass().add("status-5xx");
+                        rowBox.getChildren().add(statusChip);
+                    }
+
+                    rowBox.getChildren().addAll(addBtn, deleteBtn, moreBtn);
+
+                    setText(null);
+                    setGraphic(rowBox);
+                    setTooltip(new Tooltip(method + " " + displayUrl +
+                            (entry.getStatusCode() != null ? " (" + entry.getStatusCode() + ")" : "") +
+                            (entry.getDuration() != null ? " · " + entry.getDuration() + "ms" : "")));
+                }
+            }
+        };
+    }
+
+    private void showHistoryItemContextMenu(Node anchor, HistoryEntry entry) {
+        if (entry == null) return;
+        ContextMenu menu = new ContextMenu();
+
+        MenuItem openItem = new MenuItem("Open in New Tab");
+        openItem.setOnAction(e -> openHistoryInNewTab(entry));
+
+        MenuItem saveItem = new MenuItem("Save Request");
+        saveItem.setOnAction(e -> saveHistoryToCollection(entry));
+
+        MenuItem copyUrlItem = new MenuItem("Copy URL");
+        copyUrlItem.setOnAction(e -> {
+            if (entry.getUrl() != null) {
+                Clipboard clipboard = Clipboard.getSystemClipboard();
+                ClipboardContent content = new ClipboardContent();
+                content.putString(entry.getUrl());
+                clipboard.setContent(content);
+                updateStatus("Copied URL to clipboard");
+            }
+        });
+
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.setOnAction(e -> deleteSingleHistoryEntry(entry));
+
+        menu.getItems().addAll(openItem, saveItem, copyUrlItem, new SeparatorMenuItem(), deleteItem);
+        menu.show(anchor, Side.BOTTOM, 0, 0);
+    }
+
+    private void saveHistoryToCollection(HistoryEntry entry) {
+        if (entry == null) return;
+        if (collectionIdMap.isEmpty() || collectionsTree == null || collectionsTree.getRoot() == null) {
+            AlertUtils.showError("Please create a collection first before saving requests.");
+            return;
+        }
+
+        List<TreeItem<String>> collections = collectionsTree.getRoot().getChildren();
+        if (collections.isEmpty()) {
+            AlertUtils.showError("Please create a collection first before saving requests.");
+            return;
+        }
+
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(
+                collections.get(0).getValue(),
+                collections.stream().map(TreeItem::getValue).toList()
+        );
+        dialog.setTitle("Save to Collection");
+        dialog.setHeaderText("Choose a collection for \"" + extractHistoryTitle(entry) + "\"");
+        dialog.setContentText("Collection:");
+        initAndStyleDialog(dialog);
+
+        Optional<String> result = dialog.showAndWait();
+        if (result.isPresent()) {
+            String selectedCollectionName = result.get();
+            TreeItem<String> targetItem = collections.stream()
+                    .filter(item -> selectedCollectionName.equals(item.getValue()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (targetItem != null) {
+                Long collectionId = collectionIdMap.get(targetItem);
+                if (collectionId != null) {
+                    TextInputDialog nameDialog = new TextInputDialog(extractHistoryTitle(entry));
+                    nameDialog.setTitle("Request Name");
+                    nameDialog.setHeaderText("Enter request name");
+                    nameDialog.setContentText("Name:");
+                    initAndStyleDialog(nameDialog);
+                    Optional<String> nameResult = nameDialog.showAndWait();
+                    if (nameResult.isPresent() && !nameResult.get().isBlank()) {
+                        String reqName = nameResult.get().trim();
+                        new Thread(() -> {
+                            try {
+                                ApiRequest req = new ApiRequest();
+                                req.setName(reqName);
+                                req.setMethod(HttpMethod.valueOf(entry.getMethod() != null ? entry.getMethod() : "GET"));
+                                req.setUrl(entry.getUrl());
+                                req.setHeaders(entry.getHeaders() != null ? entry.getHeaders() : "{}");
+                                req.setBody(entry.getBody() != null ? entry.getBody() : "");
+                                req.setCollectionId(collectionId);
+                                Optional<RequestResponse> saved = RequestService.saveRequest(req);
+                                Platform.runLater(() -> {
+                                    if (saved.isPresent()) {
+                                        refreshCollectionsTree();
+                                        updateStatus("Saved to " + selectedCollectionName + ": " + reqName);
+                                        AlertUtils.showSuccess("Request saved to collection successfully");
+                                    } else {
+                                        AlertUtils.showError("Failed to save request to collection");
+                                    }
+                                });
+                            } catch (Exception ex) {
+                                Platform.runLater(() -> AlertUtils.showError("Failed to save request: " + ex.getMessage()));
+                            }
+                        }).start();
+                    }
+                }
+            }
+        }
+    }
+
+    private void deleteSingleHistoryEntry(HistoryEntry entry) {
+        if (entry == null) return;
+        allHistoryEntries.removeIf(e -> (entry.getLocalId() != null && Objects.equals(e.getLocalId(), entry.getLocalId()))
+                || (entry.getServerId() != null && Objects.equals(e.getServerId(), entry.getServerId())));
+        HistoryStorageService.removeEntry(entry);
+        if (entry.getServerId() != null) {
+            new Thread(() -> {
+                RequestHistoryService.deleteHistoryItem(entry.getServerId());
+            }).start();
+        }
+        renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
+        updateStatus("Deleted request from history");
+    }
+
+    private String formatHistoryDisplayUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "Untitled";
+        }
+        if (url.contains("{{")) {
+            return url;
+        }
+        try {
+            Map<String, String> vars = currentEnvironmentVariables();
+            if (vars != null && !vars.isEmpty()) {
+                List<Map.Entry<String, String>> sorted = new ArrayList<>(vars.entrySet());
+                sorted.sort((a, b) -> Integer.compare(
+                        b.getValue() != null ? b.getValue().length() : 0,
+                        a.getValue() != null ? a.getValue().length() : 0));
+
+                for (Map.Entry<String, String> var : sorted) {
+                    String val = var.getValue();
+                    if (val != null && val.length() >= 4) {
+                        String cleanVal = val.endsWith("/") ? val.substring(0, val.length() - 1) : val;
+                        if (url.startsWith(cleanVal)) {
+                            String suffix = url.substring(cleanVal.length());
+                            if (suffix.isEmpty() || suffix.startsWith("/")) {
+                                return "{{" + var.getKey() + "}}" + suffix;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return url;
+    }
+
+    private String extractHistoryTitle(HistoryEntry entry) {
+        if (entry == null) return "Untitled Request";
+        if (entry.getName() != null && !entry.getName().isBlank() && !"Untitled Request".equalsIgnoreCase(entry.getName())) {
+            return entry.getName();
+        }
+        String url = formatHistoryDisplayUrl(entry.getUrl());
+        if (url == null || url.isBlank()) {
+            return "Untitled Request";
+        }
+        try {
+            int qIdx = url.indexOf('?');
+            String cleanUrl = qIdx >= 0 ? url.substring(0, qIdx) : url;
+            while (cleanUrl.endsWith("/")) {
+                cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
+            }
+            int lastSlash = cleanUrl.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < cleanUrl.length() - 1) {
+                return cleanUrl.substring(lastSlash + 1);
+            }
+            return cleanUrl;
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+    private void openHistoryInNewTab(HistoryEntry entry) {
+        if (entry == null || requestTabPane == null) {
+            return;
+        }
+        String method = entry.getMethod() != null ? entry.getMethod().toUpperCase(Locale.ROOT) : "GET";
+        String targetUrl = formatHistoryDisplayUrl(entry.getUrl());
+        String title = extractHistoryTitle(entry);
+        Tab tab = openRequestTab(title, entry.getRequestId(), method);
+        RequestTabState state = tabStates.get(tab);
+        if (state != null) {
+            state.url = targetUrl != null ? targetUrl : "";
+            state.method = method;
+            state.name = title;
+            state.body = entry.getBody() != null ? entry.getBody() : "";
+            state.headers = parseHeadersFromJson(entry.getHeaders());
+            state.requestId = entry.getRequestId();
+
+            if (entry.getStatusCode() != null && entry.getStatusCode() > 0) {
+                state.lastApiResponse = ApiResponse.builder()
+                        .statusCode(entry.getStatusCode())
+                        .duration(entry.getDuration() != null ? entry.getDuration() : 0)
+                        .response(entry.getResponse() != null ? entry.getResponse() : "")
+                        .responseHeaders(entry.getResponseHeaders() != null ? entry.getResponseHeaders() : "")
+                        .success(entry.getStatusCode() >= 200 && entry.getStatusCode() < 300)
+                        .build();
+                if (entry.getResponseHeaders() != null) {
+                    state.lastResponseHeaders = parseHeaders(entry.getResponseHeaders());
+                }
+            }
+        }
+        restoreTabState(tab);
+        refreshTabGraphic(tab);
+        if (state != null && state.lastApiResponse != null) {
+            updateResponseUI(state.lastApiResponse, parseHeaders(state.lastApiResponse.getResponseHeaders()));
+        }
+        updateStatus("Opened: " + method + " " + (targetUrl != null ? targetUrl : ""));
+    }
+
+    private List<KeyValuePair> parseHeadersFromJson(String json) {
+        List<KeyValuePair> result = new ArrayList<>();
+        if (json == null || json.isBlank()) {
+            return result;
+        }
+        try {
+            JSONObject obj = new JSONObject(json);
+            Iterator<String> keys = obj.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                String v = obj.optString(k, "");
+                result.add(new KeyValuePair(true, k, v, "", false));
+            }
+        } catch (Exception e) {
+            String[] lines = json.split("\n");
+            for (String line : lines) {
+                int colon = line.indexOf(':');
+                if (colon > 0) {
+                    String k = line.substring(0, colon).trim();
+                    String v = line.substring(colon + 1).trim();
+                    result.add(new KeyValuePair(true, k, v, "", false));
+                }
+            }
+        }
+        return result;
+    }
+
     private void loadHistory() {
         new Thread(() -> {
             try {
                 Optional<List<RequestHistoryResponse>> history = RequestHistoryService.getUserRequestHistory();
-                if (history.isPresent()) {
+                if (history.isPresent() && !history.get().isEmpty()) {
+                    List<HistoryEntry> merged = HistoryStorageService.mergeWithServer(history.get());
                     Platform.runLater(() -> {
-                        historyData.clear();
-                        for (RequestHistoryResponse item : history.get()) {
-                            String historyEntry = item.getStatusCode() + " " + item.getRequestName() + " - " +
-                                    item.getDuration() + "ms";
-                            historyData.add(historyEntry);
-                        }
-                        historyList.setItems(historyData);
+                        allHistoryEntries.clear();
+                        allHistoryEntries.addAll(merged);
+                        renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
                     });
                 }
             } catch (Exception e) {
-                Platform.runLater(() -> handleApiError(e, "Loading history"));
+                // Keep local history intact
             }
         }).start();
     }
@@ -4667,6 +5114,7 @@ public class MainController implements Initializable {
             if (!restoringSession) {
                 scheduleSessionSave();
             }
+            renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
         });
     }
 
@@ -10801,6 +11249,10 @@ public class MainController implements Initializable {
         Label methodLabel = new Label(methodBadge(curMethod));
         methodLabel.getStyleClass().addAll("tab-method-badge", "method-chip", "method-chip-" + curMethod.toLowerCase(Locale.ROOT));
         methodLabel.setAlignment(Pos.CENTER);
+        methodLabel.setMinWidth(48);
+        methodLabel.setPrefWidth(48);
+        methodLabel.setMaxWidth(Region.USE_PREF_SIZE);
+        methodLabel.setTextOverrun(OverrunStyle.CLIP);
 
         Label nameLabel = new Label(state.name);
         nameLabel.getStyleClass().add("tab-name-label");
@@ -12064,20 +12516,18 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleClearHistory() {
-        if (AlertUtils.showConfirmation("Clear History", "Are you sure you want to clear all history?")) {
+        if (AlertUtils.showConfirmation("Clear History", "Are you sure you want to clear all request history?")) {
+            HistoryStorageService.clearAll();
+            allHistoryEntries.clear();
+            renderHistoryTree(null);
             new Thread(() -> {
                 boolean success = RequestHistoryService.clearUserHistory();
-                if (success) {
-                    Platform.runLater(() -> {
-                        historyData.clear();
-                        updateStatus("History Cleared");
+                Platform.runLater(() -> {
+                    updateStatus("History Cleared");
+                    if (success) {
                         AlertUtils.showSuccess("History cleared successfully");
-                    });
-                } else {
-                    Platform.runLater(() -> {
-                        AlertUtils.showError("Failed to clear history");
-                    });
-                }
+                    }
+                });
             }).start();
         }
     }
@@ -12423,7 +12873,8 @@ public class MainController implements Initializable {
         // Resolve {{variables}} from the selected environment at send time.
         // The UI keeps showing the template; only the outgoing request is resolved.
         Map<String, String> vars = currentEnvironmentVariables();
-        String url = VariableResolver.resolve(buildFullUrl(), vars);
+        final String rawUrl = buildFullUrl();
+        String url = VariableResolver.resolve(rawUrl, vars);
         if ("OAuth 2.0".equals(authTypeCombo.getValue()) && oauth2CurrentTokenField != null
                 && oauth2AddToCombo != null && "Query Params".equals(oauth2AddToCombo.getValue())
                 && !oauth2CurrentTokenField.getText().isBlank()) {
@@ -12478,7 +12929,7 @@ public class MainController implements Initializable {
             @Override
             protected Optional<ApiResponse> call() throws Exception {
                 ApiRequest apiRequest = new ApiRequest();
-                apiRequest.setUrl(finalUrl);
+                apiRequest.setUrl(rawUrl != null && !rawUrl.isBlank() ? rawUrl : finalUrl);
                 apiRequest.setMethod(HttpMethod.valueOf(method));
                 apiRequest.setHeaders(new JSONObject(headers).toString());
                 apiRequest.setBody(body);
@@ -12526,11 +12977,29 @@ public class MainController implements Initializable {
                 lastApiResponse = apiResponse;
                 updateResponseUI(apiResponse, parseHeaders(apiResponse.getResponseHeaders()));
 
-                String historyEntry = method + " " + finalUrl1 + " (" + apiResponse.getStatusCode() + ")";
-                if (!historyData.contains(historyEntry)) {
-                    historyData.add(0, historyEntry);
-                    historyList.setItems(historyData);
-                }
+                RequestTabState activeTabState = tabStates.get(activeRequestTab());
+                String reqName = (activeTabState != null && activeTabState.name != null && !activeTabState.name.isBlank())
+                        ? activeTabState.name
+                        : ((activeRequestTab() != null && activeRequestTab().getText() != null) ? activeRequestTab().getText() : null);
+
+                String historyUrl = (rawUrl != null && !rawUrl.isBlank()) ? rawUrl : finalUrl1;
+                HistoryEntry newHist = HistoryEntry.builder()
+                        .localId(UUID.randomUUID().toString())
+                        .url(historyUrl)
+                        .method(method)
+                        .name(reqName)
+                        .headers(new JSONObject(headers).toString())
+                        .body(body)
+                        .statusCode(apiResponse.getStatusCode())
+                        .duration(apiResponse.getDuration())
+                        .response(apiResponse.getResponse())
+                        .responseHeaders(apiResponse.getResponseHeaders())
+                        .timestamp(LocalDateTime.now().toString())
+                        .build();
+
+                HistoryStorageService.addEntry(newHist);
+                allHistoryEntries.add(0, newHist);
+                renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
 
                 updateStatus("Request completed");
 
@@ -13018,16 +13487,8 @@ public class MainController implements Initializable {
     }
 
     private void updateResponseUI(ApiResponse apiResponse, Map<String, String> headers) {
-
         Platform.runLater(() -> {
             renderResponse(apiResponse, headers);
-
-            // Add to history (only for an actual new send, not a tab restore)
-            String historyEntry = methodCombo.getValue() + " " + urlField.getText();
-            if (!historyData.contains(historyEntry)) {
-                historyData.add(0, historyEntry);
-                historyList.setItems(historyData);
-            }
         });
     }
 
