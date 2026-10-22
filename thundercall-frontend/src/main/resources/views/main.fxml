@@ -802,7 +802,14 @@
                                             </items>
                                         </MenuButton>
                                         <ToggleButton fx:id="responsePreviewToggle" text="▷ Preview" styleClass="response-toolbar-toggle" onAction="#handleToggleResponsePreview"/>
-                                        <ToggleButton fx:id="responseVisualizerToggle" text="📊 Visualization" styleClass="response-toolbar-toggle" onAction="#handleToggleResponseVisualization"/>
+                                        <MenuButton fx:id="responseVisualizationMenu" text="🖼 Visualization" styleClass="response-toolbar-menu inactive-view">
+                                            <items>
+                                                <MenuItem fx:id="visualizeItem" text="🖼   Visualize" onAction="#handleSelectVisualize"/>
+                                                <MenuItem fx:id="visualizeTableItem" text="⊞   Table" onAction="#handleSelectVisualizeTable"/>
+                                                <MenuItem fx:id="visualizeLinearChartItem" text="📈  Linear Chart" onAction="#handleSelectVisualizeLinearChart"/>
+                                                <MenuItem fx:id="visualizeBarGraphItem" text="📊  Bar Graph" onAction="#handleSelectVisualizeBarGraph"/>
+                                            </items>
+                                        </MenuButton>
                                         <Region HBox.hgrow="ALWAYS"/>
                                         <ToggleButton fx:id="responseWrapToggle" text="⏎ Wrap" styleClass="response-toolbar-btn" onAction="#handleToggleResponseWrap"/>
                                         <Button fx:id="responseCollapseAllBtn" text="⊟ Collapse All" onAction="#handleCollapseAllResponse" styleClass="response-toolbar-btn">
@@ -813,6 +820,15 @@
                                         </Button>
                                         <Button fx:id="responseFindBtn" text="🔍 Find" onAction="#handleOpenResponseSearch" styleClass="response-toolbar-btn"/>
                                         <Button fx:id="responseCopyBodyBtn" text="📋 Copy" onAction="#handleCopyResponse" styleClass="response-toolbar-btn"/>
+                                        <Button fx:id="responseVisCodeBtn" text="&lt;/&gt;" styleClass="response-toolbar-btn" visible="false" managed="false" onAction="#handleVisSwitchToCode">
+                                            <tooltip><Tooltip text="View source code"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseVisRefreshBtn" text="↻" styleClass="response-toolbar-btn" visible="false" managed="false" onAction="#handleVisRefresh">
+                                            <tooltip><Tooltip text="Refresh visualization"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseVisCopyBtn" text="🔗" styleClass="response-toolbar-btn" visible="false" managed="false" onAction="#handleVisCopy">
+                                            <tooltip><Tooltip text="Copy visualization data"/></tooltip>
+                                        </Button>
                                     </HBox>
                                     <StackPane VBox.vgrow="ALWAYS" styleClass="response-content-stack">
                                         <StackPane fx:id="responseCodeAreaPane">

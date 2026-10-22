@@ -258,7 +258,22 @@ public class MainController implements Initializable {
     @FXML
     private ToggleButton responsePreviewToggle;
     @FXML
-    private ToggleButton responseVisualizerToggle;
+    private MenuButton responseVisualizationMenu;
+    @FXML
+    private MenuItem visualizeItem;
+    @FXML
+    private MenuItem visualizeTableItem;
+    @FXML
+    private MenuItem visualizeLinearChartItem;
+    @FXML
+    private MenuItem visualizeBarGraphItem;
+    @FXML
+    private Button responseVisCodeBtn;
+    @FXML
+    private Button responseVisRefreshBtn;
+    @FXML
+    private Button responseVisCopyBtn;
+    private ResponseVisualizerGenerator.VisType currentVisType = ResponseVisualizerGenerator.VisType.VISUALIZE;
     @FXML
     private ToggleButton responseWrapToggle;
     @FXML
@@ -267,6 +282,8 @@ public class MainController implements Initializable {
     private Button responseCollapseAllBtn;
     @FXML
     private Button responseExpandAllBtn;
+    @FXML
+    private Button responseCopyBodyBtn;
     @FXML
     private StackPane responseCodeAreaPane;
     @FXML
@@ -1981,7 +1998,7 @@ public class MainController implements Initializable {
         if (responseFormatMenu != null) {
             responseFormatMenu.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
                 if ((responsePreviewToggle != null && responsePreviewToggle.isSelected())
-                        || (responseVisualizerToggle != null && responseVisualizerToggle.isSelected())) {
+                        || (responseVisualizationView != null && responseVisualizationView.isVisible())) {
                     showResponseCodeView(null);
                     event.consume();
                 }
@@ -8774,12 +8791,24 @@ public class MainController implements Initializable {
     private void handleThemeDark() {
         ThemeManager.setLight(false, urlField.getScene());
         updateStatus("Theme: Dark");
+        if (responseVisualizationView != null && responseVisualizationView.isVisible()) {
+            renderCurrentVisualization();
+        }
+        if (responsePreview != null && responsePreview.isVisible()) {
+            renderPreviewView();
+        }
     }
 
     @FXML
     private void handleThemeLight() {
         ThemeManager.setLight(true, urlField.getScene());
         updateStatus("Theme: Light");
+        if (responseVisualizationView != null && responseVisualizationView.isVisible()) {
+            renderCurrentVisualization();
+        }
+        if (responsePreview != null && responsePreview.isVisible()) {
+            renderPreviewView();
+        }
     }
 
     @FXML
@@ -12347,8 +12376,11 @@ public class MainController implements Initializable {
         if (responsePreviewToggle != null) {
             responsePreviewToggle.setSelected(true);
         }
-        if (responseVisualizerToggle != null) {
-            responseVisualizerToggle.setSelected(false);
+        if (responseVisualizationMenu != null) {
+            responseVisualizationMenu.getStyleClass().remove("active-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                responseVisualizationMenu.getStyleClass().add("inactive-view");
+            }
         }
         String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
         String textColor = ThemeManager.isLight() ? "#6b6b6b" : "#9a9ea9";
@@ -12409,8 +12441,11 @@ public class MainController implements Initializable {
         if (responsePreviewToggle != null) {
             responsePreviewToggle.setSelected(false);
         }
-        if (responseVisualizerToggle != null) {
-            responseVisualizerToggle.setSelected(false);
+        if (responseVisualizationMenu != null) {
+            responseVisualizationMenu.getStyleClass().remove("active-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                responseVisualizationMenu.getStyleClass().add("inactive-view");
+            }
         }
         if (responseCodeAreaPane != null) {
             responseCodeAreaPane.setVisible(true);
@@ -12728,8 +12763,14 @@ public class MainController implements Initializable {
                 responseFormatMenu.getStyleClass().add("active-view");
             }
         }
+        if (responseVisualizationMenu != null) {
+            responseVisualizationMenu.setText("🖼 Visualization");
+            responseVisualizationMenu.getStyleClass().remove("active-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                responseVisualizationMenu.getStyleClass().add("inactive-view");
+            }
+        }
         if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
-        if (responseVisualizerToggle != null) responseVisualizerToggle.setSelected(false);
         if (responseCodeAreaPane != null) {
             responseCodeAreaPane.setVisible(true);
             responseCodeAreaPane.setManaged(true);
@@ -12746,9 +12787,36 @@ public class MainController implements Initializable {
             responseWrapToggle.setVisible(true);
             responseWrapToggle.setManaged(true);
         }
+        boolean isJson = "JSON".equalsIgnoreCase(currentResponseFormat);
+        if (responseCollapseAllBtn != null) {
+            responseCollapseAllBtn.setVisible(isJson);
+            responseCollapseAllBtn.setManaged(isJson);
+        }
+        if (responseExpandAllBtn != null) {
+            responseExpandAllBtn.setVisible(isJson);
+            responseExpandAllBtn.setManaged(isJson);
+        }
         if (responseFindBtn != null) {
             responseFindBtn.setVisible(true);
             responseFindBtn.setManaged(true);
+        }
+        if (responseCopyBodyBtn != null) {
+            responseCopyBodyBtn.setVisible(true);
+            responseCopyBodyBtn.setManaged(true);
+        }
+
+        // Hide visualization toolbar buttons
+        if (responseVisCodeBtn != null) {
+            responseVisCodeBtn.setVisible(false);
+            responseVisCodeBtn.setManaged(false);
+        }
+        if (responseVisRefreshBtn != null) {
+            responseVisRefreshBtn.setVisible(false);
+            responseVisRefreshBtn.setManaged(false);
+        }
+        if (responseVisCopyBtn != null) {
+            responseVisCopyBtn.setVisible(false);
+            responseVisCopyBtn.setManaged(false);
         }
     }
 
@@ -12795,7 +12863,13 @@ public class MainController implements Initializable {
     @FXML
     private void handleToggleResponsePreview() {
         if (responsePreviewToggle != null && responsePreviewToggle.isSelected()) {
-            if (responseVisualizerToggle != null) responseVisualizerToggle.setSelected(false);
+            if (responseVisualizationMenu != null) {
+                responseVisualizationMenu.setText("🖼 Visualization");
+                responseVisualizationMenu.getStyleClass().remove("active-view");
+                if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                    responseVisualizationMenu.getStyleClass().add("inactive-view");
+                }
+            }
             if (responseFormatMenu != null) {
                 responseFormatMenu.getStyleClass().remove("active-view");
                 if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
@@ -12814,9 +12888,33 @@ public class MainController implements Initializable {
                 responseWrapToggle.setVisible(false);
                 responseWrapToggle.setManaged(false);
             }
+            if (responseCollapseAllBtn != null) {
+                responseCollapseAllBtn.setVisible(false);
+                responseCollapseAllBtn.setManaged(false);
+            }
+            if (responseExpandAllBtn != null) {
+                responseExpandAllBtn.setVisible(false);
+                responseExpandAllBtn.setManaged(false);
+            }
             if (responseFindBtn != null) {
                 responseFindBtn.setVisible(false);
                 responseFindBtn.setManaged(false);
+            }
+            if (responseCopyBodyBtn != null) {
+                responseCopyBodyBtn.setVisible(false);
+                responseCopyBodyBtn.setManaged(false);
+            }
+            if (responseVisCodeBtn != null) {
+                responseVisCodeBtn.setVisible(false);
+                responseVisCodeBtn.setManaged(false);
+            }
+            if (responseVisRefreshBtn != null) {
+                responseVisRefreshBtn.setVisible(false);
+                responseVisRefreshBtn.setManaged(false);
+            }
+            if (responseVisCopyBtn != null) {
+                responseVisCopyBtn.setVisible(false);
+                responseVisCopyBtn.setManaged(false);
             }
             if (responsePreview != null) {
                 responsePreview.setVisible(true);
@@ -12829,38 +12927,115 @@ public class MainController implements Initializable {
     }
 
     @FXML
-    private void handleToggleResponseVisualization() {
-        if (responseVisualizerToggle != null && responseVisualizerToggle.isSelected()) {
-            if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
-            if (responseFormatMenu != null) {
-                responseFormatMenu.getStyleClass().remove("active-view");
-                if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
-                    responseFormatMenu.getStyleClass().add("inactive-view");
-                }
+    private void handleSelectVisualize() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.VISUALIZE);
+    }
+
+    @FXML
+    private void handleSelectVisualizeTable() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.TABLE);
+    }
+
+    @FXML
+    private void handleSelectVisualizeLinearChart() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.LINEAR_CHART);
+    }
+
+    @FXML
+    private void handleSelectVisualizeBarGraph() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.BAR_GRAPH);
+    }
+
+    @FXML
+    private void handleVisSwitchToCode() {
+        showResponseCodeView(null);
+    }
+
+    @FXML
+    private void handleVisRefresh() {
+        renderCurrentVisualization();
+    }
+
+    @FXML
+    private void handleVisCopy() {
+        String response = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : (lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : (responseBodyArea != null ? responseBodyArea.getText() : ""));
+        if (response != null && !response.isEmpty()) {
+            ClipboardContent content = new ClipboardContent();
+            content.putString(response);
+            Clipboard.getSystemClipboard().setContent(content);
+            AlertUtils.showSuccess("Visualization data copied to clipboard");
+        }
+    }
+
+    private void showResponseVisualization(ResponseVisualizerGenerator.VisType type) {
+        currentVisType = type;
+        if (responseVisualizationMenu != null) {
+            String menuText = switch (type) {
+                case VISUALIZE -> "🖼 Visualize";
+                case TABLE -> "⊞ Table";
+                case LINEAR_CHART -> "📈 Linear Chart";
+                case BAR_GRAPH -> "📊 Bar Graph";
+            };
+            responseVisualizationMenu.setText(menuText);
+            responseVisualizationMenu.getStyleClass().remove("inactive-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("active-view")) {
+                responseVisualizationMenu.getStyleClass().add("active-view");
             }
-            if (responseCodeAreaPane != null) {
-                responseCodeAreaPane.setVisible(false);
-                responseCodeAreaPane.setManaged(false);
+        }
+        if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
+        if (responseFormatMenu != null) {
+            responseFormatMenu.getStyleClass().remove("active-view");
+            if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
+                responseFormatMenu.getStyleClass().add("inactive-view");
             }
-            if (responsePreview != null) {
-                responsePreview.setVisible(false);
-                responsePreview.setManaged(false);
-            }
-            if (responseWrapToggle != null) {
-                responseWrapToggle.setVisible(false);
-                responseWrapToggle.setManaged(false);
-            }
-            if (responseFindBtn != null) {
-                responseFindBtn.setVisible(false);
-                responseFindBtn.setManaged(false);
-            }
-            if (responseVisualizationView != null) {
-                responseVisualizationView.setVisible(true);
-                responseVisualizationView.setManaged(true);
-                renderVisualizationView();
-            }
-        } else {
-            showResponseCodeView(null);
+        }
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(false);
+            responseCodeAreaPane.setManaged(false);
+        }
+        if (responsePreview != null) {
+            responsePreview.setVisible(false);
+            responsePreview.setManaged(false);
+        }
+        if (responseWrapToggle != null) {
+            responseWrapToggle.setVisible(false);
+            responseWrapToggle.setManaged(false);
+        }
+        if (responseCollapseAllBtn != null) {
+            responseCollapseAllBtn.setVisible(false);
+            responseCollapseAllBtn.setManaged(false);
+        }
+        if (responseExpandAllBtn != null) {
+            responseExpandAllBtn.setVisible(false);
+            responseExpandAllBtn.setManaged(false);
+        }
+        if (responseFindBtn != null) {
+            responseFindBtn.setVisible(false);
+            responseFindBtn.setManaged(false);
+        }
+        if (responseCopyBodyBtn != null) {
+            responseCopyBodyBtn.setVisible(false);
+            responseCopyBodyBtn.setManaged(false);
+        }
+        if (responseVisCodeBtn != null) {
+            responseVisCodeBtn.setVisible(true);
+            responseVisCodeBtn.setManaged(true);
+        }
+        if (responseVisRefreshBtn != null) {
+            responseVisRefreshBtn.setVisible(true);
+            responseVisRefreshBtn.setManaged(true);
+        }
+        if (responseVisCopyBtn != null) {
+            responseVisCopyBtn.setVisible(true);
+            responseVisCopyBtn.setManaged(true);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(true);
+            responseVisualizationView.setManaged(true);
+            renderCurrentVisualization();
         }
     }
 
@@ -12940,212 +13115,47 @@ public class MainController implements Initializable {
         }
     }
 
-    private void renderVisualizationView() {
+    private void renderCurrentVisualization() {
         if (responseVisualizationView == null) return;
-        String raw = lastApiResponse != null && lastApiResponse.getResponse() != null
-                ? lastApiResponse.getResponse() : responseBodyArea.getText();
+        String raw = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : (lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : (responseBodyArea != null ? responseBodyArea.getText() : ""));
         boolean isLight = ThemeManager.isLight();
-        String html = generateVisualizationHtml(raw, isLight);
+        String title = getEndpointTitle();
+        String html = ResponseVisualizerGenerator.generateHtml(raw, currentVisType != null ? currentVisType : ResponseVisualizerGenerator.VisType.VISUALIZE, isLight, title);
         responseVisualizationView.getEngine().loadContent(html);
     }
 
-    private String generateVisualizationHtml(String jsonString, boolean isLight) {
-        String bg = isLight ? "#ffffff" : "#1d1f24";
-        String cardBg = isLight ? "#f6f8fa" : "#161b22";
-        String border = isLight ? "#d0d7de" : "#30363d";
-        String text = isLight ? "#24292f" : "#e6edf3";
-        String textMuted = isLight ? "#57606a" : "#8b949e";
-        String hoverBg = isLight ? "#f0f4f9" : "#262c36";
-        String zebraBg = isLight ? "#fafbfc" : "#191c20";
-        String headerBg = isLight ? "#f6f8fa" : "#161b22";
-        String accent = "#0969da";
-
-        if (jsonString == null || jsonString.isBlank()) {
-            return "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:24px;text-align:center;background:" + bg + ";color:" + textMuted + ";'>"
-                    + "<h3>No response body to visualize</h3><p>Send a request returning JSON to see an interactive visualization.</p></body></html>";
-        }
-
-        String trimmed = jsonString.trim();
-        List<String> headers = new ArrayList<>();
-        List<List<String>> rows = new ArrayList<>();
-        boolean isTable = false;
-
+    private String getEndpointTitle() {
         try {
-            if (trimmed.startsWith("[")) {
-                JSONArray arr = new JSONArray(trimmed);
-                if (arr.length() > 0 && arr.get(0) instanceof JSONObject) {
-                    LinkedHashSet<String> keySet = new LinkedHashSet<>();
-                    for (int i = 0; i < arr.length(); i++) {
-                        Object item = arr.get(i);
-                        if (item instanceof JSONObject obj) {
-                            for (String k : obj.keySet()) {
-                                keySet.add(k);
-                            }
-                        }
-                    }
-                    headers.addAll(keySet);
-                    for (int i = 0; i < arr.length(); i++) {
-                        Object item = arr.get(i);
-                        List<String> row = new ArrayList<>();
-                        if (item instanceof JSONObject obj) {
-                            for (String h : headers) {
-                                Object val = obj.opt(h);
-                                row.add(formatCellValue(val));
-                            }
-                        } else {
-                            row.add(formatCellValue(item));
-                        }
-                        rows.add(row);
-                    }
-                    isTable = true;
-                } else {
-                    headers.add("#");
-                    headers.add("Value");
-                    for (int i = 0; i < arr.length(); i++) {
-                        List<String> row = new ArrayList<>();
-                        row.add(String.valueOf(i + 1));
-                        row.add(formatCellValue(arr.get(i)));
-                        rows.add(row);
-                    }
-                    isTable = true;
+            Tab active = activeRequestTab();
+            if (active != null && active.getText() != null && !active.getText().isBlank()) {
+                String name = active.getText().trim();
+                if (!name.equalsIgnoreCase("Untitled") && !name.toLowerCase().startsWith("untitled")) {
+                    return name;
                 }
-            } else if (trimmed.startsWith("{")) {
-                JSONObject obj = new JSONObject(trimmed);
-                headers.add("Key");
-                headers.add("Type");
-                headers.add("Value");
-                for (String k : obj.keySet()) {
-                    Object val = obj.get(k);
-                    List<String> row = new ArrayList<>();
-                    row.add("<strong>" + escapeHtml(k) + "</strong>");
-                    row.add("<span style='color:" + textMuted + ";font-size:11px;'>" + getTypeName(val) + "</span>");
-                    row.add(formatCellValue(val));
-                    rows.add(row);
+            }
+            if (urlField != null && urlField.getText() != null && !urlField.getText().isBlank()) {
+                String u = urlField.getText().trim();
+                int q = u.indexOf('?');
+                if (q > 0) u = u.substring(0, q);
+                int lastSlash = u.lastIndexOf('/');
+                if (lastSlash >= 0 && lastSlash < u.length() - 1) {
+                    String seg = u.substring(lastSlash + 1).trim();
+                    if (!seg.isEmpty()) return seg;
                 }
-                isTable = true;
             }
-        } catch (Exception e) {
-            isTable = false;
-        }
-
-        if (!isTable) {
-            return "<!DOCTYPE html><html><body style='font-family:-apple-system,sans-serif;padding:24px;background:" + bg + ";color:" + text + ";'>"
-                    + "<div style='background:" + cardBg + ";border:1px solid " + border + ";border-radius:6px;padding:16px;'>"
-                    + "<h4 style='margin-top:0;'>Raw Response Preview</h4>"
-                    + "<pre style='font-family:monospace;font-size:12px;overflow:auto;white-space:pre-wrap;'>" + escapeHtml(trimmed) + "</pre>"
-                    + "</div></body></html>";
-        }
-
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><meta charset='utf-8'>");
-        html.append("<style>");
-        html.append("* { box-sizing: border-box; }");
-        html.append("body { margin: 0; padding: 12px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; background-color: ").append(bg).append("; color: ").append(text).append("; }");
-        html.append(".visualizer-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 12px; }");
-        html.append(".search-box { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 320px; }");
-        html.append(".search-box input { width: 100%; padding: 5px 10px; border: 1px solid ").append(border).append("; border-radius: 4px; background: ").append(cardBg).append("; color: ").append(text).append("; font-size: 12px; outline: none; }");
-        html.append(".search-box input:focus { border-color: ").append(accent).append("; }");
-        html.append(".counter { font-size: 12px; color: ").append(textMuted).append("; }");
-        html.append(".table-wrap { overflow: auto; border: 1px solid ").append(border).append("; border-radius: 6px; max-height: calc(100vh - 70px); }");
-        html.append("table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }");
-        html.append("th { background: ").append(headerBg).append("; color: ").append(text).append("; font-weight: 600; padding: 8px 12px; border-bottom: 2px solid ").append(border).append("; position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none; white-space: nowrap; }");
-        html.append("th:hover { background: ").append(hoverBg).append("; }");
-        html.append("th .sort-icon { margin-left: 6px; font-size: 10px; opacity: 0.6; }");
-        html.append("td { padding: 7px 12px; border-bottom: 1px solid ").append(border).append("; white-space: nowrap; max-width: 450px; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }");
-        html.append("tr:nth-child(even) td { background-color: ").append(zebraBg).append("; }");
-        html.append("tr:hover td { background-color: ").append(hoverBg).append(" !important; }");
-        html.append(".val-num { color: ").append(isLight ? "#098658" : "#7ee787").append("; font-family: monospace; }");
-        html.append(".val-str { color: ").append(isLight ? "#0366d6" : "#79c0ff").append("; }");
-        html.append(".val-bool { color: ").append(isLight ? "#005cc5" : "#79c0ff").append("; font-weight: bold; }");
-        html.append(".val-null { color: ").append(isLight ? "#6e7781" : "#8b949e").append("; font-style: italic; }");
-        html.append(".val-json { font-family: monospace; font-size: 11px; opacity: 0.85; }");
-        html.append("</style></head><body>");
-
-        html.append("<div class='visualizer-topbar'>");
-        html.append("<div class='search-box'>");
-        html.append("<input type='text' id='filterInput' placeholder='Filter records...' onkeyup='applyFilter()' />");
-        html.append("</div>");
-        html.append("<div class='counter' id='recordCount'>Showing ").append(rows.size()).append(" records</div>");
-        html.append("</div>");
-
-        html.append("<div class='table-wrap'>");
-        html.append("<table id='visTable'><thead><tr>");
-        for (int c = 0; c < headers.size(); c++) {
-            html.append("<th onclick='sortTable(").append(c).append(")'>")
-                    .append(escapeHtml(headers.get(c)))
-                    .append("<span class='sort-icon' id='sort-icon-").append(c).append("'>↕</span></th>");
-        }
-        html.append("</tr></thead><tbody>");
-
-        for (List<String> r : rows) {
-            html.append("<tr>");
-            for (String cell : r) {
-                html.append("<td>").append(cell).append("</td>");
+            String raw = (responseFoldManager != null && responseFoldManager.getFullText() != null)
+                    ? responseFoldManager.getFullText() : (responseBodyArea != null ? responseBodyArea.getText() : "");
+            if (raw != null && raw.trim().startsWith("{")) {
+                org.json.JSONObject obj = new org.json.JSONObject(raw.trim());
+                if (obj.has("message") && obj.optString("message").toLowerCase().contains("login")) {
+                    return "Login";
+                }
             }
-            html.append("</tr>");
-        }
-
-        html.append("</tbody></table></div>");
-
-        html.append("<script>");
-        html.append("function applyFilter() {");
-        html.append("  var input = document.getElementById('filterInput').value.toLowerCase();");
-        html.append("  var rows = document.querySelectorAll('#visTable tbody tr');");
-        html.append("  var count = 0;");
-        html.append("  rows.forEach(function(row) {");
-        html.append("    var text = row.innerText.toLowerCase();");
-        html.append("    if (text.indexOf(input) > -1) { row.style.display = ''; count++; }");
-        html.append("    else { row.style.display = 'none'; }");
-        html.append("  });");
-        html.append("  document.getElementById('recordCount').innerText = 'Showing ' + count + ' of ").append(rows.size()).append(" records';");
-        html.append("}");
-        html.append("var sortDirections = {};");
-        html.append("function sortTable(colIndex) {");
-        html.append("  var table = document.getElementById('visTable');");
-        html.append("  var tbody = table.querySelector('tbody');");
-        html.append("  var rows = Array.from(tbody.querySelectorAll('tr'));");
-        html.append("  var dir = sortDirections[colIndex] === 'asc' ? 'desc' : 'asc';");
-        html.append("  sortDirections[colIndex] = dir;");
-        html.append("  rows.sort(function(a, b) {");
-        html.append("    var aVal = a.cells[colIndex] ? a.cells[colIndex].innerText.trim() : '';");
-        html.append("    var bVal = b.cells[colIndex] ? b.cells[colIndex].innerText.trim() : '';");
-        html.append("    var aNum = parseFloat(aVal), bNum = parseFloat(bVal);");
-        html.append("    if (!isNaN(aNum) && !isNaN(bNum)) { return dir === 'asc' ? aNum - bNum : bNum - aNum; }");
-        html.append("    return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);");
-        html.append("  });");
-        html.append("  rows.forEach(function(r) { tbody.appendChild(r); });");
-        html.append("  for (var i = 0; i < ").append(headers.size()).append("; i++) {");
-        html.append("    var icon = document.getElementById('sort-icon-' + i);");
-        html.append("    if (icon) icon.innerText = (i === colIndex ? (dir === 'asc' ? '▲' : '▼') : '↕');");
-        html.append("  }");
-        html.append("}");
-        html.append("</script>");
-
-        html.append("</body></html>");
-        return html.toString();
-    }
-
-    private String formatCellValue(Object val) {
-        if (val == null || val == JSONObject.NULL) {
-            return "<span class='val-null'>null</span>";
-        } else if (val instanceof Boolean) {
-            return "<span class='val-bool'>" + val + "</span>";
-        } else if (val instanceof Number) {
-            return "<span class='val-num'>" + val + "</span>";
-        } else if (val instanceof JSONObject || val instanceof JSONArray) {
-            return "<span class='val-json'>" + escapeHtml(val.toString()) + "</span>";
-        } else {
-            return "<span class='val-str'>" + escapeHtml(String.valueOf(val)) + "</span>";
-        }
-    }
-
-    private String getTypeName(Object val) {
-        if (val == null || val == JSONObject.NULL) return "null";
-        if (val instanceof Boolean) return "boolean";
-        if (val instanceof Number) return "number";
-        if (val instanceof JSONObject) return "object";
-        if (val instanceof JSONArray) return "array";
-        return "string";
+        } catch (Exception ignored) {}
+        return "Response";
     }
 
     private String escapeHtml(String text) {
