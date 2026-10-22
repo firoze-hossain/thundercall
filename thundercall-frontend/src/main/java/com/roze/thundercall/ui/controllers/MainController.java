@@ -219,6 +219,7 @@ public class MainController implements Initializable {
     @FXML
     private VBox responseSearchBarContainer;
     private CodeAreaSearch responseSearch;
+    private JsonFoldManager responseFoldManager;
     @FXML
     private ListView<String> historyList;
     @FXML
@@ -1913,12 +1914,15 @@ public class MainController implements Initializable {
             responseWrapToggle.setSelected(true);
         }
         responseBodyArea.setWrapText(true);
-        // Postman-style line numbers down the left edge of the response viewer.
-        responseBodyArea.setParagraphGraphicFactory(LineNumberFactory.get(responseBodyArea));
+        // Postman-style code folding & line numbers down the left edge of the response viewer.
+        responseFoldManager = JsonFoldManager.attach(responseBodyArea);
         attachPrettifyShortcut(responseBodyArea);
         responseBodyArea.plainTextChanges().subscribe(change -> {
             if (responseSearch == null || responseSearch.getBar().isManaged()) {
                 return; // the search bar owns styling (base + match highlight) while open
+            }
+            if (responseFoldManager != null && responseFoldManager.isUpdating()) {
+                return;
             }
             responseBodyArea.setStyleSpans(0,
                     JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
@@ -1932,9 +1936,22 @@ public class MainController implements Initializable {
         if (responseSearchBarContainer != null) {
             responseSearchBarContainer.getChildren().add(responseSearch.getBar());
         }
+
+        // Postman-style right-click context menu with fold controls
+        ContextMenu responseContextMenu = new ContextMenu();
+        MenuItem copyItem = new MenuItem("Copy Response");
+        copyItem.setOnAction(e -> handleCopyResponse());
+        MenuItem foldAllItem = new MenuItem("Collapse All");
+        foldAllItem.setOnAction(e -> handleCollapseAllResponse());
+        MenuItem unfoldAllItem = new MenuItem("Expand All");
+        unfoldAllItem.setOnAction(e -> handleExpandAllResponse());
+        MenuItem findItem = new MenuItem("Find...");
+        findItem.setOnAction(e -> handleOpenResponseSearch());
+        responseContextMenu.getItems().addAll(copyItem, new SeparatorMenuItem(), foldAllItem, unfoldAllItem, new SeparatorMenuItem(), findItem);
+        responseBodyArea.setContextMenu(responseContextMenu);
+
         if (responseBodyArea.getText() != null && !responseBodyArea.getText().isEmpty()) {
-            responseBodyArea.setStyleSpans(0,
-                    JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+            responseFoldManager.setFullText(responseBodyArea.getText());
         }
     }
 
@@ -11628,7 +11645,9 @@ public class MainController implements Initializable {
             AlertUtils.showInfo("This is a binary response — use the save icon to download it instead of copying text");
             return;
         }
-        String response = responseBodyArea.getText();
+        String response = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : responseBodyArea.getText();
         if (response != null && !response.isEmpty()) {
             ClipboardContent content = new ClipboardContent();
             content.putString(response);
@@ -11671,6 +11690,9 @@ public class MainController implements Initializable {
             }
         } else {
             // Text response: guess a sensible extension from Content-Type
+            String fullText = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                    ? responseFoldManager.getFullText()
+                    : responseBodyArea.getText();
             String ext = "txt";
             String ct = lastApiResponse.getContentType();
             if (ct != null) {
@@ -11683,8 +11705,8 @@ public class MainController implements Initializable {
                 } else if (ct.contains("csv")) {
                     ext = "csv";
                 }
-            } else if (responseBodyArea.getText().trim().startsWith("{")
-                    || responseBodyArea.getText().trim().startsWith("[")) {
+            } else if (fullText.trim().startsWith("{")
+                    || fullText.trim().startsWith("[")) {
                 ext = "json";
             }
             fileChooser.setInitialFileName("response." + ext);
@@ -11697,7 +11719,7 @@ public class MainController implements Initializable {
                 return;
             }
             try {
-                java.nio.file.Files.writeString(file.toPath(), responseBodyArea.getText());
+                java.nio.file.Files.writeString(file.toPath(), fullText);
                 AlertUtils.showSuccess("Saved to " + file.getName());
                 updateStatus("Response saved: " + file.getName());
             } catch (Exception e) {
@@ -12405,16 +12427,20 @@ public class MainController implements Initializable {
             // instead — Save Response (the icon button) does the rest.
             responseBodyArea.setEditable(false);
             boolean isPdf = isPdfResponse(apiResponse);
-            responseBodyArea.replaceText(
-                    "\uD83D\uDCC4  Binary response\n\n"
-                            + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
-                            + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
-                            + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
-                            + (isPdf
-                            ? "PDF preview is shown on the right. Click the save icon above "
-                            + "the response to download the original file."
-                            : "This isn't text, so it can't be shown here — click the save icon "
-                            + "above the response to download it exactly as the server sent it."));
+            String binMsg = "\uD83D\uDCC4  Binary response\n\n"
+                    + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
+                    + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
+                    + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
+                    + (isPdf
+                    ? "PDF preview is shown on the right. Click the save icon above "
+                    + "the response to download the original file."
+                    : "This isn't text, so it can't be shown here — click the save icon "
+                    + "above the response to download it exactly as the server sent it.");
+            if (responseFoldManager != null) {
+                responseFoldManager.setFullText(binMsg);
+            } else {
+                responseBodyArea.replaceText(binMsg);
+            }
             if (isPdf) {
                 renderPdfPreview(apiResponse);
             } else {
@@ -12422,7 +12448,6 @@ public class MainController implements Initializable {
             }
         } else {
             responseBodyArea.setEditable(true);
-            responseBodyArea.replaceText(apiResponse.getResponse() != null ? apiResponse.getResponse() : "");
             formatResponseBody(apiResponse.getResponse());
             clearResponsePreview();
             if (responseFormatMenu != null) {
@@ -12457,33 +12482,62 @@ public class MainController implements Initializable {
             responseSearch.reset();
         }
         responseBodyArea.setEditable(true);
-        responseBodyArea.replaceText("");
+        if (responseFoldManager != null) {
+            responseFoldManager.setFullText("");
+        } else {
+            responseBodyArea.replaceText("");
+        }
         responseHeadersData.clear();
         clearResponsePreview();
     }
 
     private void formatResponseBody(String responseBody) {
         try {
-            if (responseBody == null || responseBody.isBlank()) return;
+            if (responseBody == null || responseBody.isBlank()) {
+                if (responseFoldManager != null) {
+                    responseFoldManager.setFullText("");
+                } else {
+                    responseBodyArea.replaceText("");
+                }
+                return;
+            }
             String trimmed = responseBody.trim();
+            String formattedText = null;
             if (trimmed.startsWith("{")) {
-                JSONObject json = new JSONObject(trimmed);
-                responseBodyArea.replaceText(json.toString(2));
+                try {
+                    JSONObject json = new JSONObject(trimmed);
+                    formattedText = json.toString(2);
+                } catch (Exception ignored) {
+                }
             } else if (trimmed.startsWith("[")) {
-                JSONArray json = new JSONArray(trimmed);
-                responseBodyArea.replaceText(json.toString(2));
+                try {
+                    JSONArray json = new JSONArray(trimmed);
+                    formattedText = json.toString(2);
+                } catch (Exception ignored) {
+                }
             } else if (trimmed.startsWith("<")) {
                 try {
                     JSONObject json = XML.toJSONObject(trimmed);
                 } catch (Exception ignored) {
                 }
             }
-            if (responseBodyArea != null && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
-                responseBodyArea.setStyleSpans(0,
-                        JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+
+            String finalText = (formattedText != null) ? formattedText : responseBody;
+            if (responseFoldManager != null) {
+                responseFoldManager.setFullText(finalText);
+            } else {
+                responseBodyArea.replaceText(finalText);
+                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                    responseBodyArea.setStyleSpans(0,
+                            JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+                }
             }
         } catch (Exception e) {
-            // If formatting fails, just use the original response
+            if (responseFoldManager != null) {
+                responseFoldManager.setFullText(responseBody != null ? responseBody : "");
+            } else {
+                responseBodyArea.replaceText(responseBody != null ? responseBody : "");
+            }
         }
     }
 
@@ -12602,7 +12656,11 @@ public class MainController implements Initializable {
     private void handleSelectResponseRaw() {
         showResponseCodeView("Raw");
         if (lastApiResponse != null && !lastApiResponse.isBinary() && lastApiResponse.getResponse() != null) {
-            responseBodyArea.replaceText(lastApiResponse.getResponse());
+            if (responseFoldManager != null) {
+                responseFoldManager.setFullText(lastApiResponse.getResponse());
+            } else {
+                responseBodyArea.replaceText(lastApiResponse.getResponse());
+            }
         }
     }
 
@@ -12647,6 +12705,20 @@ public class MainController implements Initializable {
             }
         } else {
             showResponseCodeView(null);
+        }
+    }
+
+    @FXML
+    private void handleCollapseAllResponse() {
+        if (responseFoldManager != null) {
+            responseFoldManager.foldAll();
+        }
+    }
+
+    @FXML
+    private void handleExpandAllResponse() {
+        if (responseFoldManager != null) {
+            responseFoldManager.unfoldAll();
         }
     }
 

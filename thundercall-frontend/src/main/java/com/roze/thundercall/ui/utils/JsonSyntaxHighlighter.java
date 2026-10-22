@@ -39,13 +39,15 @@ public final class JsonSyntaxHighlighter {
     // "http://example.com") is never seen as the start of a comment: the
     // matcher only lands on the STRING alternative at that position.
     private static final Pattern PATTERN = Pattern.compile(
-            "(?<COMMENT>//[^\\n]*|/\\*[\\s\\S]*?\\*/)"
+            "(?m)(?<INDENT>^[ ]{2,})"
+                    + "|(?<COMMENT>//[^\\n]*|/\\*[\\s\\S]*?\\*/)"
                     + "|(?<VARIABLE>\\{\\{[^}]*}}?)"
                     + "|(?<KEY>\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"\\s*(?=:))"
                     + "|(?<STRING>\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\")"
                     + "|(?<NUMBER>-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b)"
                     + "|(?<BOOL>\\btrue\\b|\\bfalse\\b)"
                     + "|(?<NULL>\\bnull\\b)"
+                    + "|(?<ELLIPSIS>\\.\\.\\.)"
                     + "|(?<PUNCT>[{}\\[\\],:])"
     );
 
@@ -68,13 +70,15 @@ public final class JsonSyntaxHighlighter {
         int lastEnd = 0;
         while (matcher.find()) {
             String styleClass =
-                    matcher.group("COMMENT") != null ? "json-comment"
+                    matcher.group("INDENT") != null ? "json-indent-guide"
+                            : matcher.group("COMMENT") != null ? "json-comment"
                             : matcher.group("VARIABLE") != null ? "json-variable"
                             : matcher.group("KEY") != null ? "json-key"
                             : matcher.group("STRING") != null ? "json-string"
                             : matcher.group("NUMBER") != null ? "json-number"
                             : matcher.group("BOOL") != null ? "json-boolean"
                             : matcher.group("NULL") != null ? "json-null"
+                            : matcher.group("ELLIPSIS") != null ? "json-folded-badge"
                             : matcher.group("PUNCT") != null ? "json-punctuation"
                             : null;
             if (styleClass == null) {

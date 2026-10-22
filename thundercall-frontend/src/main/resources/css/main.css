@@ -1513,8 +1513,16 @@
 .url-field, .body-textarea, .response-body {
     -fx-caret-fill: -text-primary;
 }
+.body-textarea, .response-body {
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
 .url-field .text, .body-textarea .text, .response-body .text {
     -fx-fill: -text-primary;
+}
+.body-textarea .text, .response-body .text {
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
 }
 .url-field .selection, .body-textarea .selection, .response-body .selection {
     -fx-fill: -accent-soft;
@@ -1685,6 +1693,56 @@
     -fx-fill: #ff835a;
     -fx-font-weight: bold;
     -rtfx-background-color: rgba(255, 108, 55, 0.22);
+}
+
+/* Thin Scope / Indentation Guide Lines (Postman Dark) */
+.code-area .text.json-indent-guide,
+.body-textarea .text.json-indent-guide,
+.response-body .text.json-indent-guide,
+.text.json-indent-guide {
+    -rtfx-background-color: linear-gradient(from 0.0px 0.0px to 14.4px 0.0px, repeat, rgba(65, 72, 83, 0.75) 0%, rgba(65, 72, 83, 0.75) 6.5%, transparent 6.5%, transparent 100%);
+}
+
+/* Postman Folded Ellipsis Badge { ... */
+.code-area .text.json-folded-badge,
+.body-textarea .text.json-folded-badge,
+.response-body .text.json-folded-badge,
+.text.json-folded-badge {
+    -fx-fill: #8b949e;
+    -fx-font-weight: bold;
+    -rtfx-background-color: #262c36;
+}
+
+/* Postman Gutter Row & Chevron Styles */
+.gutter-row {
+    -fx-background-color: -bg-panel;
+    -fx-padding: 0 4 0 6;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.gutter-row .lineno {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-border-color: transparent;
+    -fx-padding: 0 2 0 0;
+    -fx-text-fill: -text-muted;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+.fold-chevron-expanded, .fold-chevron-collapsed {
+    -fx-stroke: #8b949e;
+}
+.fold-arrow-btn {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3px;
+    -fx-padding: 1;
+}
+.fold-arrow-btn:hover {
+    -fx-background-color: #30363d;
+}
+.fold-arrow-btn:hover .fold-chevron-expanded,
+.fold-arrow-btn:hover .fold-chevron-collapsed {
+    -fx-stroke: #ffffff;
 }
 
 /* Response body Postman toolbar: { } JSON ▾ | ▷ Preview | 📊 Visualization */

@@ -802,6 +802,12 @@
                                         <ToggleButton fx:id="responseVisualizerToggle" text="📊 Visualization" styleClass="response-toolbar-toggle" onAction="#handleToggleResponseVisualization"/>
                                         <Region HBox.hgrow="ALWAYS"/>
                                         <ToggleButton fx:id="responseWrapToggle" text="⏎ Wrap" styleClass="response-toolbar-btn" onAction="#handleToggleResponseWrap"/>
+                                        <Button fx:id="responseCollapseAllBtn" text="⊟ Collapse All" onAction="#handleCollapseAllResponse" styleClass="response-toolbar-btn">
+                                            <tooltip><Tooltip text="Collapse all JSON blocks"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseExpandAllBtn" text="⊞ Expand All" onAction="#handleExpandAllResponse" styleClass="response-toolbar-btn">
+                                            <tooltip><Tooltip text="Expand all JSON blocks"/></tooltip>
+                                        </Button>
                                         <Button fx:id="responseFindBtn" text="🔍 Find" onAction="#handleOpenResponseSearch" styleClass="response-toolbar-btn"/>
                                         <Button fx:id="responseCopyBodyBtn" text="📋 Copy" onAction="#handleCopyResponse" styleClass="response-toolbar-btn"/>
                                     </HBox>
