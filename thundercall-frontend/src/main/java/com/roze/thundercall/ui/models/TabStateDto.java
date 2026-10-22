@@ -61,4 +61,10 @@ public class TabStateDto {
     private List<SocketIoEventDto> socketIoEvents = new ArrayList<>();
     @Builder.Default
     private boolean dirty = false;
+    @Builder.Default
+    private String rawFormat = "JSON";
+    @Builder.Default
+    private String activeSubTab = "Params";
+    @Builder.Default
+    private String activeResponseSubTab = "Body";
 }

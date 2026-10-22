@@ -665,7 +665,18 @@ public class MainController implements Initializable {
 
     private void setupBodyTypeHandling() {
         bodyTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
-            updateBodyViewsVisibility(newToggle != null ? ((ToggleButton) newToggle).getText() : "None");
+            String bType = newToggle != null ? ((ToggleButton) newToggle).getText() : "None";
+            updateBodyViewsVisibility(bType);
+            if (!restoringTabState) {
+                Tab active = activeRequestTab();
+                if (active != null && tabStates.containsKey(active)) {
+                    RequestTabState state = tabStates.get(active);
+                    if (state != null) {
+                        state.bodyType = bType;
+                        scheduleSessionSave();
+                    }
+                }
+            }
             onEditorFieldChanged();
         });
 
@@ -2698,6 +2709,11 @@ public class MainController implements Initializable {
                         ensurePlaceholderRow();
                         updateMasterCheckBox(paramsMasterCheckBox);
                         updateMasterSelectBox(paramsMasterSelectBox);
+                    } else {
+                        row.setPlaceholder(true);
+                        ensurePlaceholderRow();
+                        updateMasterCheckBox(paramsMasterCheckBox);
+                        updateMasterSelectBox(paramsMasterSelectBox);
                     }
 
                     if (!syncingUrlAndParams) {
@@ -2792,7 +2808,7 @@ public class MainController implements Initializable {
         });
     }
 
-    private boolean isRowEmpty(KeyValuePair kv) {
+    private static boolean isRowEmpty(KeyValuePair kv) {
         if (kv == null) {
             return true;
         }
@@ -2807,21 +2823,17 @@ public class MainController implements Initializable {
     }
 
     private void ensurePlaceholderRow() {
+        while (paramsData.size() > 1 && isRowEmpty(paramsData.get(paramsData.size() - 1)) && isRowEmpty(paramsData.get(paramsData.size() - 2))) {
+            paramsData.remove(paramsData.size() - 1);
+        }
         if (paramsData.isEmpty()) {
             paramsData.add(new KeyValuePair(true, "", "", "", true));
             return;
         }
-        while (paramsData.size() > 1) {
-            KeyValuePair last = paramsData.get(paramsData.size() - 1);
-            KeyValuePair secondLast = paramsData.get(paramsData.size() - 2);
-            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
-                paramsData.remove(paramsData.size() - 1);
-            } else {
-                break;
-            }
-        }
         KeyValuePair last = paramsData.get(paramsData.size() - 1);
-        if (!last.isPlaceholder()) {
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
             paramsData.add(new KeyValuePair(true, "", "", "", true));
         }
     }
@@ -3239,21 +3251,17 @@ public class MainController implements Initializable {
     }
 
     private void ensureHeadersPlaceholderRow() {
+        while (headersData.size() > 1 && isRowEmpty(headersData.get(headersData.size() - 1)) && isRowEmpty(headersData.get(headersData.size() - 2))) {
+            headersData.remove(headersData.size() - 1);
+        }
         if (headersData.isEmpty()) {
             headersData.add(new KeyValuePair(true, "", "", "", true));
             return;
         }
-        while (headersData.size() > 1) {
-            KeyValuePair last = headersData.get(headersData.size() - 1);
-            KeyValuePair secondLast = headersData.get(headersData.size() - 2);
-            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
-                headersData.remove(headersData.size() - 1);
-            } else {
-                break;
-            }
-        }
         KeyValuePair last = headersData.get(headersData.size() - 1);
-        if (!last.isPlaceholder()) {
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
             headersData.add(new KeyValuePair(true, "", "", "", true));
         }
     }
@@ -4041,23 +4049,19 @@ public class MainController implements Initializable {
     }
 
     private void ensureFormDataPlaceholderRow() {
+        while (formData.size() > 1 && isRowEmpty(formData.get(formData.size() - 1)) && isRowEmpty(formData.get(formData.size() - 2))) {
+            formData.remove(formData.size() - 1);
+        }
         if (formData.isEmpty()) {
             KeyValuePair ph = new KeyValuePair(true, "", "", "", true);
             ph.setType("Text");
             formData.add(ph);
             return;
         }
-        while (formData.size() > 1) {
-            KeyValuePair last = formData.get(formData.size() - 1);
-            KeyValuePair secondLast = formData.get(formData.size() - 2);
-            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
-                formData.remove(formData.size() - 1);
-            } else {
-                break;
-            }
-        }
         KeyValuePair last = formData.get(formData.size() - 1);
-        if (!last.isPlaceholder()) {
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
             KeyValuePair ph = new KeyValuePair(true, "", "", "", true);
             ph.setType("Text");
             formData.add(ph);
@@ -4430,21 +4434,17 @@ public class MainController implements Initializable {
     }
 
     private void ensureUrlEncodedPlaceholderRow() {
+        while (urlEncodedData.size() > 1 && isRowEmpty(urlEncodedData.get(urlEncodedData.size() - 1)) && isRowEmpty(urlEncodedData.get(urlEncodedData.size() - 2))) {
+            urlEncodedData.remove(urlEncodedData.size() - 1);
+        }
         if (urlEncodedData.isEmpty()) {
             urlEncodedData.add(new KeyValuePair(true, "", "", "", true));
             return;
         }
-        while (urlEncodedData.size() > 1) {
-            KeyValuePair last = urlEncodedData.get(urlEncodedData.size() - 1);
-            KeyValuePair secondLast = urlEncodedData.get(urlEncodedData.size() - 2);
-            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
-                urlEncodedData.remove(urlEncodedData.size() - 1);
-            } else {
-                break;
-            }
-        }
         KeyValuePair last = urlEncodedData.get(urlEncodedData.size() - 1);
-        if (!last.isPlaceholder()) {
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
             urlEncodedData.add(new KeyValuePair(true, "", "", "", true));
         }
     }
@@ -9816,6 +9816,9 @@ public class MainController implements Initializable {
         String url = "";
         String body = "";
         String bodyType = "None";
+        String rawFormat = "JSON";
+        String activeSubTab = "Params";
+        String activeResponseSubTab = "Body";
         String graphqlQuery = "";
         String graphqlVariables = "";
         String preScript = "";
@@ -9852,6 +9855,9 @@ public class MainController implements Initializable {
             copy.url = this.url;
             copy.body = this.body;
             copy.bodyType = this.bodyType;
+            copy.rawFormat = this.rawFormat;
+            copy.activeSubTab = this.activeSubTab;
+            copy.activeResponseSubTab = this.activeResponseSubTab;
             copy.graphqlQuery = this.graphqlQuery;
             copy.graphqlVariables = this.graphqlVariables;
             copy.preScript = this.preScript;
@@ -9862,7 +9868,9 @@ public class MainController implements Initializable {
             copy.authPassword = this.authPassword;
             copy.params = new ArrayList<>();
             for (KeyValuePair kv : this.params) {
-                copy.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    copy.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
             }
             copy.headers = new ArrayList<>();
             for (KeyValuePair kv : this.headers) {
@@ -9923,6 +9931,38 @@ public class MainController implements Initializable {
         });
 
         TabDragReorderHelper.install(requestTabPane, isMoving -> switchingTabs = isMoving);
+
+        if (requestBuilderTabPane != null) {
+            requestBuilderTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldSubTab, newSubTab) -> {
+                if (restoringTabState || switchingTabs) {
+                    return;
+                }
+                Tab active = activeRequestTab();
+                if (active != null && tabStates.containsKey(active)) {
+                    RequestTabState state = tabStates.get(active);
+                    if (state != null && newSubTab != null && newSubTab.getText() != null) {
+                        state.activeSubTab = newSubTab.getText();
+                        scheduleSessionSave();
+                    }
+                }
+            });
+        }
+
+        if (responseTabPane != null) {
+            responseTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldRespTab, newRespTab) -> {
+                if (restoringTabState || switchingTabs) {
+                    return;
+                }
+                Tab active = activeRequestTab();
+                if (active != null && tabStates.containsKey(active)) {
+                    RequestTabState state = tabStates.get(active);
+                    if (state != null && newRespTab != null && newRespTab.getText() != null) {
+                        state.activeResponseSubTab = newRespTab.getText();
+                        scheduleSessionSave();
+                    }
+                }
+            });
+        }
 
         // Live dirty-tracking + method-badge updates. These controls are
         // shared across every tab (the tab switch swaps their content), so
@@ -10333,6 +10373,15 @@ public class MainController implements Initializable {
         state.graphqlVariables = graphqlVariablesArea != null ? graphqlVariablesArea.getText() : "";
         Toggle selToggle = bodyTypeGroup != null ? bodyTypeGroup.getSelectedToggle() : null;
         state.bodyType = (selToggle instanceof ToggleButton btn) ? btn.getText() : "None";
+        if (rawFormatMenu != null && rawFormatMenu.getText() != null && !rawFormatMenu.getText().isBlank()) {
+            state.rawFormat = rawFormatMenu.getText().trim();
+        }
+        if (requestBuilderTabPane != null && requestBuilderTabPane.getSelectionModel().getSelectedItem() != null) {
+            state.activeSubTab = requestBuilderTabPane.getSelectionModel().getSelectedItem().getText();
+        }
+        if (responseTabPane != null && responseTabPane.getSelectionModel().getSelectedItem() != null) {
+            state.activeResponseSubTab = responseTabPane.getSelectionModel().getSelectedItem().getText();
+        }
         state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
         state.testsScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : "";
         state.authType = authTypeCombo.getValue();
@@ -10341,23 +10390,31 @@ public class MainController implements Initializable {
         state.authPassword = passwordField.getText();
         state.params = new ArrayList<>();
         for (KeyValuePair kv : paramsData) {
-            state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
         }
         state.headers = new ArrayList<>();
         for (KeyValuePair kv : headersData) {
-            state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
         }
         state.formData = new ArrayList<>();
         for (KeyValuePair kv : formData) {
-            KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder());
-            item.setType(kv.getType());
-            item.setFilePath(kv.getFilePath());
-            item.setFileName(kv.getFileName());
-            state.formData.add(item);
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                item.setType(kv.getType());
+                item.setFilePath(kv.getFilePath());
+                item.setFileName(kv.getFileName());
+                state.formData.add(item);
+            }
         }
         state.urlEncoded = new ArrayList<>();
         for (KeyValuePair kv : urlEncodedData) {
-            state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
         }
         state.socketIoNamespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : "";
         state.socketIoEventName = socketIoEventNameField != null ? socketIoEventNameField.getText() : "";
@@ -10417,14 +10474,18 @@ public class MainController implements Initializable {
             paramsData.clear();
             if (state.params != null && !state.params.isEmpty()) {
                 for (KeyValuePair kv : state.params) {
-                    paramsData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        paramsData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                    }
                 }
             }
             ensurePlaceholderRow();
             headersData.clear();
             if (state.headers != null && !state.headers.isEmpty()) {
                 for (KeyValuePair kv : state.headers) {
-                    headersData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        headersData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                    }
                 }
             }
             ensureHeadersPlaceholderRow();
@@ -10434,11 +10495,13 @@ public class MainController implements Initializable {
             formData.clear();
             if (state.formData != null && !state.formData.isEmpty()) {
                 for (KeyValuePair kv : state.formData) {
-                    KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder());
-                    item.setType(kv.getType());
-                    item.setFilePath(kv.getFilePath());
-                    item.setFileName(kv.getFileName());
-                    formData.add(item);
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                        item.setType(kv.getType());
+                        item.setFilePath(kv.getFilePath());
+                        item.setFileName(kv.getFileName());
+                        formData.add(item);
+                    }
                 }
             }
             ensureFormDataPlaceholderRow();
@@ -10448,7 +10511,9 @@ public class MainController implements Initializable {
             urlEncodedData.clear();
             if (state.urlEncoded != null && !state.urlEncoded.isEmpty()) {
                 for (KeyValuePair kv : state.urlEncoded) {
-                    urlEncodedData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        urlEncodedData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                    }
                 }
             }
             ensureUrlEncodedPlaceholderRow();
@@ -10472,6 +10537,10 @@ public class MainController implements Initializable {
             } else {
                 socketIoEventsData.add(new SocketIoEventItem("", true, ""));
             }
+            if (rawFormatMenu != null) {
+                String rf = (state.rawFormat != null && !state.rawFormat.isBlank()) ? state.rawFormat : "JSON";
+                rawFormatMenu.setText(rf);
+            }
             String bType = state.bodyType;
             if (bType == null || bType.isBlank()) {
                 bType = (state.body != null && !state.body.isBlank()) ? "Raw" : "None";
@@ -10488,6 +10557,24 @@ public class MainController implements Initializable {
 
             updateRequestBuilderTabs(state.method);
             updateResponseTabs(state.method);
+
+            if (requestBuilderTabPane != null && state.activeSubTab != null && !state.activeSubTab.isBlank()) {
+                for (Tab subTab : requestBuilderTabPane.getTabs()) {
+                    if (subTab.getText() != null && subTab.getText().equalsIgnoreCase(state.activeSubTab.trim())) {
+                        requestBuilderTabPane.getSelectionModel().select(subTab);
+                        break;
+                    }
+                }
+            }
+
+            if (responseTabPane != null && state.activeResponseSubTab != null && !state.activeResponseSubTab.isBlank()) {
+                for (Tab respTab : responseTabPane.getTabs()) {
+                    if (respTab.getText() != null && respTab.getText().equalsIgnoreCase(state.activeResponseSubTab.trim())) {
+                        responseTabPane.getSelectionModel().select(respTab);
+                        break;
+                    }
+                }
+            }
         } finally {
             restoringTabState = false;
         }
@@ -10669,6 +10756,9 @@ public class MainController implements Initializable {
         dto.setUrl(state.url);
         dto.setBody(state.body);
         dto.setBodyType(state.bodyType);
+        dto.setRawFormat(state.rawFormat);
+        dto.setActiveSubTab(state.activeSubTab);
+        dto.setActiveResponseSubTab(state.activeResponseSubTab);
         dto.setGraphqlQuery(state.graphqlQuery);
         dto.setGraphqlVariables(state.graphqlVariables);
         dto.setPreScript(state.preScript);
@@ -10681,28 +10771,28 @@ public class MainController implements Initializable {
 
         if (state.params != null) {
             for (KeyValuePair kv : state.params) {
-                if (!kv.isPlaceholder()) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
                     dto.getParams().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
                 }
             }
         }
         if (state.headers != null) {
             for (KeyValuePair kv : state.headers) {
-                if (!kv.isPlaceholder()) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
                     dto.getHeaders().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
                 }
             }
         }
         if (state.formData != null) {
             for (KeyValuePair kv : state.formData) {
-                if (!kv.isPlaceholder()) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
                     dto.getFormData().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, kv.getType(), kv.getFilePath(), kv.getFileName()));
                 }
             }
         }
         if (state.urlEncoded != null) {
             for (KeyValuePair kv : state.urlEncoded) {
-                if (!kv.isPlaceholder()) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
                     dto.getUrlEncoded().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
                 }
             }
@@ -10727,6 +10817,9 @@ public class MainController implements Initializable {
         state.url = dto.getUrl() != null ? dto.getUrl() : "";
         state.body = dto.getBody() != null ? dto.getBody() : "";
         state.bodyType = dto.getBodyType() != null ? dto.getBodyType() : "None";
+        state.rawFormat = dto.getRawFormat() != null ? dto.getRawFormat() : "JSON";
+        state.activeSubTab = dto.getActiveSubTab() != null ? dto.getActiveSubTab() : "Params";
+        state.activeResponseSubTab = dto.getActiveResponseSubTab() != null ? dto.getActiveResponseSubTab() : "Body";
         state.graphqlQuery = dto.getGraphqlQuery() != null ? dto.getGraphqlQuery() : "";
         state.graphqlVariables = dto.getGraphqlVariables() != null ? dto.getGraphqlVariables() : "";
         state.preScript = dto.getPreScript() != null ? dto.getPreScript() : "";
@@ -10740,29 +10833,37 @@ public class MainController implements Initializable {
         state.params = new ArrayList<>();
         if (dto.getParams() != null) {
             for (KeyValuePairDto kv : dto.getParams()) {
-                state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription()));
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()))) {
+                    state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
             }
         }
         state.headers = new ArrayList<>();
         if (dto.getHeaders() != null) {
             for (KeyValuePairDto kv : dto.getHeaders()) {
-                state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()))) {
+                    state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
             }
         }
         state.formData = new ArrayList<>();
         if (dto.getFormData() != null) {
             for (KeyValuePairDto kv : dto.getFormData()) {
-                KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
-                item.setType(kv.getType() != null ? kv.getType() : "Text");
-                item.setFilePath(kv.getFilePath() != null ? kv.getFilePath() : "");
-                item.setFileName(kv.getFileName() != null ? kv.getFileName() : "");
-                state.formData.add(item);
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()) || (kv.getFilePath() != null && !kv.getFilePath().trim().isEmpty()))) {
+                    KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                    item.setType(kv.getType() != null ? kv.getType() : "Text");
+                    item.setFilePath(kv.getFilePath() != null ? kv.getFilePath() : "");
+                    item.setFileName(kv.getFileName() != null ? kv.getFileName() : "");
+                    state.formData.add(item);
+                }
             }
         }
         state.urlEncoded = new ArrayList<>();
         if (dto.getUrlEncoded() != null) {
             for (KeyValuePairDto kv : dto.getUrlEncoded()) {
-                state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()))) {
+                    state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
             }
         }
         state.socketIoNamespace = dto.getSocketIoNamespace() != null ? dto.getSocketIoNamespace() : "";
@@ -12712,34 +12813,44 @@ public class MainController implements Initializable {
         }
     }
 
+    private void applyRawFormat(String format, String contentType) {
+        if (rawFormatMenu != null) rawFormatMenu.setText(format);
+        setOrUpdateHeader("Content-Type", contentType);
+        if (!restoringTabState) {
+            Tab active = activeRequestTab();
+            if (active != null && tabStates.containsKey(active)) {
+                RequestTabState state = tabStates.get(active);
+                if (state != null) {
+                    state.rawFormat = format;
+                    scheduleSessionSave();
+                }
+            }
+        }
+    }
+
     @FXML
     private void handleSelectRawFormatJson() {
-        if (rawFormatMenu != null) rawFormatMenu.setText("JSON");
-        setOrUpdateHeader("Content-Type", "application/json");
+        applyRawFormat("JSON", "application/json");
     }
 
     @FXML
     private void handleSelectRawFormatXml() {
-        if (rawFormatMenu != null) rawFormatMenu.setText("XML");
-        setOrUpdateHeader("Content-Type", "application/xml");
+        applyRawFormat("XML", "application/xml");
     }
 
     @FXML
     private void handleSelectRawFormatHtml() {
-        if (rawFormatMenu != null) rawFormatMenu.setText("HTML");
-        setOrUpdateHeader("Content-Type", "text/html");
+        applyRawFormat("HTML", "text/html");
     }
 
     @FXML
     private void handleSelectRawFormatText() {
-        if (rawFormatMenu != null) rawFormatMenu.setText("Text");
-        setOrUpdateHeader("Content-Type", "text/plain");
+        applyRawFormat("Text", "text/plain");
     }
 
     @FXML
     private void handleSelectRawFormatJs() {
-        if (rawFormatMenu != null) rawFormatMenu.setText("JavaScript");
-        setOrUpdateHeader("Content-Type", "application/javascript");
+        applyRawFormat("JavaScript", "application/javascript");
     }
 
     @FXML
