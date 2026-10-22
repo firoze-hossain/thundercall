@@ -1,14 +1,19 @@
 /* ============================================================
-   Thundercall — Dark Theme v2
+   Thundercall — Ergonomic Dark Theme (Soft Charcoal & Slate)
    Drop-in replacement for src/main/resources/css/main.css
 
-   Design principles for v2 (fixes "messy color" feedback):
-   - A clear 4-step elevation ladder so panels visibly separate:
-       base #141519  →  panel #1d1f24  →  elevated #272a31  →  hover #31353d
-   - ONE accent color (orange), used only for: Send, selected tab,
-     selection highlight, focus ring. Everything else stays neutral.
-   - Tables get a tinted header row and subtle separators (no black holes).
-   - All buttons are dark surfaces with borders; no light-gray blocks.
+   Design principles:
+   - A clear 5-step elevation ladder with zero muddy tones:
+       base #0f1115  →  panel #16181d  →  elevated #1e2229  →  hover #262b35  →  active #303744
+   - Daylight & Night Vision Ergonomics:
+       * Slate-100 (#f1f5f9) primary text: crystal clear legibility without pupillary halation.
+       * Slate-400 (#94a3b8) secondary text: guaranteed 4.5:1+ contrast against glare in daytime.
+       * Slate-500 (#64748b) muted text: crisp hints that never wash out in sunlit rooms.
+   - Soft Method Badges:
+       * Replaces solid neon blocks with translucent tinted pills (rgba + 1px border + bright text)
+       * Eliminates visual noise across long endpoint trees while maintaining instant identification.
+   - Crisp Architectural Borders (#2b323e / #1f242d):
+       * Distinct geometric boundaries between toolbars, trees, and response panes.
    ============================================================ */
 
 .root {
@@ -16,28 +21,38 @@
     -fx-font-size: 13px;
     -fx-font-smoothing-type: lcd;
 
-    /* ---- Design tokens ---- */
-    -bg-base: #141519;
-    -bg-panel: #1d1f24;
-    -bg-elevated: #272a31;
-    -bg-hover: #31353d;
-    -bg-active: #3a3f48;
-    -border-color: #363a43;
-    -border-subtle: #262931;
-    -text-primary: #e7e8ec;
-    -text-secondary: #9a9ea9;
-    -text-muted: #666b76;
+    /* ---- Design tokens (Soft Charcoal & Slate Dark Theme) ---- */
+    /* Canvas & Paneling */
+    -bg-base: #0f1115;
+    -bg-panel: #16181d;
+    -bg-elevated: #1e2229;
+    -bg-hover: #262b35;
+    -bg-active: #303744;
+
+    /* Architectural Borders */
+    -border-color: #2b323e;
+    -border-subtle: #1f242d;
+
+    /* Ergonomic Slate Typography */
+    -text-primary: #f1f5f9;
+    -text-secondary: #94a3b8;
+    -text-muted: #64748b;
+
+    /* Accent & Brand (ThunderCall signature energetic orange) */
     -accent: #ff6c37;
-    -accent-hover: #ff835a;
-    -accent-pressed: #e0551f;
+    -accent-hover: #ff7d4d;
+    -accent-pressed: #e55a26;
     -accent-soft: rgba(255, 108, 55, 0.14);
-    -success: #56c99f;
-    -success-soft: rgba(86, 201, 159, 0.12);
-    -warning: #d9a83e;
-    -warning-soft: rgba(217, 168, 62, 0.12);
-    -danger: #e5726a;
-    -danger-soft: rgba(229, 114, 106, 0.12);
-    -info: #6aa8f0;
+
+    /* Semantic Status */
+    -success: #10b981;
+    -success-soft: rgba(16, 185, 129, 0.14);
+    -warning: #f59e0b;
+    -warning-soft: rgba(245, 158, 11, 0.14);
+    -danger: #ef4444;
+    -danger-soft: rgba(239, 68, 68, 0.14);
+    -info: #3b82f6;
+    -info-soft: rgba(59, 130, 246, 0.14);
 
     /* JavaFX looked-up colors mapped to design tokens so controls stay dark by default */
     -fx-base: -bg-base;
@@ -225,6 +240,17 @@
     -fx-max-height: 38px;
 }
 .method-combo .list-cell { -fx-text-fill: -text-primary; -fx-font-weight: bold; }
+.method-combo .list-cell.method-get { -fx-text-fill: #34d399; }
+.method-combo .list-cell.method-post { -fx-text-fill: #fbbf24; }
+.method-combo .list-cell.method-put { -fx-text-fill: #60a5fa; }
+.method-combo .list-cell.method-patch { -fx-text-fill: #c084fc; }
+.method-combo .list-cell.method-delete,
+.method-combo .list-cell.method-del { -fx-text-fill: #f87171; }
+.method-combo .list-cell.method-head { -fx-text-fill: #2dd4bf; }
+.method-combo .list-cell.method-options,
+.method-combo .list-cell.method-opt { -fx-text-fill: #94a3b8; }
+.method-combo .list-cell.method-ws { -fx-text-fill: #22d3ee; }
+.method-combo .list-cell.method-socketio { -fx-text-fill: #e879f9; }
 .method-combo .arrow { -fx-background-color: -text-secondary; }
 
 .send-button {
@@ -721,11 +747,22 @@
     -fx-font-size: 12px;
     -fx-text-fill: -success;
     -fx-background-color: -success-soft;
+    -fx-border-color: rgba(16, 185, 129, 0.35);
+    -fx-border-radius: 4;
+    -fx-border-width: 1;
     -fx-background-radius: 4;
     -fx-padding: 2 10 2 10;
 }
-.status-label.status-error { -fx-text-fill: -danger; -fx-background-color: -danger-soft; }
-.status-label.status-warn { -fx-text-fill: -warning; -fx-background-color: -warning-soft; }
+.status-label.status-error {
+    -fx-text-fill: -danger;
+    -fx-background-color: -danger-soft;
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+}
+.status-label.status-warn {
+    -fx-text-fill: -warning;
+    -fx-background-color: -warning-soft;
+    -fx-border-color: rgba(245, 158, 11, 0.35);
+}
 .time-label, .size-label { -fx-text-fill: -text-secondary; -fx-font-size: 12px; }
 
 .response-body {
@@ -872,8 +909,8 @@
 /* Scrollbars */
 .scroll-bar { -fx-background-color: transparent; }
 .scroll-bar .track { -fx-background-color: transparent; }
-.scroll-bar .thumb { -fx-background-color: #3d414b; -fx-background-radius: 10; }
-.scroll-bar .thumb:hover { -fx-background-color: #4a4f5a; }
+.scroll-bar .thumb { -fx-background-color: rgba(255, 255, 255, 0.14); -fx-background-radius: 10; }
+.scroll-bar .thumb:hover { -fx-background-color: rgba(255, 255, 255, 0.24); }
 .scroll-bar .increment-button, .scroll-bar .decrement-button {
     -fx-background-color: transparent; -fx-padding: 2;
 }
@@ -986,15 +1023,17 @@
 
 /* HTTP method colors — add via cell factory:
    getStyleClass().add("method-" + method.toLowerCase()) */
-.method-get     { -fx-text-fill: #56c99f; -fx-font-weight: bold; }
-.method-post    { -fx-text-fill: #d9a83e; -fx-font-weight: bold; }
-.method-put     { -fx-text-fill: #6aa8f0; -fx-font-weight: bold; }
-.method-patch   { -fx-text-fill: #b98af0; -fx-font-weight: bold; }
-.method-delete  { -fx-text-fill: #e5726a; -fx-font-weight: bold; }
-.method-head    { -fx-text-fill: #7ec98f; -fx-font-weight: bold; }
-.method-options { -fx-text-fill: #9aa0a6; -fx-font-weight: bold; }
-.method-ws      { -fx-text-fill: #4dd0e1; -fx-font-weight: bold; }
-.method-socketio { -fx-text-fill: #ab47bc; -fx-font-weight: bold; }
+.method-get     { -fx-text-fill: #34d399; -fx-font-weight: bold; }
+.method-post    { -fx-text-fill: #fbbf24; -fx-font-weight: bold; }
+.method-put     { -fx-text-fill: #60a5fa; -fx-font-weight: bold; }
+.method-patch   { -fx-text-fill: #c084fc; -fx-font-weight: bold; }
+.method-delete  { -fx-text-fill: #f87171; -fx-font-weight: bold; }
+.method-del     { -fx-text-fill: #f87171; -fx-font-weight: bold; }
+.method-head    { -fx-text-fill: #2dd4bf; -fx-font-weight: bold; }
+.method-options { -fx-text-fill: #94a3b8; -fx-font-weight: bold; }
+.method-opt     { -fx-text-fill: #94a3b8; -fx-font-weight: bold; }
+.method-ws      { -fx-text-fill: #22d3ee; -fx-font-weight: bold; }
+.method-socketio { -fx-text-fill: #e879f9; -fx-font-weight: bold; }
 
 /* ============================================================
    Auth pages (login.fxml / register.fxml / verify-email.fxml)
@@ -1345,23 +1384,30 @@
 /* Left icon rail (Collections / Environments / History) */
 .icon-rail {
     -fx-background-color: -bg-panel;
+    -fx-border-color: transparent -border-subtle transparent transparent;
+    -fx-border-width: 0 1 0 0;
 }
 .rail-btn {
     -fx-background-color: transparent;
     -fx-text-fill: -text-secondary;
     -fx-font-size: 10px;
-    -fx-background-radius: 8;
+    -fx-background-radius: 6;
     -fx-border-color: transparent;
-    -fx-padding: 8 2 8 2;
+    -fx-border-radius: 6;
+    -fx-padding: 7 2 7 2;
     -fx-cursor: hand;
     -fx-content-display: top;
-    -fx-graphic-text-gap: 4;
+    -fx-graphic-text-gap: 5;
 }
-.rail-btn:hover { -fx-background-color: -bg-hover; -fx-text-fill: -text-primary; }
+.rail-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
 .rail-btn:selected {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -accent;
     -fx-font-weight: bold;
+    -fx-border-color: rgba(255, 108, 55, 0.28);
 }
 
 .sidebar-hint {
@@ -1390,7 +1436,13 @@
     -fx-padding: 5 12 5 12;
     -fx-font-size: 12px;
 }
-.global-search:focused { -fx-border-color: -accent; }
+.global-search:hover {
+    -fx-border-color: #3b4252;
+}
+.global-search:focused {
+    -fx-border-color: -accent;
+    -fx-effect: dropshadow(three-pass-box, rgba(255, 108, 55, 0.22), 5, 0, 0, 0);
+}
 
 .sidebar-search {
     -fx-background-color: -bg-elevated;
@@ -1402,19 +1454,26 @@
     -fx-padding: 5 10 5 10;
     -fx-font-size: 12px;
 }
-.sidebar-search:focused { -fx-border-color: -accent; }
+.sidebar-search:hover {
+    -fx-border-color: -border-color;
+}
+.sidebar-search:focused {
+    -fx-border-color: -accent;
+    -fx-effect: dropshadow(three-pass-box, rgba(255, 108, 55, 0.22), 5, 0, 0, 0);
+}
 
 /* Method badge inside tree rows (GET / POST / DEL ...) */
 .tree-method,
 .tree-method-chip {
     -fx-font-size: 10px;
     -fx-font-weight: bold;
-    -fx-text-fill: white;
-    -fx-padding: 2 7 2 7;
+    -fx-padding: 2 6 2 6;
     -fx-background-radius: 4px;
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
     -fx-alignment: CENTER;
-    -fx-min-width: 46px;
-    -fx-pref-width: 46px;
+    -fx-min-width: 44px;
+    -fx-pref-width: 44px;
 }
 
 /* Hover + / ⋯ buttons on collection & folder rows */
@@ -2004,7 +2063,7 @@
     -fx-text-fill: -text-primary;
 }
 .text.search-match { -rtfx-background-color: #5a5320; }
-.text.search-match-current { -rtfx-background-color: -accent; -fx-fill: #1d1f24; }
+.text.search-match-current { -rtfx-background-color: -accent; -fx-fill: -bg-base; }
 
 /* ---- Postman-style inline comment highlight (body editor) ---- */
 .text.comment-highlight { -rtfx-background-color: rgba(217, 168, 62, 0.35); }
@@ -2248,27 +2307,28 @@
     -fx-font-family: "Consolas", "Monaco", monospace;
 }
 .shared-workspace-status-ok {
-    -fx-text-fill: #56c99f;
+    -fx-text-fill: -success;
     -fx-font-weight: bold;
 }
 .shared-workspace-status-error {
-    -fx-text-fill: #e5726a;
+    -fx-text-fill: -danger;
     -fx-font-weight: bold;
 }
 
 /* ============================================================
-   Method chips — filled interactive pills with vibrant colors
+   Method chips — Ergonomic tinted pills (Soft Dark Theme)
    Used in Collections tree, Shared Workspaces, Tabs, and Search
    ============================================================ */
 .method-chip {
     -fx-font-size: 10px;
     -fx-font-weight: bold;
-    -fx-text-fill: white;
-    -fx-padding: 2 7 2 7;
+    -fx-padding: 2 6 2 6;
     -fx-background-radius: 4px;
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
     -fx-alignment: CENTER;
-    -fx-min-width: 46px;
-    -fx-pref-width: 46px;
+    -fx-min-width: 44px;
+    -fx-pref-width: 44px;
 }
 
 .method-chip-get,
@@ -2276,24 +2336,33 @@
 .tree-method.method-get,
 .tree-method-chip.method-chip-get,
 .tab-method-badge.method-get {
-    -fx-background-color: #56c99f;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(16, 185, 129, 0.16);
+    -fx-border-color: rgba(16, 185, 129, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #34d399;
 }
 .method-chip-post,
 .method-chip.method-post,
 .tree-method.method-post,
 .tree-method-chip.method-chip-post,
 .tab-method-badge.method-post {
-    -fx-background-color: #d9a83e;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(245, 158, 11, 0.16);
+    -fx-border-color: rgba(245, 158, 11, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #fbbf24;
 }
 .method-chip-put,
 .method-chip.method-put,
 .tree-method.method-put,
 .tree-method-chip.method-chip-put,
 .tab-method-badge.method-put {
-    -fx-background-color: #6aa8f0;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(59, 130, 246, 0.16);
+    -fx-border-color: rgba(59, 130, 246, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #60a5fa;
 }
 .method-chip-patch,
 .method-chip-pat,
@@ -2301,8 +2370,11 @@
 .tree-method.method-patch,
 .tree-method-chip.method-chip-patch,
 .tab-method-badge.method-patch {
-    -fx-background-color: #b98af0;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(168, 85, 247, 0.16);
+    -fx-border-color: rgba(168, 85, 247, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #c084fc;
 }
 .method-chip-delete,
 .method-chip-del,
@@ -2311,16 +2383,22 @@
 .tree-method-chip.method-chip-delete,
 .tab-method-badge.method-delete,
 .tab-method-badge.method-del {
-    -fx-background-color: #e5726a;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(239, 68, 68, 0.16);
+    -fx-border-color: rgba(239, 68, 68, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #f87171;
 }
 .method-chip-head,
 .method-chip.method-head,
 .tree-method.method-head,
 .tree-method-chip.method-chip-head,
 .tab-method-badge.method-head {
-    -fx-background-color: #7ec98f;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(20, 184, 166, 0.16);
+    -fx-border-color: rgba(20, 184, 166, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #2dd4bf;
 }
 .method-chip-options,
 .method-chip-opt,
@@ -2328,36 +2406,45 @@
 .tree-method.method-options,
 .tree-method-chip.method-chip-options,
 .tab-method-badge.method-options {
-    -fx-background-color: #9aa0a6;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(148, 163, 184, 0.16);
+    -fx-border-color: rgba(148, 163, 184, 0.35);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #94a3b8;
 }
 .method-chip-ws,
 .method-chip.method-ws,
 .tree-method.method-ws,
 .tree-method-chip.method-chip-ws,
 .tab-method-badge.method-ws {
-    -fx-background-color: #4dd0e1;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(6, 182, 212, 0.16);
+    -fx-border-color: rgba(6, 182, 212, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #22d3ee;
 }
 .method-chip-socketio,
 .method-chip.method-socketio,
 .tree-method.method-socketio,
 .tree-method-chip.method-chip-socketio,
 .tab-method-badge.method-socketio {
-    -fx-background-color: #ab47bc;
-    -fx-text-fill: white;
+    -fx-background-color: rgba(192, 132, 252, 0.16);
+    -fx-border-color: rgba(192, 132, 252, 0.38);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+    -fx-text-fill: #e879f9;
 }
 
 /* Hover and selection interactive elevation */
 .tree-cell:hover .method-chip,
 .tree-cell:hover .tree-method-chip,
 .tree-cell:hover .tree-method {
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.22), 4, 0, 0, 1);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.25), 3, 0, 0, 1);
 }
 .tree-cell:selected .method-chip,
 .tree-cell:selected .tree-method-chip,
 .tree-cell:selected .tree-method {
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 6, 0, 0, 1);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 4, 0, 0, 1);
 }
 
 .shared-workspace-env-row {

@@ -70,6 +70,7 @@
                     <Region HBox.hgrow="ALWAYS"/>
                     <TextField fx:id="globalSearchField" styleClass="global-search"
                                promptText="Search Thundercall  (Ctrl+K)" prefWidth="300"
+                               focusTraversable="false"
                                onAction="#handleGlobalSearch" onMouseClicked="#handleGlobalSearchFieldClicked"/>
                     <Region HBox.hgrow="ALWAYS"/>
 
@@ -134,10 +135,10 @@
                  it back out (labels reappear in full) or narrow it down
                  to icons only — same orange-on-hover divider as the
                  sidebar/response ones. -->
-            <SplitPane fx:id="sidebarSplitPane" orientation="HORIZONTAL" dividerPositions="0.09, 0.27"
+            <SplitPane fx:id="sidebarSplitPane" orientation="HORIZONTAL" dividerPositions="0.10, 0.28"
                        styleClass="sidebar-split-pane">
                 <VBox styleClass="icon-rail" spacing="4" alignment="TOP_CENTER"
-                      prefWidth="78" minWidth="56" maxWidth="160">
+                      prefWidth="86" minWidth="80" maxWidth="160">
                     <padding>
                         <Insets top="8" bottom="8" left="4" right="4"/>
                     </padding>
