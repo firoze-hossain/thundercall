@@ -1790,11 +1790,74 @@
 }
 .secondary-button:hover { -fx-background-color: -bg-hover; }
 
-/* Shared workspace dialogs — browse and send-request views */
+/* Shared workspace dialogs — browse, environments, and send-request views */
 .shared-workspace-dialog .dialog-pane,
 .shared-workspace-dialog {
-    -fx-background-color: -bg-panel;
+    -fx-background-color: -bg-base;
+    -fx-pref-width: 800px;
+    -fx-pref-height: 640px;
+    -fx-min-width: 740px;
+    -fx-min-height: 580px;
 }
+.shared-workspace-dialog > .button-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 18 10 18;
+}
+
+.shared-env-dialog .dialog-pane,
+.shared-env-dialog {
+    -fx-background-color: -bg-base;
+    -fx-pref-width: 680px;
+    -fx-pref-height: 520px;
+    -fx-min-width: 620px;
+    -fx-min-height: 460px;
+}
+.shared-env-dialog > .button-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 18 10 18;
+}
+
+.shared-request-dialog .dialog-pane,
+.shared-request-dialog {
+    -fx-background-color: -bg-base;
+    -fx-pref-width: 840px;
+    -fx-pref-height: 680px;
+    -fx-min-width: 780px;
+    -fx-min-height: 600px;
+}
+.shared-request-dialog > .button-bar {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 10 18 10 18;
+}
+
+.team-workspace-card {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 8 10 8 10;
+    -fx-cursor: hand;
+}
+.team-workspace-card:hover {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+}
+.team-workspace-card-title {
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-primary;
+}
+.team-workspace-card-meta {
+    -fx-font-size: 10px;
+    -fx-text-fill: -text-muted;
+}
+
 .shared-workspace-badge {
     -fx-background-color: -bg-elevated;
     -fx-text-fill: -text-secondary;

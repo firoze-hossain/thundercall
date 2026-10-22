@@ -7183,18 +7183,33 @@ public class MainController implements Initializable {
                     setText(null);
                     return;
                 }
+                HBox card = new HBox(10);
+                card.getStyleClass().add("team-workspace-card");
+                card.setAlignment(Pos.CENTER_LEFT);
+
+                StackPane avatar = createAvatar(access.getWorkspaceName());
+                avatar.setMinSize(28, 28);
+                avatar.setMaxSize(28, 28);
+
                 Label nameLabel = new Label(access.getWorkspaceName());
-                nameLabel.getStyleClass().add("variable-suggestion-name");
-                // Direct invites have no team at all — showing "via Direct
-                // invite" read oddly, so just omit the "via ..." part
-                // entirely when there's no real team behind this grant.
-                String meta = access.getRole() + " · owner: " + access.getWorkspaceOwnerUsername();
-                if (access.getTeamId() != null) {
-                    meta += " · via " + access.getTeamName();
+                nameLabel.getStyleClass().add("team-workspace-card-title");
+
+                String meta = "by " + access.getWorkspaceOwnerUsername();
+                if (access.getTeamName() != null && !access.getTeamName().isBlank()) {
+                    meta += " · " + access.getTeamName();
                 }
                 Label metaLabel = new Label(meta);
-                metaLabel.getStyleClass().add("variable-suggestion-value");
-                setGraphic(new VBox(1, nameLabel, metaLabel));
+                metaLabel.getStyleClass().add("team-workspace-card-meta");
+
+                VBox textBox = new VBox(2, nameLabel, metaLabel);
+                HBox.setHgrow(textBox, Priority.ALWAYS);
+
+                Label roleBadge = new Label(access.getRole());
+                roleBadge.getStyleClass().addAll("role-badge",
+                        "EDITOR".equals(access.getRole()) ? "role-badge-owner" : "role-badge-member");
+
+                card.getChildren().addAll(avatar, textBox, roleBadge);
+                setGraphic(card);
                 setText(null);
             }
         });
@@ -7913,38 +7928,95 @@ public class MainController implements Initializable {
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(access.getWorkspaceName());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
 
-        Label ownerBadge = new Label("Owner: " + access.getWorkspaceOwnerUsername());
-        ownerBadge.getStyleClass().add("shared-workspace-badge");
+        // --- Header ---
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinSize(38, 38);
+        headerBadge.setMaxSize(38, 38);
+
+        javafx.scene.shape.SVGPath wsIcon = new javafx.scene.shape.SVGPath();
+        wsIcon.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+        wsIcon.setStyle("-fx-fill: -accent;");
+        wsIcon.setScaleX(1.1);
+        wsIcon.setScaleY(1.1);
+        headerBadge.getChildren().add(wsIcon);
+
+        Label titleLabel = new Label(access.getWorkspaceName());
+        titleLabel.getStyleClass().add("share-title");
+
+        String ownerName = access.getWorkspaceOwnerUsername() != null ? access.getWorkspaceOwnerUsername() : "owner";
+        String subtitleText = "Shared workspace owned by " + ownerName;
+        if (access.getTeamName() != null && !access.getTeamName().isBlank()) {
+            subtitleText += " • via " + access.getTeamName();
+        }
+        Label subtitleLabel = new Label(subtitleText);
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
+
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        titleBox.setMinWidth(Region.USE_PREF_SIZE);
+
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        headerSpacer.setMinWidth(12);
+
         Label roleBadge = new Label(access.getRole());
-        roleBadge.getStyleClass().addAll("shared-workspace-badge",
-                canSend ? "shared-workspace-badge-editor" : "shared-workspace-badge-viewer");
-        HBox badgeRow = new HBox(8, ownerBadge, roleBadge);
-        badgeRow.setAlignment(Pos.CENTER_LEFT);
+        roleBadge.getStyleClass().addAll("role-badge",
+                canSend ? "role-badge-owner" : "role-badge-member");
 
-        Label hintLabel = new Label(canSend
-                ? "Double-click any request to send it."
-                : "Viewer access — browse only.");
-        hintLabel.getStyleClass().add("shared-workspace-hint");
+        Label hintBadge = new Label(canSend ? "Double-click request to send" : "Browse only");
+        hintBadge.getStyleClass().add("shared-workspace-hint");
+        hintBadge.setStyle("-fx-padding: 3 8 3 8; -fx-background-color: -bg-elevated; -fx-background-radius: 10px;");
 
-        VBox headerBox = new VBox(4, badgeRow, hintLabel);
-        headerBox.setPadding(new Insets(0, 0, 12, 0));
+        HBox headerRight = new HBox(8, hintBadge, roleBadge);
+        headerRight.setAlignment(Pos.CENTER_RIGHT);
 
-        // Tracks which node is a request (and which real request it maps
-        // to) vs. a folder vs. a collection, so the cell factory below can
-        // render each differently, and so double-click knows exactly what
-        // it's looking at.
+        HBox headerRow = new HBox(12, headerBadge, titleBox, headerSpacer, headerRight);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Tabs: Collections & Requests, and Environments ---
+        TabPane tabPane = new TabPane();
+        tabPane.getStyleClass().add("share-tab-pane");
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        Tab collectionsTab = new Tab("Collections & Requests");
+        Tab environmentsTab = new Tab("Environments (0)");
+
+        // Collections Content
+        VBox collectionsBox = new VBox(10);
+        collectionsBox.setPadding(new Insets(10, 0, 0, 0));
+
+        TextField filterField = new TextField();
+        filterField.setPromptText("Filter collections and requests...");
+        filterField.getStyleClass().add("search-field");
+        filterField.setStyle("-fx-pref-height: 32px; -fx-font-size: 12px;");
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+
+        Button expandAllBtn = new Button("Expand All");
+        expandAllBtn.getStyleClass().add("share-text-btn");
+
+        Button collapseAllBtn = new Button("Collapse All");
+        collapseAllBtn.getStyleClass().add("share-text-btn");
+
+        HBox filterBar = new HBox(8, filterField, expandAllBtn, collapseAllBtn);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+
         Map<TreeItem<String>, RequestResponse> requestByNode = new HashMap<>();
         Set<TreeItem<String>> folderNodes = new HashSet<>();
+        List<EnvironmentResponse> loadedEnvironments = new ArrayList<>();
 
         TreeItem<String> root = new TreeItem<>(access.getWorkspaceName());
         root.setExpanded(true);
         TreeView<String> tree = new TreeView<>(root);
         tree.setShowRoot(false);
-        tree.setPrefSize(520, 340);
         tree.getStyleClass().add("shared-workspace-tree");
+        VBox.setVgrow(tree, Priority.ALWAYS);
+
         tree.setCellFactory(tv -> new TreeCell<>() {
             @Override
             protected void updateItem(String item, boolean empty) {
@@ -7961,17 +8033,34 @@ public class MainController implements Initializable {
                     methodLabel.getStyleClass().addAll("method-chip",
                             "method-chip-" + req.getMethod().toString().toLowerCase(Locale.ROOT));
                     methodLabel.setMinWidth(48);
+
                     Label nameLabel = new Label(item);
-                    HBox row = new HBox(8, methodLabel, nameLabel);
+                    nameLabel.setStyle("-fx-text-fill: -text-primary; -fx-font-size: 12px;");
+
+                    Region spacer = new Region();
+                    HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                    HBox row = new HBox(8, methodLabel, nameLabel, spacer);
                     row.setAlignment(Pos.CENTER_LEFT);
                     row.getStyleClass().add("shared-workspace-request-row");
+
+                    if (canSend) {
+                        Label runHint = new Label("Send ↗");
+                        runHint.getStyleClass().add("share-text-btn");
+                        runHint.setOnMouseClicked(ev -> {
+                            ev.consume();
+                            openSendSharedRequestDialog(access.getWorkspaceId(), req, loadedEnvironments);
+                        });
+                        row.getChildren().add(runHint);
+                    }
+
                     setGraphic(row);
                     setText(null);
                 } else if (folderNodes.contains(treeItem)) {
                     ImageView icon = new ImageView(new Image(
                             getClass().getResourceAsStream("/images/folder-icon.png")));
-                    icon.setFitHeight(13);
-                    icon.setFitWidth(13);
+                    icon.setFitHeight(14);
+                    icon.setFitWidth(14);
                     icon.setPreserveRatio(true);
                     setGraphic(icon);
                     setText(item);
@@ -7979,8 +8068,8 @@ public class MainController implements Initializable {
                 } else {
                     ImageView icon = new ImageView(new Image(
                             getClass().getResourceAsStream("/images/collection-icon.png")));
-                    icon.setFitHeight(14);
-                    icon.setFitWidth(14);
+                    icon.setFitHeight(15);
+                    icon.setFitWidth(15);
                     icon.setPreserveRatio(true);
                     setGraphic(icon);
                     setText(item);
@@ -7991,73 +8080,113 @@ public class MainController implements Initializable {
             }
         });
 
-        // Environments are shown as real cards you can double-click —
-        // Editors can update the values, Viewers can look but not save.
-        List<EnvironmentResponse> loadedEnvironments = new ArrayList<>();
-        ListView<EnvironmentResponse> environmentsList = new ListView<>();
-        environmentsList.setPrefSize(520, 90);
-        environmentsList.setPlaceholder(new Label("No environments shared with you in this workspace."));
-        environmentsList.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(EnvironmentResponse env, boolean empty) {
-                super.updateItem(env, empty);
-                if (empty || env == null) {
-                    setGraphic(null);
-                    setText(null);
-                    return;
-                }
-                int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
-                Label nameLabel = new Label(env.getName());
-                nameLabel.getStyleClass().add("shared-workspace-env-name");
-                Label countLabel = new Label(varCount + (varCount == 1 ? " variable" : " variables")
-                        + (canSend ? "  ·  double-click to view or edit" : "  ·  double-click to view"));
-                countLabel.getStyleClass().add("shared-workspace-env-count");
-                VBox box = new VBox(2, nameLabel, countLabel);
-                box.getStyleClass().add("shared-workspace-env-row");
-                setGraphic(box);
-                setText(null);
+        expandAllBtn.setOnAction(e -> setTreeExpanded(root, true));
+        collapseAllBtn.setOnAction(e -> setTreeExpanded(root, false));
+
+        filterField.textProperty().addListener((obs, oldVal, query) -> {
+            String q = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
+            if (q.isEmpty()) {
+                setTreeExpanded(root, true);
+            } else {
+                expandMatchingNodes(root, q);
             }
         });
-        environmentsList.setOnMouseClicked(e -> {
-            if (e.getClickCount() != 2) {
-                return;
-            }
-            EnvironmentResponse selected = environmentsList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                openSharedEnvironmentDialog(selected, canSend);
-            }
-        });
+
+        collectionsBox.getChildren().addAll(filterBar, tree);
+        collectionsTab.setContent(collectionsBox);
+
+        // Environments Content
+        VBox environmentsContainer = new VBox(8);
+        environmentsContainer.setPadding(new Insets(12, 4, 12, 4));
+        ScrollPane envScroll = new ScrollPane(environmentsContainer);
+        envScroll.getStyleClass().add("share-scroll-area");
+        envScroll.setFitToWidth(true);
+        environmentsTab.setContent(envScroll);
+
+        tabPane.getTabs().addAll(collectionsTab, environmentsTab);
 
         ProgressIndicator spinner = new ProgressIndicator();
-        spinner.setMaxSize(28, 28);
-        Label statusLabel = new Label("Loading workspace…");
+        spinner.setMaxSize(24, 24);
+        Label statusLabel = new Label("Loading shared workspace contents…");
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: -text-muted;");
         HBox loadingRow = new HBox(8, spinner, statusLabel);
         loadingRow.setAlignment(Pos.CENTER_LEFT);
+        loadingRow.setPadding(new Insets(4, 0, 4, 0));
 
-        Label collectionsHeader = new Label("Collections");
-        collectionsHeader.getStyleClass().add("shared-workspace-section-title");
-        Label environmentsHeader = new Label("Environments");
-        environmentsHeader.getStyleClass().add("shared-workspace-section-title");
-
-        VBox content = new VBox(10,
-                headerBox,
-                loadingRow,
-                collectionsHeader, tree,
-                environmentsHeader, environmentsList);
+        VBox content = new VBox(12, headerRow, loadingRow, tabPane);
         content.setPadding(new Insets(16));
-        content.setPrefWidth(560);
         dialog.getDialogPane().setContent(content);
         initAndStyleDialog(dialog);
 
+        Runnable renderEnvironments = () -> {
+            environmentsContainer.getChildren().clear();
+            environmentsTab.setText("Environments (" + loadedEnvironments.size() + ")");
+            if (loadedEnvironments.isEmpty()) {
+                VBox emptyBox = new VBox(8);
+                emptyBox.getStyleClass().add("share-empty-box");
+                javafx.scene.shape.SVGPath emptyGlobeSvg = new javafx.scene.shape.SVGPath();
+                emptyGlobeSvg.setContent("M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8 0-.55.06-1.09.17-1.61L9 15.24V17a2 2 0 002 2v.93c.33.05.66.07 1 .07zm6.93-4.16A7.96 7.96 0 0019 12c0-1.42-.37-2.75-1.02-3.91l-4.91 4.91a2 2 0 01-1.41.59h-1.6v2h2a2 2 0 002-2v-.59l5.93-2.16z");
+                emptyGlobeSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                emptyGlobeSvg.setScaleX(1.3);
+                emptyGlobeSvg.setScaleY(1.3);
+                Label emptyTitle = new Label("No environments shared in this workspace");
+                emptyTitle.getStyleClass().add("share-empty-title");
+                Label emptyDesc = new Label("Environments granted to you by the workspace owner will appear here.");
+                emptyDesc.getStyleClass().add("share-empty-desc");
+                emptyBox.getChildren().addAll(emptyGlobeSvg, emptyTitle, emptyDesc);
+                environmentsContainer.getChildren().add(emptyBox);
+            } else {
+                for (EnvironmentResponse env : loadedEnvironments) {
+                    HBox row = new HBox(12);
+                    row.getStyleClass().add("share-row");
+                    row.setAlignment(Pos.CENTER_LEFT);
+
+                    StackPane envIconBadge = new StackPane();
+                    envIconBadge.getStyleClass().add("share-avatar");
+                    envIconBadge.setStyle("-fx-background-color: #0891B2;");
+                    javafx.scene.shape.SVGPath envSvg = new javafx.scene.shape.SVGPath();
+                    envSvg.setContent("M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8 0-.55.06-1.09.17-1.61L9 15.24V17a2 2 0 002 2v.93c.33.05.66.07 1 .07zm6.93-4.16A7.96 7.96 0 0019 12c0-1.42-.37-2.75-1.02-3.91l-4.91 4.91a2 2 0 01-1.41.59h-1.6v2h2a2 2 0 002-2v-.59l5.93-2.16z");
+                    envSvg.setStyle("-fx-fill: white;");
+                    envSvg.setScaleX(0.75);
+                    envSvg.setScaleY(0.75);
+                    envIconBadge.getChildren().add(envSvg);
+
+                    int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
+                    Label nameLabel = new Label(env.getName());
+                    nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+
+                    Label metaLabel = new Label(varCount + (varCount == 1 ? " variable" : " variables")
+                            + " • " + (canSend ? "Double-click to view or edit" : "Double-click to view"));
+                    metaLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                    VBox details = new VBox(2, nameLabel, metaLabel);
+
+                    Region spacer = new Region();
+                    HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                    Button actionBtn = new Button(canSend ? "Edit Variables" : "View Variables");
+                    actionBtn.getStyleClass().add("share-env-btn");
+                    actionBtn.setOnAction(ev -> openSharedEnvironmentDialog(env, canSend));
+
+                    row.setOnMouseClicked(ev -> {
+                        if (ev.getClickCount() == 2) {
+                            openSharedEnvironmentDialog(env, canSend);
+                        }
+                    });
+
+                    row.getChildren().addAll(envIconBadge, details, spacer, actionBtn);
+                    environmentsContainer.getChildren().add(row);
+                }
+            }
+        };
+
         if (canSend) {
             tree.setOnMouseClicked(e -> {
-                if (e.getClickCount() != 2) {
-                    return;
-                }
-                TreeItem<String> selected = tree.getSelectionModel().getSelectedItem();
-                RequestResponse request = selected != null ? requestByNode.get(selected) : null;
-                if (request != null) {
-                    openSendSharedRequestDialog(access.getWorkspaceId(), request, loadedEnvironments);
+                if (e.getClickCount() == 2) {
+                    TreeItem<String> selected = tree.getSelectionModel().getSelectedItem();
+                    RequestResponse req = selected != null ? requestByNode.get(selected) : null;
+                    if (req != null) {
+                        openSendSharedRequestDialog(access.getWorkspaceId(), req, loadedEnvironments);
+                    }
                 }
             });
         }
@@ -8077,16 +8206,6 @@ public class MainController implements Initializable {
                             List<RequestResponse> requests = collection.getRequestResponses() != null
                                     ? collection.getRequestResponses() : List.of();
 
-                            // FIX: this used to only ever attach TOP-LEVEL
-                            // requests directly under the collection —
-                            // anything organized into a folder (the normal
-                            // case for any real collection) never got
-                            // attached anywhere, so folders always looked
-                            // empty and there was nothing to double-click.
-                            // Building this in two passes (create every
-                            // folder node first, then attach by parent)
-                            // handles nested folders correctly regardless
-                            // of what order they come back from the server.
                             Map<Long, TreeItem<String>> folderNodeById = new HashMap<>();
                             for (FolderResponse folder : folders) {
                                 TreeItem<String> folderNode = new TreeItem<>(folder.getName());
@@ -8111,8 +8230,8 @@ public class MainController implements Initializable {
                     }
                     if (wc.getEnvironments() != null) {
                         loadedEnvironments.addAll(wc.getEnvironments());
-                        environmentsList.getItems().setAll(wc.getEnvironments());
                     }
+                    renderEnvironments.run();
                 });
                 if (contents.isEmpty()) {
                     statusLabel.setText("Couldn't load this workspace — you may no longer have access.");
@@ -8126,27 +8245,107 @@ public class MainController implements Initializable {
         dialog.showAndWait();
     }
 
+    private void setTreeExpanded(TreeItem<String> item, boolean expanded) {
+        if (item == null) return;
+        item.setExpanded(expanded);
+        for (TreeItem<String> child : item.getChildren()) {
+            setTreeExpanded(child, expanded);
+        }
+    }
+
+    private boolean expandMatchingNodes(TreeItem<String> item, String query) {
+        if (item == null) return false;
+        boolean childMatched = false;
+        for (TreeItem<String> child : item.getChildren()) {
+            if (expandMatchingNodes(child, query)) {
+                childMatched = true;
+            }
+        }
+        boolean matched = (item.getValue() != null && item.getValue().toLowerCase(Locale.ROOT).contains(query)) || childMatched;
+        item.setExpanded(matched);
+        return matched;
+    }
+
     /** Shows one shared workspace's environment variables — Editors can
-     * change and save them (reusing the exact same update endpoint the
-     * main Environments panel uses; the backend's access guard already
-     * allows this for a shared environment, not just an owned one),
-     * Viewers get a clean read-only view. */
+     * change and save them, Viewers get a clean read-only view. */
     private void openSharedEnvironmentDialog(EnvironmentResponse env, boolean canEdit) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(env.getName());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
+        dialog.getDialogPane().getStyleClass().add("shared-env-dialog");
 
-        Label hintLabel = new Label(canEdit
-                ? "You can edit these values — Save writes back to the real environment."
-                : "Viewer access — values shown read-only.");
-        hintLabel.getStyleClass().add("shared-workspace-hint");
+        // Header
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinSize(36, 36);
+        headerBadge.setMaxSize(36, 36);
 
+        javafx.scene.shape.SVGPath globeSvg = new javafx.scene.shape.SVGPath();
+        globeSvg.setContent("M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8 0-.55.06-1.09.17-1.61L9 15.24V17a2 2 0 002 2v.93c.33.05.66.07 1 .07zm6.93-4.16A7.96 7.96 0 0019 12c0-1.42-.37-2.75-1.02-3.91l-4.91 4.91a2 2 0 01-1.41.59h-1.6v2h2a2 2 0 002-2v-.59l5.93-2.16z");
+        globeSvg.setStyle("-fx-fill: -accent;");
+        globeSvg.setScaleX(1.0);
+        globeSvg.setScaleY(1.0);
+        headerBadge.getChildren().add(globeSvg);
+
+        Label titleLabel = new Label(env.getName());
+        titleLabel.getStyleClass().add("share-title");
+
+        Label subtitleLabel = new Label(canEdit
+                ? "Edit environment variables • Changes sync directly back to the shared workspace"
+                : "Viewer access — variables are displayed read-only");
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
+
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        HBox headerRow = new HBox(12, headerBadge, titleBox);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Status Banner
+        HBox statusBanner = new HBox(8);
+        statusBanner.getStyleClass().add("share-status-banner");
+        statusBanner.setAlignment(Pos.CENTER_LEFT);
+        statusBanner.setVisible(false);
+        statusBanner.setManaged(false);
+
+        Label statusIcon = new Label();
+        statusIcon.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+        Label statusText = new Label();
+        statusText.setWrapText(true);
+        HBox.setHgrow(statusText, Priority.ALWAYS);
+
+        Button dismissBannerBtn = new Button("✕");
+        dismissBannerBtn.getStyleClass().add("share-text-btn");
+        dismissBannerBtn.setOnAction(e -> {
+            statusBanner.setVisible(false);
+            statusBanner.setManaged(false);
+        });
+        statusBanner.getChildren().addAll(statusIcon, statusText, dismissBannerBtn);
+
+        BiConsumer<String, Boolean> showStatus = (msg, isError) -> {
+            statusBanner.getStyleClass().removeAll("share-status-success", "share-status-error");
+            if (isError) {
+                statusBanner.getStyleClass().add("share-status-error");
+                statusIcon.setText("⚠");
+            } else {
+                statusBanner.getStyleClass().add("share-status-success");
+                statusIcon.setText("✓");
+            }
+            statusText.setText(msg);
+            statusBanner.setVisible(true);
+            statusBanner.setManaged(true);
+        };
+
+        // Table
         TableView<KeyValuePair> varsTable = new TableView<>();
         TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Variable");
         keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
+        keyCol.setPrefWidth(220);
+
         TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
         valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
+        valueCol.setPrefWidth(360);
+
         if (canEdit) {
             keyCol.setCellFactory(TextFieldTableCell.forTableColumn());
             keyCol.setOnEditCommit(e -> e.getRowValue().setKey(e.getNewValue()));
@@ -8154,38 +8353,45 @@ public class MainController implements Initializable {
             valueCol.setOnEditCommit(e -> e.getRowValue().setValue(e.getNewValue()));
             varsTable.setEditable(true);
         }
+
         varsTable.getColumns().addAll(keyCol, valueCol);
         varsTable.getStyleClass().add("shared-workspace-tree");
-        varsTable.setPrefSize(480, 260);
         varsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         varsTable.setPlaceholder(new Label("No variables in this environment."));
+        VBox.setVgrow(varsTable, Priority.ALWAYS);
 
         if (env.getVariables() != null) {
             env.getVariables().forEach((k, v) -> varsTable.getItems().add(new KeyValuePair(k, v)));
         }
 
-        Label statusLabel = new Label();
-        statusLabel.getStyleClass().add("shared-workspace-hint");
-        statusLabel.setWrapText(true);
-
-        VBox content = new VBox(10, hintLabel, varsTable, statusLabel);
+        // Actions
+        HBox actionsRow = new HBox(8);
+        actionsRow.setAlignment(Pos.CENTER_LEFT);
 
         if (canEdit) {
-            Button addRowBtn = new Button("Add Variable");
-            Button deleteRowBtn = new Button("Delete Selected");
-            Button saveBtn = new Button("Save");
-            saveBtn.getStyleClass().add("send-button");
-            HBox actions = new HBox(8, addRowBtn, deleteRowBtn, saveBtn);
-            actions.setAlignment(Pos.CENTER_LEFT);
-            content.getChildren().add(actions);
+            Button addRowBtn = new Button("+ Add Variable");
+            addRowBtn.getStyleClass().add("share-env-btn");
+            addRowBtn.setOnAction(e -> {
+                KeyValuePair newPair = new KeyValuePair("", "");
+                varsTable.getItems().add(newPair);
+                varsTable.getSelectionModel().select(newPair);
+            });
 
-            addRowBtn.setOnAction(e -> varsTable.getItems().add(new KeyValuePair("", "")));
+            Button deleteRowBtn = new Button("Delete Selected");
+            deleteRowBtn.getStyleClass().add("share-remove-btn");
             deleteRowBtn.setOnAction(e -> {
                 KeyValuePair selected = varsTable.getSelectionModel().getSelectedItem();
                 if (selected != null) {
                     varsTable.getItems().remove(selected);
                 }
             });
+
+            Region actionSpacer = new Region();
+            HBox.setHgrow(actionSpacer, Priority.ALWAYS);
+
+            Button saveBtn = new Button("Save Changes");
+            saveBtn.getStyleClass().addAll("button", "button-primary");
+            saveBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
             saveBtn.setOnAction(e -> {
                 Map<String, String> updated = new LinkedHashMap<>();
                 for (KeyValuePair pair : varsTable.getItems()) {
@@ -8193,133 +8399,168 @@ public class MainController implements Initializable {
                         updated.put(pair.getKey().trim(), pair.getValue() == null ? "" : pair.getValue());
                     }
                 }
-                statusLabel.setText("Saving...");
+                showStatus.accept("Saving changes to server...", false);
                 saveBtn.setDisable(true);
                 new Thread(() -> {
                     Optional<EnvironmentResponse> saved = EnvironmentService.updateEnvironmentVariables(env.getId(), updated);
                     Platform.runLater(() -> {
                         saveBtn.setDisable(false);
-                        statusLabel.setText(saved.isPresent() ? "Saved." : "Couldn't save — check your access and try again.");
+                        if (saved.isPresent()) {
+                            env.setVariables(updated);
+                            showStatus.accept("Environment variables saved successfully.", false);
+                        } else {
+                            showStatus.accept("Failed to save variables — please check your connection and access.", true);
+                        }
                     });
                 }).start();
             });
+
+            actionsRow.getChildren().addAll(addRowBtn, deleteRowBtn, actionSpacer, saveBtn);
         }
 
+        VBox content = new VBox(12, headerRow, statusBanner, varsTable, actionsRow);
         content.setPadding(new Insets(16));
-        content.setPrefWidth(520);
         dialog.getDialogPane().setContent(content);
         initAndStyleDialog(dialog);
         dialog.showAndWait();
     }
 
-    /** Lets an Editor actually send a request that lives in someone
-     * else's shared workspace — the request's saved URL/headers/body
-     * are editable here for this one send, but nothing is written back
-     * to the owner's saved copy; only the response comes back.
-     * environments is whatever this viewer has been granted for this
-     * workspace — used to resolve {{variables}} before sending, since
-     * without that, any request using a variable (which is most real
-     * requests) would fail outright rather than actually running. */
+    /** Lets an Editor send a request that lives in someone else's shared workspace. */
     private void openSendSharedRequestDialog(Long workspaceId, RequestResponse request, List<EnvironmentResponse> environments) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(request.getName());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
+        dialog.getDialogPane().getStyleClass().add("shared-request-dialog");
 
-        Label methodLabel = new Label(String.valueOf(request.getMethod()));
-        methodLabel.getStyleClass().add("method-" + request.getMethod().toString().toLowerCase(Locale.ROOT));
-        methodLabel.setMinWidth(60);
+        // Header
+        Label methodChip = new Label(String.valueOf(request.getMethod()));
+        methodChip.getStyleClass().addAll("method-chip",
+                "method-chip-" + request.getMethod().toString().toLowerCase(Locale.ROOT));
+        methodChip.setStyle("-fx-font-size: 12px; -fx-padding: 4 10 4 10; -fx-font-weight: bold;");
+
+        Label titleLabel = new Label(request.getName());
+        titleLabel.getStyleClass().add("share-title");
+
+        Label subtitleLabel = new Label("Execute request against shared workspace environment");
+        subtitleLabel.getStyleClass().add("share-subtitle");
+
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        HBox headerRow = new HBox(10, methodChip, titleBox);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Interactive URL & Environment & Send Row
         TextField urlField = new TextField(request.getUrl());
         urlField.getStyleClass().add("shared-workspace-url-field");
-        HBox urlRow = new HBox(8, methodLabel, urlField);
+        urlField.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-pref-height: 34px; -fx-font-size: 12px;");
         HBox.setHgrow(urlField, Priority.ALWAYS);
-        urlRow.setAlignment(Pos.CENTER_LEFT);
 
-        // Resolving {{variables}} matters here — without it, any request
-        // that uses one (which is most real requests) fails outright
-        // rather than actually running.
         ComboBox<String> envCombo = new ComboBox<>();
+        envCombo.setStyle("-fx-pref-height: 34px; -fx-font-size: 11px;");
         Map<String, EnvironmentResponse> envByName = new LinkedHashMap<>();
         envCombo.getItems().add("No Environment");
         for (EnvironmentResponse env : environments) {
             envByName.put(env.getName(), env);
             envCombo.getItems().add(env.getName());
         }
-        Label envHintLabel = new Label();
-        envHintLabel.getStyleClass().add("shared-workspace-hint");
-        envHintLabel.setWrapText(true);
-        HBox envRow;
-        if (environments.isEmpty()) {
-            envHintLabel.setText("No environment access granted for this workspace — {{variables}} won't "
-                    + "resolve here. If you have your own access to this workspace, switch to it from the "
-                    + "Workspaces ▾ menu to run this with full variable support, or ask the owner to grant "
-                    + "you an environment.");
-            envRow = new HBox(envHintLabel);
-        } else {
-            Label envLabel = new Label("Environment");
-            envLabel.getStyleClass().add("shared-workspace-hint");
-            // FIX: this used to auto-select the first real environment,
-            // with no way to opt out even if this particular send didn't
-            // need any variable resolution — unlike Postman, where "No
-            // Environment" is always available as a genuine choice.
-            envCombo.getSelectionModel().select("No Environment");
-            envRow = new HBox(8, envLabel, envCombo);
-            envRow.setAlignment(Pos.CENTER_LEFT);
-        }
+        envCombo.getSelectionModel().select(environments.isEmpty() ? "No Environment" : environments.get(0).getName());
 
+        Button sendBtn = new Button("➤  Send");
+        sendBtn.getStyleClass().addAll("button", "button-primary");
+        sendBtn.setStyle("-fx-font-weight: bold; -fx-pref-height: 34px; -fx-padding: 6 18 6 18;");
+
+        HBox requestBar = new HBox(8, urlField, envCombo, sendBtn);
+        requestBar.setAlignment(Pos.CENTER_LEFT);
+
+        // Request Tabs: Headers & Body
+        TabPane reqTabPane = new TabPane();
+        reqTabPane.getStyleClass().add("share-tab-pane");
+        reqTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        reqTabPane.setPrefHeight(160);
+
+        Tab headersTab = new Tab("Headers");
         TextArea headersArea = new TextArea(request.getHeaders());
-        headersArea.setPromptText("Headers as JSON, e.g. {\"Content-Type\": \"application/json\"}");
-        headersArea.setPrefRowCount(3);
+        headersArea.setPromptText("{\"Content-Type\": \"application/json\"}");
+        headersArea.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-font-size: 11px;");
         headersArea.setWrapText(true);
+        headersTab.setContent(headersArea);
 
+        Tab bodyTab = new Tab("Body");
         TextArea bodyArea = new TextArea(request.getBody());
-        bodyArea.setPromptText("Request body (if any)");
-        bodyArea.setPrefRowCount(5);
+        bodyArea.setPromptText("Request payload body (JSON, text, or raw)");
+        bodyArea.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-font-size: 11px;");
         bodyArea.setWrapText(true);
+        bodyTab.setContent(bodyArea);
 
-        Button sendBtn = new Button("Send");
-        sendBtn.getStyleClass().add("send-button");
-        Label statusLabel = new Label();
-        statusLabel.getStyleClass().add("shared-workspace-hint");
-        statusLabel.setWrapText(true);
-        HBox sendRow = new HBox(12, sendBtn, statusLabel);
-        sendRow.setAlignment(Pos.CENTER_LEFT);
+        reqTabPane.getTabs().addAll(headersTab, bodyTab);
 
-        TextArea responseArea = new TextArea();
-        responseArea.setEditable(false);
-        responseArea.getStyleClass().add("shared-workspace-response-area");
-        responseArea.setPromptText("Response will show here after you send.");
-        responseArea.setPrefRowCount(10);
-        responseArea.setWrapText(true);
+        // Response Status Bar
+        HBox responseStatusBar = new HBox(12);
+        responseStatusBar.setAlignment(Pos.CENTER_LEFT);
+        responseStatusBar.setStyle("-fx-padding: 4 2 4 2;");
 
-        // Hidden until an actual binary response (PDF/Excel/image/zip)
-        // arrives — a real download action instead of dumping Base64
-        // text into the response area, which is unreadable and useless.
+        Label responseSectionTitle = new Label("RESPONSE");
+        responseSectionTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 11px; -fx-text-fill: -text-secondary;");
+
+        Label statusChip = new Label("Ready");
+        statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -bg-elevated; -fx-text-fill: -text-muted; -fx-font-size: 11px; -fx-font-weight: bold;");
+
+        Region statusSpacer = new Region();
+        HBox.setHgrow(statusSpacer, Priority.ALWAYS);
+
+        Button copyResponseBtn = new Button("Copy");
+        copyResponseBtn.getStyleClass().add("share-text-btn");
+
         Button saveFileBtn = new Button("Save File");
+        saveFileBtn.getStyleClass().addAll("button", "button-primary");
         saveFileBtn.setVisible(false);
         saveFileBtn.setManaged(false);
 
-        Label headersLabel = new Label("Headers");
-        headersLabel.getStyleClass().add("shared-workspace-section-title");
-        Label bodyLabel = new Label("Body");
-        bodyLabel.getStyleClass().add("shared-workspace-section-title");
-        Label responseLabel = new Label("Response");
-        responseLabel.getStyleClass().add("shared-workspace-section-title");
+        responseStatusBar.getChildren().addAll(responseSectionTitle, statusChip, statusSpacer, copyResponseBtn, saveFileBtn);
+
+        // Response Body Area
+        TextArea responseArea = new TextArea();
+        responseArea.setEditable(false);
+        responseArea.getStyleClass().add("shared-workspace-response-area");
+        responseArea.setPromptText("Response will show here after sending.");
+        responseArea.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-font-size: 11px;");
+        responseArea.setWrapText(true);
+        VBox.setVgrow(responseArea, Priority.ALWAYS);
+
+        copyResponseBtn.setOnAction(e -> {
+            String text = responseArea.getText();
+            if (text != null && !text.isBlank()) {
+                javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                cc.putString(text);
+                javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+                copyResponseBtn.setText("Copied! ✓");
+                new Thread(() -> {
+                    try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+                    Platform.runLater(() -> copyResponseBtn.setText("Copy"));
+                }).start();
+            }
+        });
+
+        // Script variables pill
+        Label scriptResultLabel = new Label();
+        scriptResultLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -accent; -fx-font-weight: bold;");
+        scriptResultLabel.setVisible(false);
+        scriptResultLabel.setManaged(false);
 
         VBox content = new VBox(10,
-                urlRow,
-                envRow,
-                headersLabel, headersArea,
-                bodyLabel, bodyArea,
-                sendRow,
-                responseLabel, responseArea, saveFileBtn);
+                headerRow,
+                requestBar,
+                reqTabPane,
+                responseStatusBar,
+                responseArea,
+                scriptResultLabel);
         content.setPadding(new Insets(16));
-        content.setPrefWidth(580);
         dialog.getDialogPane().setContent(content);
         initAndStyleDialog(dialog);
 
         sendBtn.setOnAction(e -> {
-            statusLabel.setText("Sending…");
+            statusChip.setText("Sending…");
+            statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -bg-elevated; -fx-text-fill: -text-muted; -fx-font-size: 11px; -fx-font-weight: bold;");
             sendBtn.setDisable(true);
             Map<String, String> vars = Map.of();
             if (!environments.isEmpty() && envCombo.getValue() != null) {
@@ -8330,13 +8571,6 @@ public class MainController implements Initializable {
             }
             final Map<String, String> resolveVars = vars;
             String resolvedHeadersJson = VariableResolver.resolve(headersArea.getText(), resolveVars);
-            // FIX: a request whose Bearer token (or Basic username/
-            // password) is itself a variable — {{access_token}}, the
-            // normal pattern after a login call — needs that resolved
-            // here, with the right environment context, before being
-            // merged in. The backend also has a fallback for
-            // unresolved saved auth, but it can't resolve a variable
-            // it never sees the value of.
             try {
                 String authType = request.getAuthType();
                 String authHeaderValue = null;
@@ -8358,9 +8592,6 @@ public class MainController implements Initializable {
                     resolvedHeadersJson = headersObj.toString();
                 }
             } catch (Exception ignored) {
-                // malformed headers JSON in the text area — leave it as
-                // typed rather than silently rewriting something the
-                // user is mid-editing
             }
             ApiRequest overrides = ApiRequest.builder()
                     .url(VariableResolver.resolve(urlField.getText(), resolveVars))
@@ -8368,87 +8599,73 @@ public class MainController implements Initializable {
                     .body(VariableResolver.resolve(bodyArea.getText(), resolveVars))
                     .build();
             new Thread(() -> {
-                // FIX: this used to call WorkspaceSharingService.executeSharedRequest(),
-                // which runs the actual HTTP call on the BACKEND server.
-                // That's fine when the backend happens to run on the same
-                // machine as you, but breaks the moment it's hosted
-                // anywhere else — "localhost" or anything on your own
-                // private network resolves on the SERVER, not on your
-                // machine, so it can never reach the thing you're
-                // actually trying to test. Executing directly from here
-                // (matching how Postman's own desktop app behaves) fixes
-                // that regardless of where the backend lives.
                 ApiResponse response = ClientHttpExecutor.execute(
                         request.getMethod().name(), overrides.getUrl(), overrides.getHeaders(), overrides.getBody());
                 Platform.runLater(() -> {
-                        sendBtn.setDisable(false);
-                        statusLabel.setText("Status " + response.getStatusCode()
-                                + "  ·  " + response.getDuration() + " ms"
-                                + "  ·  " + (response.isSuccess() ? "Success" : "Failed"));
-                        statusLabel.getStyleClass().removeAll("shared-workspace-status-ok", "shared-workspace-status-error");
-                        statusLabel.getStyleClass().add(response.isSuccess()
-                                ? "shared-workspace-status-ok" : "shared-workspace-status-error");
-                        if (response.isBinary()) {
-                            responseArea.setText("\uD83D\uDCC4  Binary response\n\n"
-                                    + "Content-Type: " + (response.getContentType() != null ? response.getContentType() : "unknown") + "\n"
-                                    + "Size: " + response.getSizeBytes() + " bytes\n"
-                                    + "Suggested file name: " + response.getFileName() + "\n\n"
-                                    + "Click Save File below to download it.");
-                            saveFileBtn.setVisible(true);
-                            saveFileBtn.setManaged(true);
-                            saveFileBtn.setOnAction(saveEvent -> {
-                                FileChooser fileChooser = new FileChooser();
-                                fileChooser.setTitle("Save Response");
-                                String suggested = response.getFileName() != null ? response.getFileName() : "response.bin";
-                                fileChooser.setInitialFileName(suggested);
-                                File file = fileChooser.showSaveDialog(dialog.getDialogPane().getScene().getWindow());
-                                if (file == null) {
-                                    return;
-                                }
-                                try {
-                                    byte[] bytes = Base64.getDecoder().decode(response.getResponse());
-                                    java.nio.file.Files.write(file.toPath(), bytes);
-                                    statusLabel.setText("Saved " + bytes.length + " bytes to " + file.getName());
-                                } catch (Exception saveEx) {
-                                    statusLabel.setText("Couldn't save the file: " + saveEx.getMessage());
-                                }
-                            });
-                        } else {
-                            saveFileBtn.setVisible(false);
-                            saveFileBtn.setManaged(false);
-                            responseArea.setText(response.getResponse());
-                        }
+                    sendBtn.setDisable(false);
+                    statusChip.setText("Status: " + response.getStatusCode()
+                            + " " + getStatusText(response.getStatusCode())
+                            + "  •  " + response.getDuration() + " ms"
+                            + "  •  " + formatSize(response.getSizeBytes()));
+                    if (response.isSuccess()) {
+                        statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -success-soft; -fx-text-fill: -success; -fx-font-size: 11px; -fx-font-weight: bold;");
+                    } else {
+                        statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -danger-soft; -fx-text-fill: -danger; -fx-font-size: 11px; -fx-font-weight: bold;");
+                    }
+                    if (response.isBinary()) {
+                        responseArea.setText("📄  Binary response ("
+                                + (response.getContentType() != null ? response.getContentType() : "unknown")
+                                + ")\nSize: " + response.getSizeBytes() + " bytes\n"
+                                + "Suggested file name: " + response.getFileName() + "\n\n"
+                                + "Click Save File above to download it.");
+                        saveFileBtn.setVisible(true);
+                        saveFileBtn.setManaged(true);
+                        saveFileBtn.setOnAction(saveEvent -> {
+                            FileChooser fileChooser = new FileChooser();
+                            fileChooser.setTitle("Save Response");
+                            String suggested = response.getFileName() != null ? response.getFileName() : "response.bin";
+                            fileChooser.setInitialFileName(suggested);
+                            File file = fileChooser.showSaveDialog(dialog.getDialogPane().getScene().getWindow());
+                            if (file == null) {
+                                return;
+                            }
+                            try {
+                                byte[] bytes = Base64.getDecoder().decode(response.getResponse());
+                                java.nio.file.Files.write(file.toPath(), bytes);
+                                statusChip.setText("Saved " + bytes.length + " bytes to " + file.getName());
+                            } catch (Exception saveEx) {
+                                statusChip.setText("Save failed: " + saveEx.getMessage());
+                            }
+                        });
+                    } else {
+                        saveFileBtn.setVisible(false);
+                        saveFileBtn.setManaged(false);
+                        responseArea.setText(response.getResponse());
+                    }
 
-                        // FIX: this is what actually completes a login-then-
-                        // use-the-token workflow — without running the saved
-                        // Tests script, a login request could return a fresh
-                        // token but nothing would ever capture it into the
-                        // environment, leaving every later request that
-                        // depends on it using a stale value. Mirrors
-                        // runScriptsAndApply()'s logic, adapted to this
-                        // dialog's own selected-environment state instead of
-                        // the main app's environmentCombo/environmentsMap.
-                        String script = request.getTestsScript();
-                        if (script != null && !script.isBlank() && !environments.isEmpty() && envCombo.getValue() != null) {
-                            EnvironmentResponse selectedEnv = envByName.get(envCombo.getValue());
-                            if (selectedEnv != null) {
-                                Map<String, String> current = new LinkedHashMap<>(
-                                        selectedEnv.getVariables() != null ? selectedEnv.getVariables() : Map.of());
-                                ScriptRunner.Result result = ScriptRunner.run(
-                                        script, response.getResponse(), response.getStatusCode(), current);
-                                if (!result.setVariables.isEmpty() || !result.unsetVariables.isEmpty()) {
-                                    Map<String, String> merged = new LinkedHashMap<>(current);
-                                    merged.putAll(result.setVariables);
-                                    result.unsetVariables.forEach(merged::remove);
-                                    selectedEnv.setVariables(merged); // effective immediately for the next send in this session
-                                    statusLabel.setText(statusLabel.getText() + "  ·  set "
-                                            + String.join(", ", result.setVariables.keySet()));
-                                    new Thread(() -> EnvironmentService.updateEnvironmentVariables(
-                                            selectedEnv.getId(), merged)).start();
-                                }
+                    String script = request.getTestsScript();
+                    if (script != null && !script.isBlank() && !environments.isEmpty() && envCombo.getValue() != null) {
+                        EnvironmentResponse selectedEnv = envByName.get(envCombo.getValue());
+                        if (selectedEnv != null) {
+                            Map<String, String> current = new LinkedHashMap<>(
+                                    selectedEnv.getVariables() != null ? selectedEnv.getVariables() : Map.of());
+                            ScriptRunner.Result result = ScriptRunner.run(
+                                    script, response.getResponse(), response.getStatusCode(), current);
+                            if (!result.setVariables.isEmpty() || !result.unsetVariables.isEmpty()) {
+                                Map<String, String> merged = new LinkedHashMap<>(current);
+                                merged.putAll(result.setVariables);
+                                result.unsetVariables.forEach(merged::remove);
+                                selectedEnv.setVariables(merged);
+                                scriptResultLabel.setText("✓ Test script updated environment: "
+                                        + String.join(", ", result.setVariables.keySet()));
+                                scriptResultLabel.setVisible(true);
+                                scriptResultLabel.setManaged(true);
+                                new Thread(() -> EnvironmentService.updateEnvironmentVariables(
+                                        selectedEnv.getId(), merged)).start();
                             }
                         }
-                    });
+                    }
+                });
             }).start();
         });
 
