@@ -2572,10 +2572,10 @@
    ============================================================ */
 .share-dialog-pane {
     -fx-background-color: -bg-base;
-    -fx-pref-width: 720px;
-    -fx-pref-height: 600px;
-    -fx-min-width: 690px;
-    -fx-min-height: 560px;
+    -fx-pref-width: 750px;
+    -fx-pref-height: 560px;
+    -fx-min-width: 700px;
+    -fx-min-height: 500px;
 }
 .share-dialog-pane > .button-bar {
     -fx-background-color: -bg-panel;
@@ -2658,6 +2658,7 @@
     -fx-font-size: 11px;
     -fx-padding: 6 12 6 12;
     -fx-cursor: hand;
+    -fx-min-width: 120px;
 }
 .share-env-btn:hover {
     -fx-background-color: -bg-hover;
@@ -2670,6 +2671,56 @@
     -fx-border-color: -accent;
     -fx-text-fill: -accent;
     -fx-font-weight: bold;
+}
+
+.share-row-env-btn {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 4 8 4 8;
+    -fx-cursor: hand;
+    -fx-min-width: 85px;
+    -fx-pref-width: 85px;
+    -fx-max-width: 85px;
+    -fx-alignment: center;
+}
+.share-row-env-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -accent;
+}
+.share-row-env-btn.share-env-btn-active {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: -accent;
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+}
+
+.share-clear-btn {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 0;
+    -fx-min-width: 28px;
+    -fx-pref-width: 28px;
+    -fx-max-width: 28px;
+    -fx-min-height: 28px;
+    -fx-pref-height: 28px;
+    -fx-max-height: 28px;
+    -fx-alignment: center;
+    -fx-cursor: hand;
+}
+.share-clear-btn:hover {
+    -fx-background-color: -danger-soft;
+    -fx-border-color: -danger;
+    -fx-text-fill: -danger;
 }
 
 .share-status-banner {
@@ -2761,7 +2812,9 @@
     -fx-border-radius: 6px;
     -fx-background-radius: 6px;
     -fx-font-size: 11px;
-    -fx-pref-width: 105px;
+    -fx-pref-width: 100px;
+    -fx-min-width: 100px;
+    -fx-max-width: 100px;
 }
 
 .share-remove-btn {
@@ -2771,7 +2824,8 @@
     -fx-background-radius: 6px;
     -fx-text-fill: -text-muted;
     -fx-font-size: 11px;
-    -fx-padding: 4 10 4 10;
+    -fx-padding: 4 8 4 8;
+    -fx-alignment: center;
     -fx-cursor: hand;
 }
 .share-remove-btn:hover {

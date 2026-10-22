@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 public record ShareWorkspaceRequest(
-        @NotNull Long teamId,
+        Long teamId,
         @NotEmpty @Valid List<MemberRoleEntry> members
 ) {
 }

@@ -61,6 +61,7 @@ import javafx.util.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -6531,7 +6532,11 @@ public class MainController implements Initializable {
                                 }).start();
                             });
 
-                            row.getChildren().addAll(avatar, userDetails, rowSpacer, roleBox, removeMemberBtn);
+                            Button assignWsBtn = new Button("Assign Workspaces");
+                            assignWsBtn.getStyleClass().add("share-env-btn");
+                            assignWsBtn.setOnAction(e -> openMemberWorkspaceAssignmentDialog(member, team));
+
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, assignWsBtn, roleBox, removeMemberBtn);
                         } else {
                             Label roleBadge = new Label(member.getRole());
                             roleBadge.getStyleClass().addAll("role-badge",
@@ -6664,6 +6669,120 @@ public class MainController implements Initializable {
         }
 
         dialog.showAndWait();
+    }
+
+    private void openMemberWorkspaceAssignmentDialog(TeamMemberResponse member, TeamResponse team) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Assign Workspaces — " + member.getUsername());
+        dialog.setHeaderText("Grant or update workspace permissions for " + member.getUsername() + ".");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.getDialogPane().getStyleClass().add("share-dialog-pane");
+
+        VBox contentBox = new VBox(10);
+        contentBox.setPadding(new Insets(12));
+        contentBox.setPrefWidth(520);
+
+        Label loadingLabel = new Label("Loading workspaces...");
+        loadingLabel.setStyle("-fx-text-fill: -text-muted;");
+        contentBox.getChildren().add(loadingLabel);
+
+        dialog.getDialogPane().setContent(contentBox);
+        initAndStyleDialog(dialog);
+
+        record WsItemState(Workspace workspace, CheckBox checkBox, ComboBox<String> roleCombo, boolean previouslyShared) {}
+        List<WsItemState> itemStates = new ArrayList<>();
+
+        new Thread(() -> {
+            Optional<List<Workspace>> workspacesOpt = WorkspaceService.getUserWorkspaces();
+            List<Workspace> myWorkspaces = workspacesOpt.orElse(List.of());
+
+            Map<Long, WorkspaceAccessResponse> currentAccessByWs = new HashMap<>();
+            for (Workspace w : myWorkspaces) {
+                Optional<List<WorkspaceAccessResponse>> accessList = WorkspaceSharingService.getWorkspaceAccessList(w.getId());
+                accessList.ifPresent(list -> list.stream()
+                        .filter(a -> Objects.equals(a.getUserId(), member.getUserId()))
+                        .findFirst()
+                        .ifPresent(a -> currentAccessByWs.put(w.getId(), a)));
+            }
+
+            Platform.runLater(() -> {
+                contentBox.getChildren().clear();
+                if (myWorkspaces.isEmpty()) {
+                    contentBox.getChildren().add(new Label("You haven't created any workspaces yet."));
+                    return;
+                }
+
+                Label instructLabel = new Label("Check the workspaces you want " + member.getUsername() + " to access:");
+                instructLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+                contentBox.getChildren().add(instructLabel);
+
+                VBox rowsContainer = new VBox(6);
+                for (Workspace ws : myWorkspaces) {
+                    HBox row = new HBox(10);
+                    row.setAlignment(Pos.CENTER_LEFT);
+                    row.setStyle("-fx-background-color: -bg-panel; -fx-padding: 8 12 8 12; -fx-border-color: -border-subtle; -fx-border-radius: 6; -fx-background-radius: 6;");
+
+                    boolean hasAccess = currentAccessByWs.containsKey(ws.getId());
+                    String existingRole = hasAccess ? currentAccessByWs.get(ws.getId()).getRole() : "EDITOR";
+
+                    CheckBox cb = new CheckBox(ws.getName());
+                    cb.setSelected(hasAccess);
+                    cb.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+                    HBox.setHgrow(cb, Priority.ALWAYS);
+
+                    ComboBox<String> roleCb = new ComboBox<>();
+                    roleCb.getItems().addAll("EDITOR", "VIEWER");
+                    roleCb.setValue(existingRole);
+                    roleCb.getStyleClass().add("share-role-combo");
+                    roleCb.setDisable(!hasAccess);
+
+                    cb.selectedProperty().addListener((obs, oldV, newV) -> roleCb.setDisable(!newV));
+
+                    row.getChildren().addAll(cb, roleCb);
+                    rowsContainer.getChildren().add(row);
+
+                    itemStates.add(new WsItemState(ws, cb, roleCb, hasAccess));
+                }
+
+                ScrollPane scroll = new ScrollPane(rowsContainer);
+                scroll.setFitToWidth(true);
+                scroll.setPrefHeight(260);
+                scroll.setStyle("-fx-background-color: transparent; -fx-border-color: -border-subtle; -fx-border-radius: 6;");
+                contentBox.getChildren().add(scroll);
+            });
+        }).start();
+
+        dialog.showAndWait().ifPresent(btn -> {
+            if (btn == ButtonType.OK) {
+                new Thread(() -> {
+                    int grantedCount = 0;
+                    int revokedCount = 0;
+                    for (WsItemState item : itemStates) {
+                        boolean isSelected = item.checkBox.isSelected();
+                        if (isSelected && !item.previouslyShared) {
+                            try {
+                                MemberRoleEntry entry = new MemberRoleEntry(member.getUserId(), item.roleCombo.getValue(), List.of());
+                                ShareWorkspaceRequest req = new ShareWorkspaceRequest(team.getId(), List.of(entry));
+                                WorkspaceSharingService.shareWorkspace(item.workspace.getId(), req);
+                                grantedCount++;
+                            } catch (Exception ex) {
+                                System.err.println("Failed to share ws: " + ex.getMessage());
+                            }
+                        } else if (isSelected && item.previouslyShared) {
+                            WorkspaceSharingService.updateAccessRole(item.workspace.getId(), member.getUserId(), item.roleCombo.getValue());
+                        } else if (!isSelected && item.previouslyShared) {
+                            WorkspaceSharingService.revokeAccess(item.workspace.getId(), member.getUserId());
+                            revokedCount++;
+                        }
+                    }
+                    final int g = grantedCount;
+                    final int r = revokedCount;
+                    Platform.runLater(() -> {
+                        AlertUtils.showSuccess("Updated workspace permissions for " + member.getUsername() + " (granted: " + g + ", revoked: " + r + ").");
+                    });
+                }).start();
+            }
+        });
     }
 
     // ============================================================
@@ -7448,31 +7567,104 @@ public class MainController implements Initializable {
         VBox inviteCard = new VBox(10);
         inviteCard.getStyleClass().add("share-card");
 
-        Label inviteCardTitle = new Label("INVITE COLLABORATOR");
+        Label inviteCardTitle = new Label("ADD OR INVITE COLLABORATOR");
         inviteCardTitle.getStyleClass().add("share-card-header");
 
         Region inviteCardSpacer = new Region();
         HBox.setHgrow(inviteCardSpacer, Priority.ALWAYS);
 
-        Button toggleTeamBtn = new Button("Bulk invite team ▾");
+        Button toggleTeamBtn = new Button("Assign Entire Team ▾");
         toggleTeamBtn.getStyleClass().add("share-text-btn");
 
         HBox inviteCardHeader = new HBox(8, inviteCardTitle, inviteCardSpacer, toggleTeamBtn);
         inviteCardHeader.setAlignment(Pos.CENTER_LEFT);
 
-        TextField emailField = new TextField();
-        emailField.setPromptText("Enter colleague's email address...");
-        HBox.setHgrow(emailField, Priority.ALWAYS);
+        record ShareTeammateOption(Long userId, String username, String email, Long teamId, String teamName, String display) {}
+        Map<String, ShareTeammateOption> teammateLookup = new LinkedHashMap<>();
+        List<ShareTeammateOption> allTeammates = new ArrayList<>();
+
+        ComboBox<String> collaboratorCombo = new ComboBox<>();
+        collaboratorCombo.setEditable(true);
+        collaboratorCombo.setPromptText("Select team member or enter email...");
+        collaboratorCombo.getStyleClass().add("share-ws-combo");
+        collaboratorCombo.getEditor().setStyle("-fx-font-size: 12px;");
+        HBox.setHgrow(collaboratorCombo, Priority.ALWAYS);
+
+        collaboratorCombo.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    ShareTeammateOption opt = teammateLookup.get(item);
+                    if (opt != null) {
+                        HBox cellBox = new HBox(8);
+                        cellBox.setAlignment(Pos.CENTER_LEFT);
+
+                        Label iconLabel = new Label("👤");
+                        iconLabel.setStyle("-fx-font-size: 12px;");
+
+                        Label name = new Label(opt.username());
+                        name.setStyle("-fx-font-weight: bold; -fx-text-fill: -text-primary; -fx-font-size: 12px;");
+
+                        Label email = new Label(opt.email() != null ? opt.email() : "");
+                        email.setStyle("-fx-text-fill: -text-muted; -fx-font-size: 11px;");
+
+                        Region spacer = new Region();
+                        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                        Label teamTag = new Label(opt.teamName());
+                        teamTag.setStyle("-fx-font-size: 10px; -fx-text-fill: -accent; -fx-background-color: -accent-soft; -fx-background-radius: 4px; -fx-padding: 2 6 2 6;");
+
+                        cellBox.getChildren().addAll(iconLabel, name, email, spacer, teamTag);
+                        setGraphic(cellBox);
+                        setText(null);
+                    } else {
+                        setText(item);
+                        setGraphic(null);
+                    }
+                }
+            }
+        });
+
+        Map<Long, WorkspaceAccessResponse> activeAccessByUser = new HashMap<>();
+        Map<String, WorkspaceAccessResponse> activeAccessByEmail = new HashMap<>();
+
+        Button clearBtn = new Button("✕");
+        clearBtn.getStyleClass().add("share-clear-btn");
+        clearBtn.setTooltip(new Tooltip("Clear selection"));
+        clearBtn.setVisible(false);
+        clearBtn.setManaged(false);
+
+        HBox comboWithClear = new HBox(4, collaboratorCombo, clearBtn);
+        comboWithClear.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(collaboratorCombo, Priority.ALWAYS);
+        HBox.setHgrow(comboWithClear, Priority.ALWAYS);
+
+        Label modeBadge = new Label();
+        modeBadge.setStyle("-fx-font-size: 10px; -fx-padding: 2 6 2 6; -fx-background-radius: 4px; -fx-font-weight: bold;");
+        modeBadge.setVisible(false);
+        modeBadge.setManaged(false);
+
+        VBox inputWithBadge = new VBox(4, comboWithClear, modeBadge);
+        inputWithBadge.setMinWidth(220);
+        HBox.setHgrow(inputWithBadge, Priority.ALWAYS);
 
         ComboBox<String> roleCombo = new ComboBox<>();
         roleCombo.getItems().addAll("EDITOR", "VIEWER");
         roleCombo.setValue("EDITOR");
         roleCombo.getStyleClass().add("share-role-combo");
+        roleCombo.setMinWidth(100);
+        roleCombo.setPrefWidth(100);
+        roleCombo.setMaxWidth(100);
 
         List<EnvironmentResponse> workspaceEnvironments = new ArrayList<>();
         Set<Long> selectedEnvironmentIds = new HashSet<>();
         Button chooseEnvBtn = new Button("Environments: All");
         chooseEnvBtn.getStyleClass().add("share-env-btn");
+        chooseEnvBtn.setMinWidth(Region.USE_PREF_SIZE);
         chooseEnvBtn.setOnAction(e -> {
             if (workspaceEnvironments.isEmpty()) {
                 showStatus.accept("This workspace currently has no environments defined.", true);
@@ -7491,12 +7683,113 @@ public class MainController implements Initializable {
             });
         });
 
-        Button sendInviteBtn = new Button("Send Invite");
+        Button sendInviteBtn = new Button("Add / Invite");
         sendInviteBtn.getStyleClass().addAll("button", "button-primary");
         sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+        sendInviteBtn.setMinWidth(Region.USE_PREF_SIZE);
 
-        HBox inviteRow = new HBox(8, emailField, roleCombo, chooseEnvBtn, sendInviteBtn);
+        HBox inviteRow = new HBox(8, inputWithBadge, roleCombo, chooseEnvBtn, sendInviteBtn);
         inviteRow.setAlignment(Pos.CENTER_LEFT);
+
+        Function<String, ShareTeammateOption> findMatchingTeammate = raw -> {
+            if (raw == null || raw.trim().isEmpty()) {
+                return null;
+            }
+            String trimmed = raw.trim();
+            ShareTeammateOption opt = teammateLookup.get(trimmed);
+            if (opt != null) return opt;
+            opt = teammateLookup.get(trimmed.toLowerCase());
+            if (opt != null) return opt;
+            if (trimmed.contains("<") && trimmed.contains(">")) {
+                int start = trimmed.indexOf('<') + 1;
+                int end = trimmed.indexOf('>', start);
+                if (end > start) {
+                    String emailPart = trimmed.substring(start, end).trim();
+                    ShareTeammateOption optEmail = teammateLookup.get(emailPart.toLowerCase());
+                    if (optEmail != null) return optEmail;
+                }
+            }
+            for (ShareTeammateOption to : allTeammates) {
+                if (to.username() != null && to.username().equalsIgnoreCase(trimmed)) {
+                    return to;
+                }
+                if (to.email() != null && to.email().equalsIgnoreCase(trimmed)) {
+                    return to;
+                }
+                if (to.display() != null && to.display().equalsIgnoreCase(trimmed)) {
+                    return to;
+                }
+            }
+            return null;
+        };
+
+        Consumer<String> updateMode = text -> {
+            String q = text == null ? "" : text.trim();
+            if (q.isEmpty()) {
+                clearBtn.setVisible(false);
+                clearBtn.setManaged(false);
+                modeBadge.setVisible(false);
+                modeBadge.setManaged(false);
+                sendInviteBtn.setText("Add / Invite");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+                return;
+            }
+            clearBtn.setVisible(true);
+            clearBtn.setManaged(true);
+
+            ShareTeammateOption matched = findMatchingTeammate.apply(q);
+            WorkspaceAccessResponse existing = null;
+            if (matched != null && matched.userId() != null) {
+                existing = activeAccessByUser.get(matched.userId());
+            }
+            if (existing == null && matched != null && matched.email() != null) {
+                existing = activeAccessByEmail.get(matched.email().toLowerCase().trim());
+            }
+            if (existing == null) {
+                String emailToCheck = q.toLowerCase();
+                if (q.contains("<") && q.contains(">")) {
+                    int start = q.indexOf('<') + 1;
+                    int end = q.indexOf('>', start);
+                    if (end > start) {
+                        emailToCheck = q.substring(start, end).trim().toLowerCase();
+                    }
+                }
+                existing = activeAccessByEmail.get(emailToCheck);
+            }
+
+            if (existing != null) {
+                String teamTag = matched != null ? " • Team: " + matched.teamName() : "";
+                modeBadge.setText("✓ Already a Collaborator" + teamTag);
+                modeBadge.setStyle("-fx-font-size: 11px; -fx-text-fill: #2563eb; -fx-padding: 3 10 3 10; -fx-background-color: rgba(37, 99, 235, 0.12); -fx-background-radius: 12px; -fx-font-weight: bold;");
+                sendInviteBtn.setText("Update Access");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16; -fx-background-color: #2563eb; -fx-text-fill: white;");
+            } else if (matched != null) {
+                sendInviteBtn.setText("Add to Workspace");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16; -fx-background-color: #10b981; -fx-text-fill: white;");
+                modeBadge.setText("⚡ Team Member (" + matched.teamName() + ")");
+                modeBadge.setStyle("-fx-font-size: 11px; -fx-text-fill: #059669; -fx-padding: 3 10 3 10; -fx-background-color: rgba(16, 185, 129, 0.12); -fx-background-radius: 12px; -fx-font-weight: bold;");
+            } else {
+                sendInviteBtn.setText("Send Invite");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+                modeBadge.setText("✉ External Collaborator (Invite by email)");
+                modeBadge.setStyle("-fx-font-size: 11px; -fx-text-fill: #d97706; -fx-padding: 3 10 3 10; -fx-background-color: rgba(245, 158, 11, 0.12); -fx-background-radius: 12px; -fx-font-weight: bold;");
+            }
+            modeBadge.setVisible(true);
+            modeBadge.setManaged(true);
+        };
+
+        clearBtn.setOnAction(e -> {
+            collaboratorCombo.setValue(null);
+            collaboratorCombo.getEditor().clear();
+            selectedEnvironmentIds.clear();
+            chooseEnvBtn.setText("Environments: All");
+            chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+            updateMode.accept("");
+            collaboratorCombo.requestFocus();
+        });
+
+        collaboratorCombo.getEditor().textProperty().addListener((obs, oldV, newV) -> updateMode.accept(newV));
+        collaboratorCombo.valueProperty().addListener((obs, oldV, newV) -> updateMode.accept(newV));
 
         // --- Collapsible Team Bulk Invite Box ---
         VBox teamBox = new VBox(8);
@@ -7504,7 +7797,7 @@ public class MainController implements Initializable {
         teamBox.setVisible(false);
         teamBox.setManaged(false);
 
-        Label teamPromptLabel = new Label("Select a team you own/admin to invite all of its members at once:");
+        Label teamPromptLabel = new Label("Select a team you own/admin to assign all members at once:");
         teamPromptLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
 
         ComboBox<String> bulkTeamCombo = new ComboBox<>();
@@ -7516,9 +7809,13 @@ public class MainController implements Initializable {
         bulkRoleCombo.getItems().addAll("EDITOR", "VIEWER");
         bulkRoleCombo.setValue("EDITOR");
         bulkRoleCombo.getStyleClass().add("share-role-combo");
+        bulkRoleCombo.setMinWidth(95);
+        bulkRoleCombo.setPrefWidth(100);
 
-        Button inviteTeamBtn = new Button("Invite All Team Members");
+        Button inviteTeamBtn = new Button("Assign Entire Team (Instant)");
         inviteTeamBtn.getStyleClass().addAll("button", "button-primary");
+        inviteTeamBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+        inviteTeamBtn.setMinWidth(Region.USE_PREF_SIZE);
 
         HBox bulkRow = new HBox(8, bulkTeamCombo, bulkRoleCombo, inviteTeamBtn);
         bulkRow.setAlignment(Pos.CENTER_LEFT);
@@ -7528,7 +7825,7 @@ public class MainController implements Initializable {
             boolean showing = !teamBox.isVisible();
             teamBox.setVisible(showing);
             teamBox.setManaged(showing);
-            toggleTeamBtn.setText(showing ? "Hide team invite ▴" : "Bulk invite team ▾");
+            toggleTeamBtn.setText(showing ? "Hide team assignment ▴" : "Assign Entire Team ▾");
         });
 
         inviteCard.getChildren().addAll(inviteCardHeader, inviteRow, teamBox);
@@ -7545,6 +7842,8 @@ public class MainController implements Initializable {
         ScrollPane collabScroll = new ScrollPane(collaboratorsContainer);
         collabScroll.getStyleClass().add("share-scroll-area");
         collabScroll.setFitToWidth(true);
+        collabScroll.setPrefHeight(210);
+        collabScroll.setMinHeight(140);
         collaboratorsTab.setContent(collabScroll);
 
         Tab pendingTab = new Tab("Pending (0)");
@@ -7553,11 +7852,13 @@ public class MainController implements Initializable {
         ScrollPane pendingScroll = new ScrollPane(pendingContainer);
         pendingScroll.getStyleClass().add("share-scroll-area");
         pendingScroll.setFitToWidth(true);
+        pendingScroll.setPrefHeight(210);
+        pendingScroll.setMinHeight(140);
         pendingTab.setContent(pendingScroll);
 
         tabPane.getTabs().addAll(collaboratorsTab, pendingTab);
 
-        // Load owned/admin teams in background
+        // Load owned/admin teams and active teammates in background
         new Thread(() -> {
             Optional<List<TeamResponse>> teams = TeamService.getMyTeams();
             Platform.runLater(() -> teams.ifPresent(list -> list.stream()
@@ -7565,13 +7866,37 @@ public class MainController implements Initializable {
                     .forEach(t -> {
                         bulkTeamIds.put(t.getName(), t.getId());
                         bulkTeamCombo.getItems().add(t.getName());
+
+                        new Thread(() -> {
+                            Optional<List<TeamMemberResponse>> membersOpt = TeamService.getMembers(t.getId());
+                            Platform.runLater(() -> membersOpt.ifPresent(members -> {
+                                for (TeamMemberResponse m : members) {
+                                    String display = m.getUsername() + (m.getEmail() != null && !m.getEmail().isBlank() ? " <" + m.getEmail() + ">" : "");
+                                    ShareTeammateOption opt = new ShareTeammateOption(m.getUserId(), m.getUsername(), m.getEmail(), t.getId(), t.getName(), display);
+                                    if (!teammateLookup.containsKey(display)) {
+                                        allTeammates.add(opt);
+                                        teammateLookup.put(display, opt);
+                                        if (m.getEmail() != null && !m.getEmail().isBlank()) {
+                                            teammateLookup.put(m.getEmail().toLowerCase(), opt);
+                                        }
+                                        if (m.getUsername() != null && !m.getUsername().isBlank()) {
+                                            teammateLookup.put(m.getUsername().toLowerCase(), opt);
+                                        }
+                                        collaboratorCombo.getItems().add(display);
+                                    }
+                                }
+                            }));
+                        }).start();
                     })));
         }).start();
 
         // Main Dialog Content Box
         VBox mainContent = new VBox(12, headerRow, statusBanner, inviteCard, tabPane);
         mainContent.setPadding(new Insets(16));
+        mainContent.setPrefSize(740, 520);
         dialog.getDialogPane().setContent(mainContent);
+        dialog.getDialogPane().setPrefSize(750, 560);
+        dialog.getDialogPane().setMinSize(700, 500);
         initAndStyleDialog(dialog);
 
         Runnable[] refreshLists = new Runnable[1];
@@ -7601,6 +7926,22 @@ public class MainController implements Initializable {
                     List<WorkspaceAccessResponse> accessList = accessOpt.orElse(List.of());
                     collaboratorsTab.setText("Collaborators (" + accessList.size() + ")");
 
+                    activeAccessByUser.clear();
+                    activeAccessByEmail.clear();
+                    for (WorkspaceAccessResponse acc : accessList) {
+                        if (acc.getUserId() != null) {
+                            activeAccessByUser.put(acc.getUserId(), acc);
+                        }
+                        if (acc.getEmail() != null && !acc.getEmail().isBlank()) {
+                            activeAccessByEmail.put(acc.getEmail().toLowerCase().trim(), acc);
+                        }
+                    }
+                    String currentVal = collaboratorCombo.getEditor().getText();
+                    if (currentVal == null || currentVal.isBlank()) {
+                        currentVal = collaboratorCombo.getValue();
+                    }
+                    updateMode.accept(currentVal);
+
                     if (accessList.isEmpty()) {
                         VBox emptyBox = new VBox(8);
                         emptyBox.getStyleClass().add("share-empty-box");
@@ -7619,41 +7960,39 @@ public class MainController implements Initializable {
                         for (WorkspaceAccessResponse access : accessList) {
                             HBox row = new HBox(12);
                             row.getStyleClass().add("share-row");
+                            row.setAlignment(Pos.CENTER_LEFT);
 
                             StackPane avatar = createAvatar(access.getUsername());
 
                             Label nameLabel = new Label(access.getUsername());
                             nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
-                            Label emailOrRole = new Label("Collaborator");
+                            nameLabel.setMaxWidth(310);
+                            nameLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+                            nameLabel.setTooltip(new Tooltip(access.getUsername()));
+
+                            String subtext = (access.getEmail() != null && !access.getEmail().isBlank() ? access.getEmail() : "")
+                                    + (access.getTeamName() != null && !access.getTeamName().isBlank()
+                                            ? ((access.getEmail() != null && !access.getEmail().isBlank()) ? " • Team: " : "Team: ") + access.getTeamName()
+                                            : " • Direct Member");
+                            Label emailOrRole = new Label(subtext);
                             emailOrRole.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                            emailOrRole.setMaxWidth(310);
+                            emailOrRole.setTextOverrun(OverrunStyle.ELLIPSIS);
+                            emailOrRole.setTooltip(new Tooltip(subtext));
+
                             VBox userDetails = new VBox(2, nameLabel, emailOrRole);
+                            userDetails.setMaxWidth(310);
+                            userDetails.setMinWidth(160);
 
                             Region rowSpacer = new Region();
                             HBox.setHgrow(rowSpacer, Priority.ALWAYS);
 
-                            ComboBox<String> memberRoleCombo = new ComboBox<>();
-                            memberRoleCombo.getItems().addAll("EDITOR", "VIEWER");
-                            memberRoleCombo.setValue(access.getRole());
-                            memberRoleCombo.getStyleClass().add("share-role-combo");
-                            memberRoleCombo.valueProperty().addListener((obs, was, isNow) -> {
-                                if (isNow != null && !isNow.equals(was)) {
-                                    new Thread(() -> {
-                                        boolean ok = WorkspaceSharingService.updateAccessRole(
-                                                access.getWorkspaceId(), access.getUserId(), isNow);
-                                        Platform.runLater(() -> {
-                                            if (ok) {
-                                                showStatus.accept("Updated " + access.getUsername() + "'s role to " + isNow + ".", false);
-                                            } else {
-                                                showStatus.accept("Failed to update role for " + access.getUsername() + ".", true);
-                                                memberRoleCombo.setValue(was);
-                                            }
-                                        });
-                                    }).start();
-                                }
-                            });
-
                             Button memberEnvBtn = new Button();
-                            memberEnvBtn.getStyleClass().add("share-env-btn");
+                            memberEnvBtn.getStyleClass().add("share-row-env-btn");
+                            memberEnvBtn.setMinWidth(85);
+                            memberEnvBtn.setPrefWidth(85);
+                            memberEnvBtn.setMaxWidth(85);
+
                             int envCount = access.getAllowedEnvironmentIds() != null ? access.getAllowedEnvironmentIds().size() : 0;
                             if (envCount > 0) {
                                 memberEnvBtn.setText(envCount + " envs");
@@ -7692,8 +8031,35 @@ public class MainController implements Initializable {
                                 }).start();
                             });
 
+                            ComboBox<String> memberRoleCombo = new ComboBox<>();
+                            memberRoleCombo.getItems().addAll("EDITOR", "VIEWER");
+                            memberRoleCombo.setValue(access.getRole());
+                            memberRoleCombo.getStyleClass().add("share-role-combo");
+                            memberRoleCombo.setMinWidth(100);
+                            memberRoleCombo.setPrefWidth(100);
+                            memberRoleCombo.setMaxWidth(100);
+                            memberRoleCombo.valueProperty().addListener((obs, was, isNow) -> {
+                                if (isNow != null && !isNow.equals(was)) {
+                                    new Thread(() -> {
+                                        boolean ok = WorkspaceSharingService.updateAccessRole(
+                                                access.getWorkspaceId(), access.getUserId(), isNow);
+                                        Platform.runLater(() -> {
+                                            if (ok) {
+                                                showStatus.accept("Updated " + access.getUsername() + "'s role to " + isNow + ".", false);
+                                            } else {
+                                                showStatus.accept("Failed to update role for " + access.getUsername() + ".", true);
+                                                memberRoleCombo.setValue(was);
+                                            }
+                                        });
+                                    }).start();
+                                }
+                            });
+
                             Button removeBtn = new Button("Remove");
                             removeBtn.getStyleClass().add("share-remove-btn");
+                            removeBtn.setMinWidth(75);
+                            removeBtn.setPrefWidth(75);
+                            removeBtn.setMaxWidth(75);
                             removeBtn.setOnAction(e -> {
                                 removeBtn.setDisable(true);
                                 new Thread(() -> {
@@ -7715,7 +8081,12 @@ public class MainController implements Initializable {
                                 }).start();
                             });
 
-                            row.getChildren().addAll(avatar, userDetails, rowSpacer, memberEnvBtn, memberRoleCombo, removeBtn);
+                            HBox actionsBox = new HBox(8, memberEnvBtn, memberRoleCombo, removeBtn);
+                            actionsBox.setAlignment(Pos.CENTER_RIGHT);
+                            actionsBox.setMinWidth(Region.USE_PREF_SIZE);
+                            actionsBox.setMaxWidth(Region.USE_PREF_SIZE);
+
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, actionsBox);
                             collaboratorsContainer.getChildren().add(row);
                         }
                     }
@@ -7743,6 +8114,7 @@ public class MainController implements Initializable {
                         for (WorkspaceInvitationResponse invite : pendingList) {
                             HBox row = new HBox(12);
                             row.getStyleClass().add("share-row");
+                            row.setAlignment(Pos.CENTER_LEFT);
 
                             StackPane mailBadge = new StackPane();
                             mailBadge.getStyleClass().add("share-avatar");
@@ -7756,15 +8128,24 @@ public class MainController implements Initializable {
 
                             Label emailLabel = new Label(invite.getEmail());
                             emailLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+                            emailLabel.setMaxWidth(380);
+                            emailLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+                            emailLabel.setTooltip(new Tooltip(invite.getEmail()));
+
                             Label pendingLabel = new Label("Awaiting acceptance  •  " + invite.getRole());
                             pendingLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
                             VBox inviteDetails = new VBox(2, emailLabel, pendingLabel);
+                            inviteDetails.setMaxWidth(380);
+                            inviteDetails.setMinWidth(160);
 
                             Region rowSpacer = new Region();
                             HBox.setHgrow(rowSpacer, Priority.ALWAYS);
 
                             Button cancelInviteBtn = new Button("Cancel Invitation");
                             cancelInviteBtn.getStyleClass().add("share-remove-btn");
+                            cancelInviteBtn.setMinWidth(120);
+                            cancelInviteBtn.setPrefWidth(120);
+                            cancelInviteBtn.setMaxWidth(120);
                             cancelInviteBtn.setOnAction(e -> {
                                 cancelInviteBtn.setDisable(true);
                                 new Thread(() -> {
@@ -7828,34 +8209,100 @@ public class MainController implements Initializable {
                 showStatus.accept("Please choose a workspace first.", true);
                 return;
             }
-            String email = emailField.getText() == null ? "" : emailField.getText().trim();
-            if (email.isEmpty()) {
-                showStatus.accept("Please enter an email address.", true);
+            String rawInput = collaboratorCombo.getEditor().getText();
+            if (rawInput == null || rawInput.trim().isEmpty()) {
+                rawInput = collaboratorCombo.getValue();
+            }
+            String text = rawInput == null ? "" : rawInput.trim();
+            if (text.isEmpty()) {
+                showStatus.accept("Please select a team member or enter an email address.", true);
                 return;
             }
-            showStatus.accept("Sending invitation...", false);
-            sendInviteBtn.setDisable(true);
-            InviteToWorkspaceRequest request = new InviteToWorkspaceRequest(
-                    email, roleCombo.getValue(), new ArrayList<>(selectedEnvironmentIds));
-            new Thread(() -> {
-                try {
-                    WorkspaceInvitationService.inviteToWorkspace(workspaceId, request);
-                    Platform.runLater(() -> {
-                        showStatus.accept("Invitation successfully sent to " + email + ".", false);
-                        sendInviteBtn.setDisable(false);
-                        emailField.clear();
-                        selectedEnvironmentIds.clear();
-                        chooseEnvBtn.setText("Environments: All");
-                        chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
-                        refreshLists[0].run();
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> {
-                        showStatus.accept("Couldn't send invite: " + WorkspaceInvitationService.friendlyMessage(ex), true);
-                        sendInviteBtn.setDisable(false);
-                    });
+
+            ShareTeammateOption matched = findMatchingTeammate.apply(text);
+            WorkspaceAccessResponse existing = null;
+            if (matched != null && matched.userId() != null) {
+                existing = activeAccessByUser.get(matched.userId());
+            }
+            if (existing == null && matched != null && matched.email() != null) {
+                existing = activeAccessByEmail.get(matched.email().toLowerCase().trim());
+            }
+            if (existing == null) {
+                String emailToCheck = text.toLowerCase();
+                if (text.contains("<") && text.contains(">")) {
+                    int s = text.indexOf('<') + 1;
+                    int ed = text.indexOf('>', s);
+                    if (ed > s) emailToCheck = text.substring(s, ed).trim().toLowerCase();
                 }
-            }).start();
+                existing = activeAccessByEmail.get(emailToCheck);
+            }
+
+            sendInviteBtn.setDisable(true);
+
+            if (matched != null || existing != null) {
+                Long targetUserId = matched != null ? matched.userId() : existing.getUserId();
+                String targetName = matched != null ? matched.username() : (existing.getUsername() != null ? existing.getUsername() : text);
+                Long targetTeamId = matched != null ? matched.teamId() : null;
+                boolean isUpdate = existing != null;
+
+                showStatus.accept((isUpdate ? "Updating access for " : "Assigning ") + targetName + " to workspace...", false);
+                List<Long> envIds = new ArrayList<>(selectedEnvironmentIds);
+                MemberRoleEntry entry = new MemberRoleEntry(targetUserId, roleCombo.getValue(), envIds);
+                ShareWorkspaceRequest shareReq = new ShareWorkspaceRequest(targetTeamId, List.of(entry));
+                new Thread(() -> {
+                    try {
+                        WorkspaceSharingService.shareWorkspace(workspaceId, shareReq);
+                        Platform.runLater(() -> {
+                            showStatus.accept((isUpdate ? "Updated access for " : "Added ") + targetName + " to workspace.", false);
+                            sendInviteBtn.setDisable(false);
+                            collaboratorCombo.getEditor().clear();
+                            collaboratorCombo.setValue(null);
+                            clearBtn.setVisible(false);
+                            clearBtn.setManaged(false);
+                            modeBadge.setVisible(false);
+                            modeBadge.setManaged(false);
+                            selectedEnvironmentIds.clear();
+                            chooseEnvBtn.setText("Environments: All");
+                            chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+                            refreshLists[0].run();
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> {
+                            sendInviteBtn.setDisable(false);
+                            showStatus.accept("Couldn't " + (isUpdate ? "update access: " : "add teammate: ") + ex.getMessage(), true);
+                        });
+                    }
+                }).start();
+            } else {
+                // EXTERNAL GUEST INVITATION — SENDS EMAIL CODE
+                showStatus.accept("Sending invitation email to " + text + "...", false);
+                InviteToWorkspaceRequest inviteReq = new InviteToWorkspaceRequest(
+                        text, roleCombo.getValue(), new ArrayList<>(selectedEnvironmentIds));
+                new Thread(() -> {
+                    try {
+                        WorkspaceInvitationService.inviteToWorkspace(workspaceId, inviteReq);
+                        Platform.runLater(() -> {
+                            showStatus.accept("Invitation email successfully sent to " + text + ".", false);
+                            sendInviteBtn.setDisable(false);
+                            collaboratorCombo.getEditor().clear();
+                            collaboratorCombo.setValue(null);
+                            clearBtn.setVisible(false);
+                            clearBtn.setManaged(false);
+                            modeBadge.setVisible(false);
+                            modeBadge.setManaged(false);
+                            selectedEnvironmentIds.clear();
+                            chooseEnvBtn.setText("Environments: All");
+                            chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+                            refreshLists[0].run();
+                        });
+                    } catch (IOException ex) {
+                        Platform.runLater(() -> {
+                            sendInviteBtn.setDisable(false);
+                            showStatus.accept("Couldn't send invite: " + WorkspaceInvitationService.friendlyMessage(ex), true);
+                        });
+                    }
+                }).start();
+            }
         });
 
         inviteTeamBtn.setOnAction(e -> {
@@ -7869,23 +8316,34 @@ public class MainController implements Initializable {
                 showStatus.accept("Please select a team first.", true);
                 return;
             }
-            showStatus.accept("Inviting team members...", false);
+            showStatus.accept("Assigning team members to workspace...", false);
             inviteTeamBtn.setDisable(true);
-            InviteTeamRequest request = new InviteTeamRequest(teamId, bulkRoleCombo.getValue(), List.of());
             new Thread(() -> {
                 try {
-                    List<WorkspaceInvitationResponse> sent = WorkspaceInvitationService.inviteTeamMembers(workspaceId, request);
+                    Optional<List<TeamMemberResponse>> membersOpt = TeamService.getMembers(teamId);
+                    List<TeamMemberResponse> members = membersOpt.orElse(List.of());
+                    if (members.isEmpty()) {
+                        Platform.runLater(() -> {
+                            inviteTeamBtn.setDisable(false);
+                            showStatus.accept("The selected team has no members to assign.", true);
+                        });
+                        return;
+                    }
+                    List<Long> envIds = new ArrayList<>(selectedEnvironmentIds);
+                    List<MemberRoleEntry> entries = members.stream()
+                            .map(m -> new MemberRoleEntry(m.getUserId(), bulkRoleCombo.getValue(), envIds))
+                            .toList();
+                    ShareWorkspaceRequest request = new ShareWorkspaceRequest(teamId, entries);
+                    WorkspaceSharingService.shareWorkspace(workspaceId, request);
                     Platform.runLater(() -> {
                         inviteTeamBtn.setDisable(false);
-                        showStatus.accept(sent.isEmpty()
-                                ? "Everyone on that team already has access or a pending invitation."
-                                : "Successfully invited " + sent.size() + " team member(s).", false);
+                        showStatus.accept("Successfully assigned " + entries.size() + " team member(s) to workspace.", false);
                         refreshLists[0].run();
                     });
-                } catch (IOException ex) {
+                } catch (Exception ex) {
                     Platform.runLater(() -> {
                         inviteTeamBtn.setDisable(false);
-                        showStatus.accept("Couldn't invite team: " + WorkspaceInvitationService.friendlyMessage(ex), true);
+                        showStatus.accept("Couldn't assign team: " + ex.getMessage(), true);
                     });
                 }
             }).start();

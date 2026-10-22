@@ -45,12 +45,15 @@ public class WorkspaceSharingServiceImpl implements WorkspaceSharingService {
         Workspace workspace = workspaceRepository.findByIdAndOwner(workspaceId, owner)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found"));
 
-        Team team = teamRepository.findById(request.teamId())
-                .orElseThrow(() -> new ResourceNotFoundException("Team not found"));
-        TeamMember requesterMembership = teamMemberRepository.findByTeamAndUser(team, owner)
-                .orElseThrow(() -> new AuthException("You're not a member of that team"));
-        if (requesterMembership.getRole() != TeamRole.OWNER && requesterMembership.getRole() != TeamRole.ADMIN) {
-            throw new AuthException("Only a team Owner or Admin can share a workspace with the team");
+        Team team = null;
+        if (request.teamId() != null) {
+            team = teamRepository.findById(request.teamId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Team not found"));
+            TeamMember requesterMembership = teamMemberRepository.findByTeamAndUser(team, owner)
+                    .orElseThrow(() -> new AuthException("You're not a member of that team"));
+            if (requesterMembership.getRole() != TeamRole.OWNER && requesterMembership.getRole() != TeamRole.ADMIN) {
+                throw new AuthException("Only a team Owner or Admin can share a workspace with the team");
+            }
         }
 
         for (MemberRoleEntry entry : request.members()) {
@@ -59,12 +62,30 @@ public class WorkspaceSharingServiceImpl implements WorkspaceSharingService {
             if (member.getId().equals(owner.getId())) {
                 continue; // the owner always has full access — no access row needed for themselves
             }
-            if (!teamMemberRepository.existsByTeamAndUser(team, member)) {
-                throw new AuthException(member.getUsername() + " isn't a member of that team");
+
+            Team memberTeam = team;
+            if (memberTeam != null) {
+                if (!teamMemberRepository.existsByTeamAndUser(memberTeam, member)) {
+                    throw new AuthException(member.getUsername() + " isn't a member of that team");
+                }
+            } else {
+                // If teamId was not explicitly specified, verify that the member is on at least one team
+                // where the requester is an OWNER or ADMIN
+                List<TeamMember> ownerTeams = teamMemberRepository.findByUser(owner).stream()
+                        .filter(tm -> tm.getRole() == TeamRole.OWNER || tm.getRole() == TeamRole.ADMIN)
+                        .toList();
+                Optional<TeamMember> matchingMembership = ownerTeams.stream()
+                        .filter(ot -> teamMemberRepository.existsByTeamAndUser(ot.getTeam(), member))
+                        .findFirst();
+                if (matchingMembership.isEmpty()) {
+                    throw new AuthException(member.getUsername() + " isn't a member of any team you manage");
+                }
+                memberTeam = matchingMembership.get().getTeam();
             }
+
             WorkspaceAccess access = workspaceAccessRepository.findByWorkspaceAndUser(workspace, member)
                     .orElse(WorkspaceAccess.builder().workspace(workspace).user(member).build());
-            access.setTeam(team);
+            access.setTeam(memberTeam);
             access.setRole(entry.role());
             // Explicit opt-in only — an environment ID that doesn't
             // actually belong to this workspace is silently ignored
