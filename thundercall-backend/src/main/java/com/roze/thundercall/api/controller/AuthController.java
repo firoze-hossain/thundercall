@@ -39,6 +39,12 @@ public class AuthController extends BaseController {
         return ok(response);
     }
 
+    @PostMapping("/sso")
+    public ResponseEntity<BaseResponse<AuthResponse>> ssoLogin(@Valid @RequestBody com.roze.thundercall.api.dto.SsoLoginRequest request) {
+        AuthResponse response = authService.ssoLogin(request);
+        return ok(response, "Signed in via RozeHub SSO");
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<BaseResponse<AuthResponse>> refreshToken(@RequestParam String refreshToken) {
         return ok(authService.refreshToken(refreshToken), "Token Refreshed Successfully");

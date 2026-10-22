@@ -11747,21 +11747,26 @@ public class MainController implements Initializable {
     private void handleLogout() {
         if (AlertUtils.showConfirmation("Logout", "Are you sure you want to logout?")) {
             try {
-                // 1. Cancel debounce & save this user's session cleanly before destroying state
-                if (sessionSaveDebounce != null) {
-                    sessionSaveDebounce.stop();
-                }
-                saveCurrentSession();
+                // 1. Immediately mark client logged out to suppress any background token-refresh or 401 alerts
+                ApiClient.markLoggedOut();
 
                 // 2. Stop reporting this client as online & stop session background monitor
                 stopPresenceUpdates();
                 TokenManager.stopSessionMonitor();
 
-                // 3. Clear all workspace context and active session data
+                // 3. Cancel debounce & save this user's session cleanly before destroying state
+                if (sessionSaveDebounce != null) {
+                    sessionSaveDebounce.stop();
+                }
+                try {
+                    saveCurrentSession();
+                } catch (Exception ignored) {}
+
+                // 4. Clear all workspace context and active session data
                 WorkspaceManager.clear();
                 currentSession = null;
 
-                // 4. Clear in-memory tabs, caches, and tree maps
+                // 5. Clear in-memory tabs, caches, and tree maps
                 if (requestTabPane != null) {
                     requestTabPane.getTabs().clear();
                 }
@@ -11772,11 +11777,11 @@ public class MainController implements Initializable {
                 commentThreadsCache.clear();
                 collectionVariablesCache.clear();
 
-                // 5. Clear server session and local authentication tokens
+                // 6. Clear server session and local authentication tokens (asynchronous, non-blocking)
                 ApiClient.logout();
                 TokenManager.clearTokens();
 
-                // 6. Transition to login view
+                // 7. Transition to login view
                 Main.showLoginView();
             } catch (Exception e) {
                 AlertUtils.showError("Logout failed: " + e.getMessage());

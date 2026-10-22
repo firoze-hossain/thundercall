@@ -4,6 +4,7 @@ import com.roze.thundercall.ui.Main;
 import com.roze.thundercall.ui.models.AuthResponse;
 import com.roze.thundercall.ui.services.ApiClient;
 import com.roze.thundercall.ui.services.DeepLinkService;
+import com.roze.thundercall.ui.services.DesktopBrowserAuthService;
 import com.roze.thundercall.ui.services.TokenManager;
 import com.roze.thundercall.ui.utils.AlertUtils;
 import com.roze.thundercall.ui.utils.CredentialStore;
@@ -375,6 +376,27 @@ public class AuthController {
 
     @FXML
     private void handleBrowserLogin() {
-        DeepLinkService.openBrowserForAuth();
+        setLoading(true);
+        if (switchPromptLabel != null) {
+            switchPromptLabel.setText("Waiting for browser authorization...");
+        }
+        DesktopBrowserAuthService.startBrowserAuth(
+                status -> {
+                    if (switchPromptLabel != null) {
+                        switchPromptLabel.setText(status);
+                    }
+                },
+                () -> {
+                    setLoading(false);
+                    Main.showMainView();
+                },
+                errorMessage -> {
+                    setLoading(false);
+                    if (switchPromptLabel != null) {
+                        switchPromptLabel.setText("Sign in with browser cancelled.");
+                    }
+                    AlertUtils.showError(errorMessage);
+                }
+        );
     }
 }

@@ -80,7 +80,11 @@ public class TokenManager {
             ApiClient.setRefreshToken(response.getRefreshToken());
         }
 
-        prefs.putLong(USER_ID_KEY, response.getId());
+        if (response.getId() != null) {
+            prefs.putLong(USER_ID_KEY, response.getId());
+        } else {
+            prefs.remove(USER_ID_KEY);
+        }
         if (response.getUsername() != null) {
             prefs.put(USERNAME_KEY, response.getUsername());
         }
@@ -93,6 +97,7 @@ public class TokenManager {
             prefs.remove(ROLE_KEY);
         }
 
+        ApiClient.markLoggedIn();
         startSessionMonitor();
     }
 
@@ -253,6 +258,7 @@ public class TokenManager {
      * Clears all session keys, stops monitors, and clears ApiClient memory tokens.
      */
     public static void clearTokens() {
+        ApiClient.markLoggedOut();
         stopSessionMonitor();
         WorkspaceManager.clear();
         prefs.remove(TOKEN_KEY);

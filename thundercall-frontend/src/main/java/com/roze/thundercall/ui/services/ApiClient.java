@@ -13,27 +13,23 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * ROOT-CAUSE FIX: your access token expires after 1 hour
- * (application.yml jwt.expiration = 3600000ms), and nothing ever refreshed
- * it. Any call made after that point hit Spring Security's default
- * rejection for an unauthenticated request — which returns 403 with an
- * EMPTY body (no BaseResponse envelope), hence the unhelpful
- * "HTTP 403: Unknown error" you saw mid-import.
- * <p>
- * Every request now retries ONCE, automatically, after refreshing the
- * token, whenever it gets a 401/403. Only if the refresh token itself has
- * also expired does the user see anything — and now it's a clear
- * "Your session has expired, please log in again" instead of a cryptic
- * "Unknown error", plus the app returns them to the login screen.
+ * Robust HTTP client for ThunderCall API.
+ * Handles automatic JWT refresh, connection timeouts, non-blocking logout,
+ * and debounced session expiration alerts.
  */
 public class ApiClient {
-   //private static final String BASE_URL = "http://localhost:9084/api/v1";
-    private static final String BASE_URL = "http://172.16.0.161:9084/api/v1";
+    private static final String BASE_URL = "http://localhost:9084/api/v1";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static String token;
     private static String refreshToken;
+    
+    /** Single-flight gate for session expiration to prevent cascading alert popups. */
+    private static final AtomicBoolean sessionExpiredNotified = new AtomicBoolean(false);
+    private static volatile boolean userLoggedOut = false;
+
     /**
      * Registered once at startup so this low-level class can trigger a
      * graceful return to the login screen without depending on the UI.
@@ -46,7 +42,18 @@ public class ApiClient {
         objectMapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
+    public static void markLoggedIn() {
+        userLoggedOut = false;
+        sessionExpiredNotified.set(false);
+    }
+
+    public static void markLoggedOut() {
+        userLoggedOut = true;
+        sessionExpiredNotified.set(true); // Suppress any in-flight background 401s after manual logout
+    }
+
     public static AuthResponse login(String usernameOrEmail, String password) throws IOException {
+        markLoggedIn();
         LoginRequest loginRequest = new LoginRequest(usernameOrEmail, password);
         BaseResponse<AuthResponse> wrapper = post("/auth/login", loginRequest, new TypeReference<BaseResponse<AuthResponse>>() {
         });
@@ -88,6 +95,22 @@ public class ApiClient {
         });
     }
 
+    public static AuthResponse ssoLogin(String email, String username, String token, String provider) throws IOException {
+        markLoggedIn();
+        java.util.Map<String, String> request = new java.util.HashMap<>();
+        request.put("email", email);
+        request.put("username", username);
+        request.put("token", token);
+        request.put("provider", provider != null ? provider : "rozehub");
+        BaseResponse<AuthResponse> wrapper = post("/auth/sso", request, new TypeReference<BaseResponse<AuthResponse>>() {
+        });
+        if (wrapper != null && wrapper.getData() != null) {
+            return wrapper.getData();
+        } else {
+            throw new IOException("Invalid response from server: " + (wrapper != null ? wrapper.getMessage() : "null response"));
+        }
+    }
+
     public static <T> T post(String endpoint, Object data, TypeReference<T> responseType) throws IOException {
         return post(endpoint, data, responseType, 2);
     }
@@ -97,7 +120,7 @@ public class ApiClient {
         writeJsonBody(connection, data);
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+        if (isAuthError(endpoint, responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
             return post(endpoint, data, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
@@ -106,7 +129,6 @@ public class ApiClient {
             }
             try (InputStream is = connection.getInputStream()) {
                 String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                System.out.println("Raw Response: " + responseBody);
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
@@ -122,7 +144,7 @@ public class ApiClient {
         HttpURLConnection connection = createConnection(endpoint, "GET");
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+        if (isAuthError(endpoint, responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
             return get(endpoint, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201) {
@@ -144,7 +166,7 @@ public class ApiClient {
         writeJsonBody(connection, data);
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+        if (isAuthError(endpoint, responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
             return put(endpoint, data, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
@@ -153,7 +175,6 @@ public class ApiClient {
             }
             try (InputStream is = connection.getInputStream()) {
                 String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                System.out.println("Raw Response: " + responseBody);
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
@@ -170,7 +191,7 @@ public class ApiClient {
         writeJsonBody(connection, data);
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+        if (isAuthError(endpoint, responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
             return patch(endpoint, data, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
@@ -179,7 +200,6 @@ public class ApiClient {
             }
             try (InputStream is = connection.getInputStream()) {
                 String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                System.out.println("Raw Response: " + responseBody);
                 return objectMapper.readValue(responseBody, responseType);
             }
         } else {
@@ -195,13 +215,11 @@ public class ApiClient {
         HttpURLConnection connection = createConnection(endpoint, "DELETE");
         int responseCode = connection.getResponseCode();
 
-        if (isAuthError(responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
+        if (isAuthError(endpoint, responseCode) && retriesLeft > 0 && attemptTokenRefresh()) {
             return delete(endpoint, responseType, retriesLeft - 1);
         }
         if (responseCode == 200 || responseCode == 204) {
             if (responseCode == 204) {
-                // 204 IS success — the server deleted successfully and simply
-                // returned no body. Treating this as null/failure was a bug.
                 BaseResponse<T> ok = new BaseResponse<>();
                 ok.setSuccess(true);
                 ok.setMessage("No content");
@@ -218,21 +236,25 @@ public class ApiClient {
 
     // ------------------------------------------------------------------
 
-    private static boolean isAuthError(int responseCode) {
+    private static boolean isAuthError(String endpoint, int responseCode) {
+        // Never attempt token refresh on explicit authentication endpoints
+        if (endpoint != null && endpoint.startsWith("/auth/")) {
+            return false;
+        }
         return responseCode == 401 || responseCode == 403;
     }
 
     private static volatile long lastRefreshTime = 0;
 
     /**
-     * Calls the backend's existing /auth/refresh endpoint (already
-     * implemented server-side, just never used by the client) to get a new
-     * access token without forcing a re-login. Returns false if there's no
-     * refresh token, or the 7-day session has expired — at which point the person is
-     * returned to the login screen with a clear explanation instead of a
-     * confusing per-request error.
+     * Calls the backend's /auth/refresh endpoint to get a new access token.
+     * Returns false if there's no refresh token or session has expired.
      */
     private static synchronized boolean attemptTokenRefresh() {
+        if (userLoggedOut) {
+            return false;
+        }
+
         if (TokenManager.isSessionExpired()) {
             System.out.println("[ApiClient] 7-day session has expired. Halting refresh and redirecting to login.");
             handleSessionExpired();
@@ -241,13 +263,11 @@ public class ApiClient {
 
         long now = System.currentTimeMillis();
         if (now - lastRefreshTime < 4000 && token != null && !token.isEmpty()) {
-            // Already refreshed by a concurrent background task
             return true;
         }
 
         if (refreshToken == null || refreshToken.isEmpty()) {
-            System.out.println("[ApiClient] Refresh skipped: no refresh token in memory "
-                    + "(likely already logged out, or a session that started before this build)");
+            System.out.println("[ApiClient] Refresh skipped: no refresh token in memory.");
             handleSessionExpired();
             return false;
         }
@@ -255,6 +275,8 @@ public class ApiClient {
             String encoded = URLEncoder.encode(refreshToken, StandardCharsets.UTF_8);
             URL url = new URL(BASE_URL + "/auth/refresh?refreshToken=" + encoded);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(6000);
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Accept", "application/json");
             connection.setDoOutput(false);
@@ -267,13 +289,11 @@ public class ApiClient {
                             body, new TypeReference<BaseResponse<AuthResponse>>() {
                             });
                     if (wrapper != null && wrapper.getData() != null && wrapper.getData().getToken() != null) {
-                        // Persists the new access token while preserving the 7-day session window
                         TokenManager.storeTokens(wrapper.getData());
                         lastRefreshTime = System.currentTimeMillis();
                         System.out.println("[ApiClient] Token refreshed successfully");
                         return true;
                     }
-                    System.out.println("[ApiClient] Refresh returned 200 but no token in the response: " + body);
                 }
             } else {
                 System.out.println("[ApiClient] Refresh call returned HTTP " + code + ": " + readError(connection));
@@ -286,11 +306,20 @@ public class ApiClient {
     }
 
     private static void handleSessionExpired() {
+        if (userLoggedOut || (token == null && refreshToken == null)) {
+            token = null;
+            refreshToken = null;
+            return;
+        }
+
         token = null;
         refreshToken = null;
         TokenManager.clearTokens();
-        if (onSessionExpired != null) {
-            javafx.application.Platform.runLater(onSessionExpired);
+
+        if (sessionExpiredNotified.compareAndSet(false, true)) {
+            if (onSessionExpired != null) {
+                javafx.application.Platform.runLater(onSessionExpired);
+            }
         }
     }
 
@@ -314,6 +343,8 @@ public class ApiClient {
     private static HttpURLConnection createConnection(String endpoint, String method) throws IOException {
         URL url = new URL(BASE_URL + endpoint);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(10000);
         connection.setRequestMethod(method);
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
@@ -324,22 +355,12 @@ public class ApiClient {
         return connection;
     }
 
-    /**
-     * Builds a clear error message even when the server returns an empty
-     * body (as Spring Security's default rejection does for 401/403).
-     */
-    /** Prints the TRUE raw failure (before any friendly rewriting) and
-     * returns the user-facing message. Kept separate so a future log
-     * always shows exactly what the server actually sent back, not just
-     * the simplified "session expired" text — that distinction is the
-     * whole reason this method exists after debugging a repeat failure
-     * that survived two successful token refreshes in a row. */
     private static String describeError(String method, String endpoint, int responseCode,
                                         HttpURLConnection connection) throws IOException {
         String body = readError(connection);
         System.out.println("[ApiClient] " + method + " " + endpoint + " failed: HTTP " + responseCode
                 + ", raw body: " + (body == null || body.isBlank() ? "(empty)" : body));
-        if (isAuthError(responseCode) && (body == null || body.isBlank() || body.equals("Unknown error"))) {
+        if (isAuthError(endpoint, responseCode) && (body == null || body.isBlank() || body.equals("Unknown error"))) {
             return "HTTP " + responseCode + ": Your session has expired — please log in again";
         }
         return "HTTP " + responseCode + ": " + body;
@@ -356,21 +377,24 @@ public class ApiClient {
     }
 
     public static void logout() {
-        if (refreshToken != null && !refreshToken.isEmpty()) {
-            try {
-                String encoded = URLEncoder.encode(refreshToken, StandardCharsets.UTF_8);
-                HttpURLConnection connection = createConnection("/auth/logout?refreshToken=" + encoded, "POST");
-                connection.setDoOutput(false);
-                int code = connection.getResponseCode();
-                if (code != 200 && code != 204) {
-                    System.out.println("Logout endpoint returned " + code + ": " + readError(connection));
-                }
-            } catch (Exception e) {
-                System.out.println("Logout call failed (logging out locally anyway): " + e.getMessage());
-            }
-        }
+        markLoggedOut();
+        final String ref = refreshToken;
         token = null;
         refreshToken = null;
+        if (ref != null && !ref.isEmpty()) {
+            // Run server-side token invalidation asynchronously so the UI thread NEVER freezes
+            new Thread(() -> {
+                try {
+                    String encoded = URLEncoder.encode(ref, StandardCharsets.UTF_8);
+                    HttpURLConnection connection = createConnection("/auth/logout?refreshToken=" + encoded, "POST");
+                    connection.setConnectTimeout(2000);
+                    connection.setReadTimeout(2000);
+                    connection.setDoOutput(false);
+                    connection.getResponseCode();
+                } catch (Exception ignored) {
+                }
+            }, "thundercall-logout-thread").start();
+        }
     }
 
     public static String getToken() {
