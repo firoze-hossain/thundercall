@@ -95,6 +95,115 @@
 .method-head    { -fx-text-fill: #188038; }
 .method-options { -fx-text-fill: #5f6368; }
 
+/* Pill badges in Light Theme keep white text and the crisp colors like in Shared Workspaces */
+.method-chip,
+.tree-method-chip,
+.tree-method,
+.tab-method-badge {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-padding: 2 7 2 7;
+    -fx-background-radius: 4px;
+    -fx-alignment: CENTER;
+    -fx-min-width: 46px;
+    -fx-pref-width: 46px;
+}
+.tab-method-badge {
+    -fx-min-width: 38px;
+    -fx-pref-width: 38px;
+    -fx-padding: 1 6 1 6;
+}
+
+.method-chip-get,
+.method-chip.method-get,
+.tree-method.method-get,
+.tree-method-chip.method-chip-get,
+.tab-method-badge.method-get {
+    -fx-background-color: #56c99f;
+    -fx-text-fill: white;
+}
+.method-chip-post,
+.method-chip.method-post,
+.tree-method.method-post,
+.tree-method-chip.method-chip-post,
+.tab-method-badge.method-post {
+    -fx-background-color: #d9a83e;
+    -fx-text-fill: white;
+}
+.method-chip-put,
+.method-chip.method-put,
+.tree-method.method-put,
+.tree-method-chip.method-chip-put,
+.tab-method-badge.method-put {
+    -fx-background-color: #6aa8f0;
+    -fx-text-fill: white;
+}
+.method-chip-patch,
+.method-chip-pat,
+.method-chip.method-patch,
+.tree-method.method-patch,
+.tree-method-chip.method-chip-patch,
+.tab-method-badge.method-patch {
+    -fx-background-color: #b98af0;
+    -fx-text-fill: white;
+}
+.method-chip-delete,
+.method-chip-del,
+.method-chip.method-delete,
+.tree-method.method-delete,
+.tree-method-chip.method-chip-delete,
+.tab-method-badge.method-delete,
+.tab-method-badge.method-del {
+    -fx-background-color: #e5726a;
+    -fx-text-fill: white;
+}
+.method-chip-head,
+.method-chip.method-head,
+.tree-method.method-head,
+.tree-method-chip.method-chip-head,
+.tab-method-badge.method-head {
+    -fx-background-color: #7ec98f;
+    -fx-text-fill: white;
+}
+.method-chip-options,
+.method-chip-opt,
+.method-chip.method-options,
+.tree-method.method-options,
+.tree-method-chip.method-chip-options,
+.tab-method-badge.method-options {
+    -fx-background-color: #9aa0a6;
+    -fx-text-fill: white;
+}
+.method-chip-ws,
+.method-chip.method-ws,
+.tree-method.method-ws,
+.tree-method-chip.method-chip-ws,
+.tab-method-badge.method-ws {
+    -fx-background-color: #4dd0e1;
+    -fx-text-fill: white;
+}
+.method-chip-socketio,
+.method-chip.method-socketio,
+.tree-method.method-socketio,
+.tree-method-chip.method-chip-socketio,
+.tab-method-badge.method-socketio {
+    -fx-background-color: #ab47bc;
+    -fx-text-fill: white;
+}
+
+/* Subtle elevation shadow on hover / select for light theme */
+.tree-cell:hover .method-chip,
+.tree-cell:hover .tree-method-chip,
+.tree-cell:hover .tree-method {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.16), 4, 0, 0, 1);
+}
+.tree-cell:selected .method-chip,
+.tree-cell:selected .tree-method-chip,
+.tree-cell:selected .tree-method {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.25), 6, 0, 0, 1);
+}
+
 /* User-friendly row selection color for Light theme (Params / Key-Value tables) */
 .key-value-table .table-row-cell:selected {
     -fx-background-color: transparent;

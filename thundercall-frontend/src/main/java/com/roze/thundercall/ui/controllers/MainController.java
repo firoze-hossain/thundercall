@@ -10177,12 +10177,13 @@ public class MainController implements Initializable {
         if (state == null) {
             return;
         }
-        HBox box = new HBox(6);
+        HBox box = new HBox(8);
         box.setAlignment(Pos.CENTER_LEFT);
 
-        Label methodLabel = new Label(methodBadge(state.method == null ? "GET" : state.method));
-        methodLabel.getStyleClass().add("tab-method-badge");
-        methodLabel.getStyleClass().add("method-" + (state.method == null ? "get" : state.method.toLowerCase(Locale.ROOT)));
+        String curMethod = state.method == null ? "GET" : state.method;
+        Label methodLabel = new Label(methodBadge(curMethod));
+        methodLabel.getStyleClass().addAll("tab-method-badge", "method-chip", "method-chip-" + curMethod.toLowerCase(Locale.ROOT));
+        methodLabel.setAlignment(Pos.CENTER);
 
         Label nameLabel = new Label(state.name);
         nameLabel.getStyleClass().add("tab-name-label");
@@ -10732,10 +10733,13 @@ public class MainController implements Initializable {
             private final Button plusBtn = new Button("+");
             private final Button moreBtn = new Button("⋯");
             private final Region spacer = new Region();
-            private final HBox box = new HBox(6);
+            private final HBox box = new HBox(8);
 
             {
-                methodLabel.getStyleClass().add("tree-method");
+                methodLabel.getStyleClass().addAll("method-chip", "tree-method-chip");
+                methodLabel.setMinWidth(46);
+                methodLabel.setMaxWidth(Region.USE_PREF_SIZE);
+                methodLabel.setAlignment(Pos.CENTER);
                 plusBtn.getStyleClass().add("tree-inline-btn");
                 moreBtn.getStyleClass().add("tree-inline-btn");
                 HoverTooltip.attach(plusBtn, "Add request");
@@ -10781,11 +10785,11 @@ public class MainController implements Initializable {
                 TreeItem<String> treeItem = getTreeItem();
                 String method = treeItem != null ? requestMethodMap.get(treeItem) : null;
                 if (method != null) {
-                    // Request row: colored method badge + name (like Postman)
+                    // Request row: colored interactive method pill badge + name (like Postman)
                     methodLabel.setText(methodBadge(method));
-                    methodLabel.getStyleClass().removeIf(s -> s.startsWith("method-"));
-                    methodLabel.getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
-                    box.getChildren().addAll(methodLabel, nameLabel);
+                    methodLabel.getStyleClass().removeIf(s -> s.startsWith("method-") || s.startsWith("method-chip-"));
+                    methodLabel.getStyleClass().addAll("method-chip", "method-chip-" + method.toLowerCase(Locale.ROOT));
+                    box.getChildren().addAll(methodLabel, nameLabel, spacer, moreBtn);
                 } else {
                     // Collection/folder row: icon + name + hover actions
                     Image icon =
@@ -10907,9 +10911,10 @@ public class MainController implements Initializable {
             @Override
             protected void updateItem(Object item, boolean empty) {
                 super.updateItem(item, empty);
-                getStyleClass().removeIf(s -> s.startsWith("method-"));
+                setGraphic(null);
+                setText(null);
+                getStyleClass().removeIf(s -> s.startsWith("method-") || s.startsWith("method-chip-"));
                 if (empty || item == null) {
-                    setText(null);
                     return;
                 }
                 if (item instanceof EnvironmentResponse env) {
@@ -10917,17 +10922,22 @@ public class MainController implements Initializable {
                 } else if (item instanceof TreeItem<?> rawItem) {
                     @SuppressWarnings("unchecked")
                     TreeItem<String> treeItem = (TreeItem<String>) rawItem;
-                    String kind;
                     String method = requestMethodMap.get(treeItem);
                     if (method != null) {
-                        kind = method;
-                        getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
+                        Label methodChip = new Label(methodBadge(method));
+                        methodChip.getStyleClass().addAll("method-chip", "method-chip-" + method.toLowerCase(Locale.ROOT));
+                        methodChip.setMinWidth(46);
+                        methodChip.setAlignment(Pos.CENTER);
+                        Label pathLabel = new Label(treePath(treeItem));
+                        pathLabel.setStyle("-fx-text-fill: -text-primary; -fx-font-size: 12px;");
+                        HBox row = new HBox(8, methodChip, pathLabel);
+                        row.setAlignment(Pos.CENTER_LEFT);
+                        setGraphic(row);
                     } else if (collectionIdMap.containsKey(treeItem)) {
-                        kind = "Collection";
+                        setText("Collection  ·  " + treePath(treeItem));
                     } else {
-                        kind = "Folder";
+                        setText("Folder  ·  " + treePath(treeItem));
                     }
-                    setText(kind + "  ·  " + treePath(treeItem));
                 }
             }
         });
