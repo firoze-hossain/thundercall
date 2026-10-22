@@ -1752,6 +1752,7 @@
     -fx-border-color: transparent transparent -border-subtle transparent;
     -fx-border-width: 0 0 1 0;
 }
+.response-toolbar-menu.active-view,
 .response-toolbar-menu {
     -fx-background-color: -bg-elevated;
     -fx-text-fill: -text-primary;
@@ -1765,6 +1766,27 @@
 }
 .response-toolbar-menu:hover {
     -fx-background-color: -bg-hover;
+}
+.response-toolbar-menu.inactive-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -text-muted;
+    -fx-font-weight: normal;
+}
+.response-toolbar-menu.inactive-view:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+.response-toolbar-menu.inactive-view .arrow-button {
+    -fx-padding: 0;
+    -fx-pref-width: 0;
+    -fx-max-width: 0;
+    -fx-min-width: 0;
+    -fx-opacity: 0;
+}
+.response-toolbar-menu.inactive-view .arrow {
+    -fx-padding: 0;
+    -fx-shape: null;
 }
 .response-toolbar-toggle {
     -fx-background-color: transparent;

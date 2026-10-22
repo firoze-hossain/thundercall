@@ -247,6 +247,12 @@ public class MainController implements Initializable {
     @FXML
     private ToggleButton responseWrapToggle;
     @FXML
+    private Button responseFindBtn;
+    @FXML
+    private Button responseCollapseAllBtn;
+    @FXML
+    private Button responseExpandAllBtn;
+    @FXML
     private StackPane responseCodeAreaPane;
     @FXML
     private TableView<KeyValuePair> responseHeadersTable;
@@ -1952,6 +1958,17 @@ public class MainController implements Initializable {
 
         if (responseBodyArea.getText() != null && !responseBodyArea.getText().isEmpty()) {
             responseFoldManager.setFullText(responseBodyArea.getText());
+        }
+
+        // When in Preview or Visualization mode, clicking { } JSON acts as a direct button to switch back to code view
+        if (responseFormatMenu != null) {
+            responseFormatMenu.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+                if ((responsePreviewToggle != null && responsePreviewToggle.isSelected())
+                        || (responseVisualizerToggle != null && responseVisualizerToggle.isSelected())) {
+                    showResponseCodeView(null);
+                    event.consume();
+                }
+            });
         }
     }
 
@@ -12613,6 +12630,12 @@ public class MainController implements Initializable {
         if (formatName != null && responseFormatMenu != null) {
             responseFormatMenu.setText(formatName);
         }
+        if (responseFormatMenu != null) {
+            responseFormatMenu.getStyleClass().remove("inactive-view");
+            if (!responseFormatMenu.getStyleClass().contains("active-view")) {
+                responseFormatMenu.getStyleClass().add("active-view");
+            }
+        }
         if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
         if (responseVisualizerToggle != null) responseVisualizerToggle.setSelected(false);
         if (responseCodeAreaPane != null) {
@@ -12626,6 +12649,14 @@ public class MainController implements Initializable {
         if (responseVisualizationView != null) {
             responseVisualizationView.setVisible(false);
             responseVisualizationView.setManaged(false);
+        }
+        if (responseWrapToggle != null) {
+            responseWrapToggle.setVisible(true);
+            responseWrapToggle.setManaged(true);
+        }
+        if (responseFindBtn != null) {
+            responseFindBtn.setVisible(true);
+            responseFindBtn.setManaged(true);
         }
     }
 
@@ -12668,6 +12699,12 @@ public class MainController implements Initializable {
     private void handleToggleResponsePreview() {
         if (responsePreviewToggle != null && responsePreviewToggle.isSelected()) {
             if (responseVisualizerToggle != null) responseVisualizerToggle.setSelected(false);
+            if (responseFormatMenu != null) {
+                responseFormatMenu.getStyleClass().remove("active-view");
+                if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
+                    responseFormatMenu.getStyleClass().add("inactive-view");
+                }
+            }
             if (responseCodeAreaPane != null) {
                 responseCodeAreaPane.setVisible(false);
                 responseCodeAreaPane.setManaged(false);
@@ -12675,6 +12712,14 @@ public class MainController implements Initializable {
             if (responseVisualizationView != null) {
                 responseVisualizationView.setVisible(false);
                 responseVisualizationView.setManaged(false);
+            }
+            if (responseWrapToggle != null) {
+                responseWrapToggle.setVisible(false);
+                responseWrapToggle.setManaged(false);
+            }
+            if (responseFindBtn != null) {
+                responseFindBtn.setVisible(false);
+                responseFindBtn.setManaged(false);
             }
             if (responsePreview != null) {
                 responsePreview.setVisible(true);
@@ -12690,6 +12735,12 @@ public class MainController implements Initializable {
     private void handleToggleResponseVisualization() {
         if (responseVisualizerToggle != null && responseVisualizerToggle.isSelected()) {
             if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
+            if (responseFormatMenu != null) {
+                responseFormatMenu.getStyleClass().remove("active-view");
+                if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
+                    responseFormatMenu.getStyleClass().add("inactive-view");
+                }
+            }
             if (responseCodeAreaPane != null) {
                 responseCodeAreaPane.setVisible(false);
                 responseCodeAreaPane.setManaged(false);
@@ -12697,6 +12748,14 @@ public class MainController implements Initializable {
             if (responsePreview != null) {
                 responsePreview.setVisible(false);
                 responsePreview.setManaged(false);
+            }
+            if (responseWrapToggle != null) {
+                responseWrapToggle.setVisible(false);
+                responseWrapToggle.setManaged(false);
+            }
+            if (responseFindBtn != null) {
+                responseFindBtn.setVisible(false);
+                responseFindBtn.setManaged(false);
             }
             if (responseVisualizationView != null) {
                 responseVisualizationView.setVisible(true);
@@ -12710,6 +12769,11 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleCollapseAllResponse() {
+        if (responsePreview != null && responsePreview.isVisible()) {
+            try {
+                responsePreview.getEngine().executeScript("if (typeof collapseAll === 'function') collapseAll();");
+            } catch (Exception ignored) {}
+        }
         if (responseFoldManager != null) {
             responseFoldManager.foldAll();
         }
@@ -12717,6 +12781,11 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleExpandAllResponse() {
+        if (responsePreview != null && responsePreview.isVisible()) {
+            try {
+                responsePreview.getEngine().executeScript("if (typeof expandAll === 'function') expandAll();");
+            } catch (Exception ignored) {}
+        }
         if (responseFoldManager != null) {
             responseFoldManager.unfoldAll();
         }
@@ -12747,13 +12816,19 @@ public class MainController implements Initializable {
             renderPdfPreview(lastApiResponse);
             return;
         }
-        String text = lastApiResponse != null && lastApiResponse.getResponse() != null
-                ? lastApiResponse.getResponse() : responseBodyArea.getText();
+        String text = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : (lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : responseBodyArea.getText());
         if (text == null) text = "";
         String trimmed = text.trim();
         String lower = trimmed.toLowerCase(Locale.ROOT);
         if (lower.startsWith("<!doctype html") || lower.startsWith("<html")) {
             responsePreview.getEngine().loadContent(text);
+        } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            boolean isLight = ThemeManager.isLight();
+            String html = JsonTreePreviewGenerator.generateHtml(trimmed, isLight);
+            responsePreview.getEngine().loadContent(html);
         } else {
             boolean isLight = ThemeManager.isLight();
             String bg = isLight ? "#ffffff" : "#1d1f24";
