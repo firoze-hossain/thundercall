@@ -232,6 +232,22 @@ public class MainController implements Initializable {
     @FXML
     private WebView responsePreview;
     @FXML
+    private WebView responseVisualizationView;
+    @FXML
+    private MenuButton rawFormatMenu;
+    @FXML
+    private Button rawBeautifyBtn;
+    @FXML
+    private MenuButton responseFormatMenu;
+    @FXML
+    private ToggleButton responsePreviewToggle;
+    @FXML
+    private ToggleButton responseVisualizerToggle;
+    @FXML
+    private ToggleButton responseWrapToggle;
+    @FXML
+    private StackPane responseCodeAreaPane;
+    @FXML
     private TableView<KeyValuePair> responseHeadersTable;
     @FXML
     private ComboBox<String> environmentCombo;
@@ -655,6 +671,14 @@ public class MainController implements Initializable {
         if (bodyTextArea != null) {
             bodyTextArea.setVisible(isRaw);
             bodyTextArea.setManaged(isRaw);
+        }
+        if (rawFormatMenu != null) {
+            rawFormatMenu.setVisible(isRaw);
+            rawFormatMenu.setManaged(isRaw);
+        }
+        if (rawBeautifyBtn != null) {
+            rawBeautifyBtn.setVisible(isRaw);
+            rawBeautifyBtn.setManaged(isRaw);
         }
         if (formDataTable != null) {
             formDataTable.setVisible(isFormData);
@@ -1226,6 +1250,9 @@ public class MainController implements Initializable {
         // Ctrl+/ toggles "//" line-comments — independent of the "Comment"
         // annotation feature above, exactly like Postman.
         attachCommentToggleShortcut(bodyTextArea, TextEditTarget.of(bodyTextArea));
+        if (bodyCommentHighlighter != null) {
+            bodyCommentHighlighter.refresh();
+        }
     }
 
     /** GraphQL's query is its own syntax (not JSON), so it doesn't get the
@@ -1608,6 +1635,11 @@ public class MainController implements Initializable {
             String pretty = JsonPrettyPrinter.prettyPrint(forParsing);
             area.replaceText(pretty);
             area.moveTo(0);
+            if (area == bodyTextArea && bodyCommentHighlighter != null) {
+                bodyCommentHighlighter.refresh();
+            } else {
+                area.setStyleSpans(0, JsonSyntaxHighlighter.computeHighlighting(area.getText()));
+            }
             updateStatus(hadComments ? "Formatted JSON (comments removed)" : "Formatted JSON");
         } catch (Exception ex) {
             AlertUtils.showError("Can't format — invalid JSON");
@@ -1877,8 +1909,8 @@ public class MainController implements Initializable {
         if (responsePreview != null && !responsePreview.getStyleClass().contains("response-preview")) {
             responsePreview.getStyleClass().add("response-preview");
         }
-        if (responseBodySplitPane != null && responsePreview != null) {
-            responseBodySplitPane.getItems().remove(responsePreview);
+        if (responseWrapToggle != null) {
+            responseWrapToggle.setSelected(true);
         }
         responseBodyArea.setWrapText(true);
         // Postman-style line numbers down the left edge of the response viewer.
@@ -1899,6 +1931,10 @@ public class MainController implements Initializable {
         responseSearch = CodeAreaSearch.attach(responseBodyArea);
         if (responseSearchBarContainer != null) {
             responseSearchBarContainer.getChildren().add(responseSearch.getBar());
+        }
+        if (responseBodyArea.getText() != null && !responseBodyArea.getText().isEmpty()) {
+            responseBodyArea.setStyleSpans(0,
+                    JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
         }
     }
 
@@ -4821,6 +4857,9 @@ public class MainController implements Initializable {
 
                 // Load body
                 bodyTextArea.replaceText(requestResponse.getBody() != null ? requestResponse.getBody() : "");
+                if (bodyCommentHighlighter != null) {
+                    bodyCommentHighlighter.refresh();
+                }
                 // Scripts are saved WITH the request (like Postman) — restore them
                 if (preRequestScriptsArea != null) {
                     preRequestScriptsArea.setText(
@@ -10275,6 +10314,9 @@ public class MainController implements Initializable {
                 urlField.replaceText(stateUrl);
             }
             bodyTextArea.replaceText(state.body == null ? "" : state.body);
+            if (bodyCommentHighlighter != null) {
+                bodyCommentHighlighter.refresh();
+            }
             if (graphqlQueryArea != null) {
                 graphqlQueryArea.replaceText(state.graphqlQuery != null ? state.graphqlQuery : "");
             }
@@ -12236,9 +12278,21 @@ public class MainController implements Initializable {
         if (responsePreview == null) {
             return;
         }
-        if (responseBodySplitPane != null && !responseBodySplitPane.getItems().contains(responsePreview)) {
-            responseBodySplitPane.getItems().add(responsePreview);
-            responseBodySplitPane.setDividerPositions(0.5);
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(false);
+            responseCodeAreaPane.setManaged(false);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(false);
+            responseVisualizationView.setManaged(false);
+        }
+        responsePreview.setVisible(true);
+        responsePreview.setManaged(true);
+        if (responsePreviewToggle != null) {
+            responsePreviewToggle.setSelected(true);
+        }
+        if (responseVisualizerToggle != null) {
+            responseVisualizerToggle.setSelected(false);
         }
         String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
         String textColor = ThemeManager.isLight() ? "#6b6b6b" : "#9a9ea9";
@@ -12289,9 +12343,22 @@ public class MainController implements Initializable {
             String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
             responsePreview.getEngine().loadContent(
                     "<html><body style='background:" + bg + ";'></body></html>");
+            responsePreview.setVisible(false);
+            responsePreview.setManaged(false);
         }
-        if (responseBodySplitPane != null && responsePreview != null) {
-            responseBodySplitPane.getItems().remove(responsePreview);
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(false);
+            responseVisualizationView.setManaged(false);
+        }
+        if (responsePreviewToggle != null) {
+            responsePreviewToggle.setSelected(false);
+        }
+        if (responseVisualizerToggle != null) {
+            responseVisualizerToggle.setSelected(false);
+        }
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(true);
+            responseCodeAreaPane.setManaged(true);
         }
     }
 
@@ -12358,6 +12425,19 @@ public class MainController implements Initializable {
             responseBodyArea.replaceText(apiResponse.getResponse() != null ? apiResponse.getResponse() : "");
             formatResponseBody(apiResponse.getResponse());
             clearResponsePreview();
+            if (responseFormatMenu != null) {
+                String ctype = apiResponse.getContentType() != null ? apiResponse.getContentType().toLowerCase(Locale.ROOT) : "";
+                String body = apiResponse.getResponse() != null ? apiResponse.getResponse().trim() : "";
+                if (ctype.contains("json") || body.startsWith("{") || body.startsWith("[")) {
+                    responseFormatMenu.setText("{ } JSON");
+                } else if (ctype.contains("xml") || body.startsWith("<xml") || body.startsWith("<?xml")) {
+                    responseFormatMenu.setText("XML");
+                } else if (ctype.contains("html") || body.toLowerCase(Locale.ROOT).startsWith("<!doctype html") || body.toLowerCase(Locale.ROOT).startsWith("<html")) {
+                    responseFormatMenu.setText("HTML");
+                } else {
+                    responseFormatMenu.setText("Text");
+                }
+            }
         }
 
         responseHeadersData.clear();
@@ -12384,16 +12464,453 @@ public class MainController implements Initializable {
 
     private void formatResponseBody(String responseBody) {
         try {
-            if (responseBody.trim().startsWith("{")) {
-                JSONObject json = new JSONObject(responseBody);
+            if (responseBody == null || responseBody.isBlank()) return;
+            String trimmed = responseBody.trim();
+            if (trimmed.startsWith("{")) {
+                JSONObject json = new JSONObject(trimmed);
                 responseBodyArea.replaceText(json.toString(2));
-            } else if (responseBody.trim().startsWith("<")) {
-                JSONObject json = XML.toJSONObject(responseBody);
+            } else if (trimmed.startsWith("[")) {
+                JSONArray json = new JSONArray(trimmed);
                 responseBodyArea.replaceText(json.toString(2));
+            } else if (trimmed.startsWith("<")) {
+                try {
+                    JSONObject json = XML.toJSONObject(trimmed);
+                } catch (Exception ignored) {
+                }
+            }
+            if (responseBodyArea != null && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
+                responseBodyArea.setStyleSpans(0,
+                        JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
             }
         } catch (Exception e) {
             // If formatting fails, just use the original response
         }
+    }
+
+    /* =========================================================================
+     * Request Raw Body Format & Beautify Handlers
+     * ========================================================================= */
+
+    private void setOrUpdateHeader(String key, String value) {
+        boolean found = false;
+        for (KeyValuePair kv : headersData) {
+            if (key.equalsIgnoreCase(kv.getKey())) {
+                kv.setValue(value);
+                kv.setEnabled(true);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            int insertIdx = !headersData.isEmpty() && headersData.get(headersData.size() - 1).isPlaceholder()
+                    ? headersData.size() - 1 : headersData.size();
+            headersData.add(insertIdx, new KeyValuePair(true, key, value, "", false));
+            ensureHeadersPlaceholderRow();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
+        }
+        if (headersTable != null) {
+            headersTable.refresh();
+        }
+    }
+
+    @FXML
+    private void handleSelectRawFormatJson() {
+        if (rawFormatMenu != null) rawFormatMenu.setText("JSON");
+        setOrUpdateHeader("Content-Type", "application/json");
+    }
+
+    @FXML
+    private void handleSelectRawFormatXml() {
+        if (rawFormatMenu != null) rawFormatMenu.setText("XML");
+        setOrUpdateHeader("Content-Type", "application/xml");
+    }
+
+    @FXML
+    private void handleSelectRawFormatHtml() {
+        if (rawFormatMenu != null) rawFormatMenu.setText("HTML");
+        setOrUpdateHeader("Content-Type", "text/html");
+    }
+
+    @FXML
+    private void handleSelectRawFormatText() {
+        if (rawFormatMenu != null) rawFormatMenu.setText("Text");
+        setOrUpdateHeader("Content-Type", "text/plain");
+    }
+
+    @FXML
+    private void handleSelectRawFormatJs() {
+        if (rawFormatMenu != null) rawFormatMenu.setText("JavaScript");
+        setOrUpdateHeader("Content-Type", "application/javascript");
+    }
+
+    @FXML
+    private void handleBeautifyBody() {
+        if (bodyTextArea != null) {
+            prettifyJsonEditor(bodyTextArea);
+        }
+    }
+
+    /* =========================================================================
+     * Response Toolbar Handlers: { } JSON ▾, Preview, Visualization, Wrap, Search
+     * ========================================================================= */
+
+    private void showResponseCodeView(String formatName) {
+        if (formatName != null && responseFormatMenu != null) {
+            responseFormatMenu.setText(formatName);
+        }
+        if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
+        if (responseVisualizerToggle != null) responseVisualizerToggle.setSelected(false);
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(true);
+            responseCodeAreaPane.setManaged(true);
+        }
+        if (responsePreview != null) {
+            responsePreview.setVisible(false);
+            responsePreview.setManaged(false);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(false);
+            responseVisualizationView.setManaged(false);
+        }
+    }
+
+    @FXML
+    private void handleSelectResponseJson() {
+        showResponseCodeView("{ } JSON");
+        if (lastApiResponse != null && !lastApiResponse.isBinary() && lastApiResponse.getResponse() != null) {
+            formatResponseBody(lastApiResponse.getResponse());
+        }
+    }
+
+    @FXML
+    private void handleSelectResponseXml() {
+        showResponseCodeView("XML");
+    }
+
+    @FXML
+    private void handleSelectResponseHtml() {
+        showResponseCodeView("HTML");
+    }
+
+    @FXML
+    private void handleSelectResponseText() {
+        showResponseCodeView("Text");
+    }
+
+    @FXML
+    private void handleSelectResponseRaw() {
+        showResponseCodeView("Raw");
+        if (lastApiResponse != null && !lastApiResponse.isBinary() && lastApiResponse.getResponse() != null) {
+            responseBodyArea.replaceText(lastApiResponse.getResponse());
+        }
+    }
+
+    @FXML
+    private void handleToggleResponsePreview() {
+        if (responsePreviewToggle != null && responsePreviewToggle.isSelected()) {
+            if (responseVisualizerToggle != null) responseVisualizerToggle.setSelected(false);
+            if (responseCodeAreaPane != null) {
+                responseCodeAreaPane.setVisible(false);
+                responseCodeAreaPane.setManaged(false);
+            }
+            if (responseVisualizationView != null) {
+                responseVisualizationView.setVisible(false);
+                responseVisualizationView.setManaged(false);
+            }
+            if (responsePreview != null) {
+                responsePreview.setVisible(true);
+                responsePreview.setManaged(true);
+                renderPreviewView();
+            }
+        } else {
+            showResponseCodeView(null);
+        }
+    }
+
+    @FXML
+    private void handleToggleResponseVisualization() {
+        if (responseVisualizerToggle != null && responseVisualizerToggle.isSelected()) {
+            if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
+            if (responseCodeAreaPane != null) {
+                responseCodeAreaPane.setVisible(false);
+                responseCodeAreaPane.setManaged(false);
+            }
+            if (responsePreview != null) {
+                responsePreview.setVisible(false);
+                responsePreview.setManaged(false);
+            }
+            if (responseVisualizationView != null) {
+                responseVisualizationView.setVisible(true);
+                responseVisualizationView.setManaged(true);
+                renderVisualizationView();
+            }
+        } else {
+            showResponseCodeView(null);
+        }
+    }
+
+    @FXML
+    private void handleToggleResponseWrap() {
+        if (responseBodyArea != null && responseWrapToggle != null) {
+            responseBodyArea.setWrapText(responseWrapToggle.isSelected());
+        }
+    }
+
+    @FXML
+    private void handleOpenResponseSearch() {
+        if (responseSearch != null) {
+            if (responseSearch.getBar().isManaged()) {
+                responseSearch.close();
+            } else {
+                showResponseCodeView(null);
+                responseSearch.open();
+            }
+        }
+    }
+
+    private void renderPreviewView() {
+        if (responsePreview == null) return;
+        if (lastApiResponse != null && isPdfResponse(lastApiResponse)) {
+            renderPdfPreview(lastApiResponse);
+            return;
+        }
+        String text = lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : responseBodyArea.getText();
+        if (text == null) text = "";
+        String trimmed = text.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("<!doctype html") || lower.startsWith("<html")) {
+            responsePreview.getEngine().loadContent(text);
+        } else {
+            boolean isLight = ThemeManager.isLight();
+            String bg = isLight ? "#ffffff" : "#1d1f24";
+            String cardBg = isLight ? "#f6f8fa" : "#161b22";
+            String border = isLight ? "#d0d7de" : "#30363d";
+            String textColor = isLight ? "#24292f" : "#c9d1d9";
+            String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><style>"
+                    + "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: " + bg + "; color: " + textColor + "; padding: 16px; margin: 0; }"
+                    + "pre { background: " + cardBg + "; border: 1px solid " + border + "; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; overflow: auto; white-space: pre-wrap; word-break: break-word; }"
+                    + "</style></head><body><pre>" + escapeHtml(text) + "</pre></body></html>";
+            responsePreview.getEngine().loadContent(html);
+        }
+    }
+
+    private void renderVisualizationView() {
+        if (responseVisualizationView == null) return;
+        String raw = lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : responseBodyArea.getText();
+        boolean isLight = ThemeManager.isLight();
+        String html = generateVisualizationHtml(raw, isLight);
+        responseVisualizationView.getEngine().loadContent(html);
+    }
+
+    private String generateVisualizationHtml(String jsonString, boolean isLight) {
+        String bg = isLight ? "#ffffff" : "#1d1f24";
+        String cardBg = isLight ? "#f6f8fa" : "#161b22";
+        String border = isLight ? "#d0d7de" : "#30363d";
+        String text = isLight ? "#24292f" : "#e6edf3";
+        String textMuted = isLight ? "#57606a" : "#8b949e";
+        String hoverBg = isLight ? "#f0f4f9" : "#262c36";
+        String zebraBg = isLight ? "#fafbfc" : "#191c20";
+        String headerBg = isLight ? "#f6f8fa" : "#161b22";
+        String accent = "#0969da";
+
+        if (jsonString == null || jsonString.isBlank()) {
+            return "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:24px;text-align:center;background:" + bg + ";color:" + textMuted + ";'>"
+                    + "<h3>No response body to visualize</h3><p>Send a request returning JSON to see an interactive visualization.</p></body></html>";
+        }
+
+        String trimmed = jsonString.trim();
+        List<String> headers = new ArrayList<>();
+        List<List<String>> rows = new ArrayList<>();
+        boolean isTable = false;
+
+        try {
+            if (trimmed.startsWith("[")) {
+                JSONArray arr = new JSONArray(trimmed);
+                if (arr.length() > 0 && arr.get(0) instanceof JSONObject) {
+                    LinkedHashSet<String> keySet = new LinkedHashSet<>();
+                    for (int i = 0; i < arr.length(); i++) {
+                        Object item = arr.get(i);
+                        if (item instanceof JSONObject obj) {
+                            for (String k : obj.keySet()) {
+                                keySet.add(k);
+                            }
+                        }
+                    }
+                    headers.addAll(keySet);
+                    for (int i = 0; i < arr.length(); i++) {
+                        Object item = arr.get(i);
+                        List<String> row = new ArrayList<>();
+                        if (item instanceof JSONObject obj) {
+                            for (String h : headers) {
+                                Object val = obj.opt(h);
+                                row.add(formatCellValue(val));
+                            }
+                        } else {
+                            row.add(formatCellValue(item));
+                        }
+                        rows.add(row);
+                    }
+                    isTable = true;
+                } else {
+                    headers.add("#");
+                    headers.add("Value");
+                    for (int i = 0; i < arr.length(); i++) {
+                        List<String> row = new ArrayList<>();
+                        row.add(String.valueOf(i + 1));
+                        row.add(formatCellValue(arr.get(i)));
+                        rows.add(row);
+                    }
+                    isTable = true;
+                }
+            } else if (trimmed.startsWith("{")) {
+                JSONObject obj = new JSONObject(trimmed);
+                headers.add("Key");
+                headers.add("Type");
+                headers.add("Value");
+                for (String k : obj.keySet()) {
+                    Object val = obj.get(k);
+                    List<String> row = new ArrayList<>();
+                    row.add("<strong>" + escapeHtml(k) + "</strong>");
+                    row.add("<span style='color:" + textMuted + ";font-size:11px;'>" + getTypeName(val) + "</span>");
+                    row.add(formatCellValue(val));
+                    rows.add(row);
+                }
+                isTable = true;
+            }
+        } catch (Exception e) {
+            isTable = false;
+        }
+
+        if (!isTable) {
+            return "<!DOCTYPE html><html><body style='font-family:-apple-system,sans-serif;padding:24px;background:" + bg + ";color:" + text + ";'>"
+                    + "<div style='background:" + cardBg + ";border:1px solid " + border + ";border-radius:6px;padding:16px;'>"
+                    + "<h4 style='margin-top:0;'>Raw Response Preview</h4>"
+                    + "<pre style='font-family:monospace;font-size:12px;overflow:auto;white-space:pre-wrap;'>" + escapeHtml(trimmed) + "</pre>"
+                    + "</div></body></html>";
+        }
+
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html><html><head><meta charset='utf-8'>");
+        html.append("<style>");
+        html.append("* { box-sizing: border-box; }");
+        html.append("body { margin: 0; padding: 12px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; background-color: ").append(bg).append("; color: ").append(text).append("; }");
+        html.append(".visualizer-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 12px; }");
+        html.append(".search-box { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 320px; }");
+        html.append(".search-box input { width: 100%; padding: 5px 10px; border: 1px solid ").append(border).append("; border-radius: 4px; background: ").append(cardBg).append("; color: ").append(text).append("; font-size: 12px; outline: none; }");
+        html.append(".search-box input:focus { border-color: ").append(accent).append("; }");
+        html.append(".counter { font-size: 12px; color: ").append(textMuted).append("; }");
+        html.append(".table-wrap { overflow: auto; border: 1px solid ").append(border).append("; border-radius: 6px; max-height: calc(100vh - 70px); }");
+        html.append("table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }");
+        html.append("th { background: ").append(headerBg).append("; color: ").append(text).append("; font-weight: 600; padding: 8px 12px; border-bottom: 2px solid ").append(border).append("; position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none; white-space: nowrap; }");
+        html.append("th:hover { background: ").append(hoverBg).append("; }");
+        html.append("th .sort-icon { margin-left: 6px; font-size: 10px; opacity: 0.6; }");
+        html.append("td { padding: 7px 12px; border-bottom: 1px solid ").append(border).append("; white-space: nowrap; max-width: 450px; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }");
+        html.append("tr:nth-child(even) td { background-color: ").append(zebraBg).append("; }");
+        html.append("tr:hover td { background-color: ").append(hoverBg).append(" !important; }");
+        html.append(".val-num { color: ").append(isLight ? "#098658" : "#7ee787").append("; font-family: monospace; }");
+        html.append(".val-str { color: ").append(isLight ? "#0366d6" : "#79c0ff").append("; }");
+        html.append(".val-bool { color: ").append(isLight ? "#005cc5" : "#79c0ff").append("; font-weight: bold; }");
+        html.append(".val-null { color: ").append(isLight ? "#6e7781" : "#8b949e").append("; font-style: italic; }");
+        html.append(".val-json { font-family: monospace; font-size: 11px; opacity: 0.85; }");
+        html.append("</style></head><body>");
+
+        html.append("<div class='visualizer-topbar'>");
+        html.append("<div class='search-box'>");
+        html.append("<input type='text' id='filterInput' placeholder='Filter records...' onkeyup='applyFilter()' />");
+        html.append("</div>");
+        html.append("<div class='counter' id='recordCount'>Showing ").append(rows.size()).append(" records</div>");
+        html.append("</div>");
+
+        html.append("<div class='table-wrap'>");
+        html.append("<table id='visTable'><thead><tr>");
+        for (int c = 0; c < headers.size(); c++) {
+            html.append("<th onclick='sortTable(").append(c).append(")'>")
+                    .append(escapeHtml(headers.get(c)))
+                    .append("<span class='sort-icon' id='sort-icon-").append(c).append("'>↕</span></th>");
+        }
+        html.append("</tr></thead><tbody>");
+
+        for (List<String> r : rows) {
+            html.append("<tr>");
+            for (String cell : r) {
+                html.append("<td>").append(cell).append("</td>");
+            }
+            html.append("</tr>");
+        }
+
+        html.append("</tbody></table></div>");
+
+        html.append("<script>");
+        html.append("function applyFilter() {");
+        html.append("  var input = document.getElementById('filterInput').value.toLowerCase();");
+        html.append("  var rows = document.querySelectorAll('#visTable tbody tr');");
+        html.append("  var count = 0;");
+        html.append("  rows.forEach(function(row) {");
+        html.append("    var text = row.innerText.toLowerCase();");
+        html.append("    if (text.indexOf(input) > -1) { row.style.display = ''; count++; }");
+        html.append("    else { row.style.display = 'none'; }");
+        html.append("  });");
+        html.append("  document.getElementById('recordCount').innerText = 'Showing ' + count + ' of ").append(rows.size()).append(" records';");
+        html.append("}");
+        html.append("var sortDirections = {};");
+        html.append("function sortTable(colIndex) {");
+        html.append("  var table = document.getElementById('visTable');");
+        html.append("  var tbody = table.querySelector('tbody');");
+        html.append("  var rows = Array.from(tbody.querySelectorAll('tr'));");
+        html.append("  var dir = sortDirections[colIndex] === 'asc' ? 'desc' : 'asc';");
+        html.append("  sortDirections[colIndex] = dir;");
+        html.append("  rows.sort(function(a, b) {");
+        html.append("    var aVal = a.cells[colIndex] ? a.cells[colIndex].innerText.trim() : '';");
+        html.append("    var bVal = b.cells[colIndex] ? b.cells[colIndex].innerText.trim() : '';");
+        html.append("    var aNum = parseFloat(aVal), bNum = parseFloat(bVal);");
+        html.append("    if (!isNaN(aNum) && !isNaN(bNum)) { return dir === 'asc' ? aNum - bNum : bNum - aNum; }");
+        html.append("    return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);");
+        html.append("  });");
+        html.append("  rows.forEach(function(r) { tbody.appendChild(r); });");
+        html.append("  for (var i = 0; i < ").append(headers.size()).append("; i++) {");
+        html.append("    var icon = document.getElementById('sort-icon-' + i);");
+        html.append("    if (icon) icon.innerText = (i === colIndex ? (dir === 'asc' ? '▲' : '▼') : '↕');");
+        html.append("  }");
+        html.append("}");
+        html.append("</script>");
+
+        html.append("</body></html>");
+        return html.toString();
+    }
+
+    private String formatCellValue(Object val) {
+        if (val == null || val == JSONObject.NULL) {
+            return "<span class='val-null'>null</span>";
+        } else if (val instanceof Boolean) {
+            return "<span class='val-bool'>" + val + "</span>";
+        } else if (val instanceof Number) {
+            return "<span class='val-num'>" + val + "</span>";
+        } else if (val instanceof JSONObject || val instanceof JSONArray) {
+            return "<span class='val-json'>" + escapeHtml(val.toString()) + "</span>";
+        } else {
+            return "<span class='val-str'>" + escapeHtml(String.valueOf(val)) + "</span>";
+        }
+    }
+
+    private String getTypeName(Object val) {
+        if (val == null || val == JSONObject.NULL) return "null";
+        if (val instanceof Boolean) return "boolean";
+        if (val instanceof Number) return "number";
+        if (val instanceof JSONObject) return "object";
+        if (val instanceof JSONArray) return "array";
+        return "string";
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String formatSize(long bytes) {

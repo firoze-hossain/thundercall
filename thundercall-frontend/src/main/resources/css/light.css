@@ -317,5 +317,194 @@
     -fx-border-color: -border-subtle;
 }
 
+/* ============ Postman Light Theme JSON / Variable syntax highlighting ============ */
+.body-textarea .lineno, .response-body .lineno, .lineno {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #8c9199;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+    -fx-padding: 0 10 0 8;
+    -fx-alignment: center-right;
+    -fx-border-color: transparent #e1e4e8 transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.body-textarea .paragraph-text, .response-body .paragraph-text {
+    -fx-padding: 0 0 0 8;
+}
+
+.body-textarea, .response-body {
+    -fx-background-color: #ffffff;
+}
+.body-textarea .text, .response-body .text {
+    -fx-fill: #24292f;
+}
+
+/* Postman Light Theme JSON / Variable syntax highlighting (High Specificity) */
+.body-textarea .text.json-key,
+.response-body .text.json-key,
+.code-area .text.json-key,
+.styled-text-area .text.json-key,
+.body-textarea .json-key,
+.response-body .json-key,
+.code-area .json-key,
+.styled-text-area .json-key,
+.text.json-key,
+.json-key {
+    -fx-fill: #d73a49;
+    -fx-font-weight: bold;
+}
+
+.body-textarea .text.json-string,
+.response-body .text.json-string,
+.code-area .text.json-string,
+.styled-text-area .text.json-string,
+.body-textarea .json-string,
+.response-body .json-string,
+.code-area .json-string,
+.styled-text-area .json-string,
+.text.json-string,
+.json-string {
+    -fx-fill: #0366d6;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-number,
+.response-body .text.json-number,
+.code-area .text.json-number,
+.styled-text-area .text.json-number,
+.body-textarea .json-number,
+.response-body .json-number,
+.code-area .json-number,
+.styled-text-area .json-number,
+.text.json-number,
+.json-number {
+    -fx-fill: #098658;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-boolean,
+.response-body .text.json-boolean,
+.code-area .text.json-boolean,
+.styled-text-area .text.json-boolean,
+.body-textarea .json-boolean,
+.response-body .json-boolean,
+.code-area .json-boolean,
+.styled-text-area .json-boolean,
+.text.json-boolean,
+.json-boolean {
+    -fx-fill: #005cc5;
+    -fx-font-weight: bold;
+}
+
+.body-textarea .text.json-null,
+.response-body .text.json-null,
+.code-area .text.json-null,
+.styled-text-area .text.json-null,
+.body-textarea .json-null,
+.response-body .json-null,
+.code-area .json-null,
+.styled-text-area .json-null,
+.text.json-null,
+.json-null {
+    -fx-fill: #6e7781;
+    -fx-font-style: italic;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-punctuation,
+.response-body .text.json-punctuation,
+.code-area .text.json-punctuation,
+.styled-text-area .text.json-punctuation,
+.body-textarea .json-punctuation,
+.response-body .json-punctuation,
+.code-area .json-punctuation,
+.styled-text-area .json-punctuation,
+.text.json-punctuation,
+.json-punctuation {
+    -fx-fill: #24292f;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-comment,
+.response-body .text.json-comment,
+.code-area .text.json-comment,
+.styled-text-area .text.json-comment,
+.body-textarea .json-comment,
+.response-body .json-comment,
+.code-area .json-comment,
+.styled-text-area .json-comment,
+.text.json-comment,
+.json-comment {
+    -fx-fill: #6e7781;
+    -fx-font-style: italic;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-variable,
+.response-body .text.json-variable,
+.code-area .text.json-variable,
+.styled-text-area .text.json-variable,
+.body-textarea .json-variable,
+.response-body .json-variable,
+.code-area .json-variable,
+.styled-text-area .json-variable,
+.text.json-variable,
+.json-variable {
+    -fx-fill: #e65100;
+    -fx-font-weight: bold;
+    -rtfx-background-color: rgba(255, 108, 55, 0.16);
+}
+
+/* Postman response toolbar for Light Theme */
+.response-body-toolbar {
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent transparent #e8e8e8 transparent;
+}
+.response-toolbar-menu {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+}
+.response-toolbar-menu:hover {
+    -fx-background-color: #e6e6e6;
+}
+.response-toolbar-toggle {
+    -fx-text-fill: #6b6b6b;
+}
+.response-toolbar-toggle:hover {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+}
+.response-toolbar-toggle:selected {
+    -fx-background-color: #e8e8e8;
+    -fx-border-color: #d6d6d6;
+    -fx-text-fill: #212121;
+}
+.response-toolbar-btn {
+    -fx-text-fill: #6b6b6b;
+}
+.response-toolbar-btn:hover {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+}
+.response-toolbar-btn:selected {
+    -fx-background-color: #e8e8e8;
+    -fx-text-fill: #e85a25;
+}
+
+.body-format-btn {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+}
+.body-beautify-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e85a25;
+    -fx-border-color: rgba(255, 108, 55, 0.25);
+}
+.body-beautify-btn:hover {
+    -fx-background-color: rgba(255, 108, 55, 0.10);
+}
+
 
 

@@ -664,6 +664,22 @@
                                                       styleClass="body-type-btn"/>
                                         <ToggleButton fx:id="graphqlBodyTypeButton" text="GraphQL"
                                                       styleClass="body-type-btn"/>
+                                        <MenuButton fx:id="rawFormatMenu" text="JSON" styleClass="body-format-btn" visible="false" managed="false">
+                                             <items>
+                                                 <MenuItem text="JSON" onAction="#handleSelectRawFormatJson"/>
+                                                 <MenuItem text="XML" onAction="#handleSelectRawFormatXml"/>
+                                                 <MenuItem text="HTML" onAction="#handleSelectRawFormatHtml"/>
+                                                 <MenuItem text="Text" onAction="#handleSelectRawFormatText"/>
+                                                 <MenuItem text="JavaScript" onAction="#handleSelectRawFormatJs"/>
+                                             </items>
+                                         </MenuButton>
+                                         <Region HBox.hgrow="ALWAYS"/>
+                                         <Button fx:id="rawBeautifyBtn" text="Beautify" onAction="#handleBeautifyBody"
+                                                 styleClass="body-beautify-btn" visible="false" managed="false">
+                                             <tooltip>
+                                                 <Tooltip text="Beautify JSON (Ctrl+Shift+F)"/>
+                                             </tooltip>
+                                         </Button>
                                         <HBox fx:id="graphqlToolbar" alignment="CENTER_LEFT" spacing="6" styleClass="graphql-toolbar" visible="false" managed="false">
                                             <Button fx:id="graphqlAutoFetchBtn" text="Auto Fetch ▾" styleClass="graphql-toolbar-btn"/>
                                             <Button fx:id="graphqlRefreshBtn" styleClass="graphql-icon-btn">
@@ -771,20 +787,40 @@
                     <TabPane fx:id="responseTabPane" styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                         <tabs>
                             <Tab text="Body" fx:id="responseBodyTab">
-                                <SplitPane fx:id="responseBodySplitPane" orientation="HORIZONTAL" dividerPositions="0.7">
-                                    <StackPane>
-                                        <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
-                                               text="Click Send to get a response" mouseTransparent="true"/>
-                                        <CodeArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
-                                        <VBox fx:id="responseSearchBarContainer" alignment="TOP_RIGHT"
-                                               pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
-                                            <padding>
-                                                <Insets top="8" right="8"/>
-                                            </padding>
-                                        </VBox>
+                                <VBox spacing="0" VBox.vgrow="ALWAYS">
+                                    <HBox styleClass="response-body-toolbar" alignment="CENTER_LEFT" spacing="6">
+                                        <MenuButton fx:id="responseFormatMenu" text="{ } JSON" styleClass="response-toolbar-menu">
+                                            <items>
+                                                <MenuItem text="JSON" onAction="#handleSelectResponseJson"/>
+                                                <MenuItem text="XML" onAction="#handleSelectResponseXml"/>
+                                                <MenuItem text="HTML" onAction="#handleSelectResponseHtml"/>
+                                                <MenuItem text="Text" onAction="#handleSelectResponseText"/>
+                                                <MenuItem text="Raw" onAction="#handleSelectResponseRaw"/>
+                                            </items>
+                                        </MenuButton>
+                                        <ToggleButton fx:id="responsePreviewToggle" text="▷ Preview" styleClass="response-toolbar-toggle" onAction="#handleToggleResponsePreview"/>
+                                        <ToggleButton fx:id="responseVisualizerToggle" text="📊 Visualization" styleClass="response-toolbar-toggle" onAction="#handleToggleResponseVisualization"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <ToggleButton fx:id="responseWrapToggle" text="⏎ Wrap" styleClass="response-toolbar-btn" onAction="#handleToggleResponseWrap"/>
+                                        <Button fx:id="responseFindBtn" text="🔍 Find" onAction="#handleOpenResponseSearch" styleClass="response-toolbar-btn"/>
+                                        <Button fx:id="responseCopyBodyBtn" text="📋 Copy" onAction="#handleCopyResponse" styleClass="response-toolbar-btn"/>
+                                    </HBox>
+                                    <StackPane VBox.vgrow="ALWAYS" styleClass="response-content-stack">
+                                        <StackPane fx:id="responseCodeAreaPane">
+                                            <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
+                                                   text="Click Send to get a response" mouseTransparent="true"/>
+                                            <CodeArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
+                                            <VBox fx:id="responseSearchBarContainer" alignment="TOP_RIGHT"
+                                                   pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
+                                                <padding>
+                                                    <Insets top="8" right="8"/>
+                                                </padding>
+                                            </VBox>
+                                        </StackPane>
+                                        <WebView fx:id="responsePreview" visible="false" managed="false"/>
+                                        <WebView fx:id="responseVisualizationView" visible="false" managed="false"/>
                                     </StackPane>
-                                    <WebView fx:id="responsePreview"/>
-                                </SplitPane>
+                                </VBox>
                             </Tab>
                             <Tab text="Messages" fx:id="wsMessagesTab">
                                 <VBox spacing="6">

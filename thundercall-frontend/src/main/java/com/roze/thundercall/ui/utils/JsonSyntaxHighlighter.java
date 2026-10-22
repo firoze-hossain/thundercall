@@ -44,7 +44,8 @@ public final class JsonSyntaxHighlighter {
                     + "|(?<KEY>\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"\\s*(?=:))"
                     + "|(?<STRING>\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\")"
                     + "|(?<NUMBER>-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b)"
-                    + "|(?<BOOLNULL>\\btrue\\b|\\bfalse\\b|\\bnull\\b)"
+                    + "|(?<BOOL>\\btrue\\b|\\bfalse\\b)"
+                    + "|(?<NULL>\\bnull\\b)"
                     + "|(?<PUNCT>[{}\\[\\],:])"
     );
 
@@ -72,7 +73,8 @@ public final class JsonSyntaxHighlighter {
                             : matcher.group("KEY") != null ? "json-key"
                             : matcher.group("STRING") != null ? "json-string"
                             : matcher.group("NUMBER") != null ? "json-number"
-                            : matcher.group("BOOLNULL") != null ? "json-boolean"
+                            : matcher.group("BOOL") != null ? "json-boolean"
+                            : matcher.group("NULL") != null ? "json-null"
                             : matcher.group("PUNCT") != null ? "json-punctuation"
                             : null;
             if (styleClass == null) {

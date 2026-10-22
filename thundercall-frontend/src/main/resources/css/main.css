@@ -1541,13 +1541,18 @@
 
 /* Postman-style line-number gutter (body request/response editors). RichTextFX
    labels each paragraph's number with the "lineno" style class. */
-.body-textarea .lineno, .response-body .lineno {
+.body-textarea .lineno, .response-body .lineno, .lineno {
     -fx-background-color: -bg-panel;
     -fx-text-fill: -text-muted;
-    -fx-font-family: "Consolas", "JetBrains Mono", monospace;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
     -fx-font-size: 12px;
-    -fx-padding: 0 8 0 6;
+    -fx-padding: 0 10 0 8;
     -fx-alignment: center-right;
+    -fx-border-color: transparent -border-color transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.body-textarea .paragraph-text, .response-body .paragraph-text {
+    -fx-padding: 0 0 0 8;
 }
 
 /* Placeholder text for the CodeArea-based fields (CodeArea has no
@@ -1567,21 +1572,204 @@
 .response-prompt-label { -fx-padding: 10; }
 
 /* ============ JSON / variable syntax highlighting, Postman-style ============ */
-.json-key         { -fx-fill: #6cb6ff; -fx-font-weight: bold; }   /* blue */
-.json-string      { -fx-fill: #92c792; }                          /* green */
-.json-number      { -fx-fill: #d19a66; }                          /* tan/orange */
-.json-boolean     { -fx-fill: #6cb6ff; -fx-font-weight: bold; }   /* blue, same family as keys */
-.json-punctuation { -fx-fill: -text-secondary; }
-.json-comment     { -fx-fill: -text-muted; -fx-font-style: italic; }      /* grey, italic — "// disabled" fields */
-.json-variable    {
-    -fx-fill: #1d1f24;
+.body-textarea .text.json-key,
+.response-body .text.json-key,
+.code-area .text.json-key,
+.styled-text-area .text.json-key,
+.body-textarea .json-key,
+.response-body .json-key,
+.code-area .json-key,
+.styled-text-area .json-key,
+.text.json-key,
+.json-key {
+    -fx-fill: #ff7b72;
     -fx-font-weight: bold;
 }
-/* {{variables}} get a filled pill background like Postman's orange tags —
-   RichTextFX renders each styled run as its own <text>, so a background
-   rectangle is faked via a rounded background on the run itself. */
-.text.json-variable {
-    -rtfx-background-color: #ffb454;
+
+.body-textarea .text.json-string,
+.response-body .text.json-string,
+.code-area .text.json-string,
+.styled-text-area .text.json-string,
+.body-textarea .json-string,
+.response-body .json-string,
+.code-area .json-string,
+.styled-text-area .json-string,
+.text.json-string,
+.json-string {
+    -fx-fill: #79c0ff;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-number,
+.response-body .text.json-number,
+.code-area .text.json-number,
+.styled-text-area .text.json-number,
+.body-textarea .json-number,
+.response-body .json-number,
+.code-area .json-number,
+.styled-text-area .json-number,
+.text.json-number,
+.json-number {
+    -fx-fill: #7ee787;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-boolean,
+.response-body .text.json-boolean,
+.code-area .text.json-boolean,
+.styled-text-area .text.json-boolean,
+.body-textarea .json-boolean,
+.response-body .json-boolean,
+.code-area .json-boolean,
+.styled-text-area .json-boolean,
+.text.json-boolean,
+.json-boolean {
+    -fx-fill: #79c0ff;
+    -fx-font-weight: bold;
+}
+
+.body-textarea .text.json-null,
+.response-body .text.json-null,
+.code-area .text.json-null,
+.styled-text-area .text.json-null,
+.body-textarea .json-null,
+.response-body .json-null,
+.code-area .json-null,
+.styled-text-area .json-null,
+.text.json-null,
+.json-null {
+    -fx-fill: #8b949e;
+    -fx-font-style: italic;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-punctuation,
+.response-body .text.json-punctuation,
+.code-area .text.json-punctuation,
+.styled-text-area .text.json-punctuation,
+.body-textarea .json-punctuation,
+.response-body .json-punctuation,
+.code-area .json-punctuation,
+.styled-text-area .json-punctuation,
+.text.json-punctuation,
+.json-punctuation {
+    -fx-fill: #c9d1d9;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-comment,
+.response-body .text.json-comment,
+.code-area .text.json-comment,
+.styled-text-area .text.json-comment,
+.body-textarea .json-comment,
+.response-body .json-comment,
+.code-area .json-comment,
+.styled-text-area .json-comment,
+.text.json-comment,
+.json-comment {
+    -fx-fill: #8b949e;
+    -fx-font-style: italic;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-variable,
+.response-body .text.json-variable,
+.code-area .text.json-variable,
+.styled-text-area .text.json-variable,
+.body-textarea .json-variable,
+.response-body .json-variable,
+.code-area .json-variable,
+.styled-text-area .json-variable,
+.text.json-variable,
+.json-variable {
+    -fx-fill: #ff835a;
+    -fx-font-weight: bold;
+    -rtfx-background-color: rgba(255, 108, 55, 0.22);
+}
+
+/* Response body Postman toolbar: { } JSON ▾ | ▷ Preview | 📊 Visualization */
+.response-body-toolbar {
+    -fx-padding: 5 10 5 10;
+    -fx-background-color: -bg-panel;
+    -fx-border-color: transparent transparent -border-subtle transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.response-toolbar-menu {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 8 3 8;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.response-toolbar-menu:hover {
+    -fx-background-color: -bg-hover;
+}
+.response-toolbar-toggle {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 4 9 4 9;
+    -fx-border-color: transparent;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.response-toolbar-toggle:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+.response-toolbar-toggle:selected {
+    -fx-background-color: -bg-elevated;
+    -fx-border-color: -border-color;
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+}
+.response-toolbar-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 4 8 4 8;
+    -fx-border-color: transparent;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.response-toolbar-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+}
+.response-toolbar-btn:selected {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+}
+
+.body-format-btn {
+    -fx-background-color: -bg-elevated;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 2 8 2 8;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.body-beautify-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -accent;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 8 3 8;
+    -fx-border-color: -accent-soft;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.body-beautify-btn:hover {
+    -fx-background-color: -accent-soft;
 }
 
 /* ============ Variable autocomplete popup ============ */
