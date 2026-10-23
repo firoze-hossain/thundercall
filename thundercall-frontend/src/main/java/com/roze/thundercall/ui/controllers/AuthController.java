@@ -4,6 +4,7 @@ import com.roze.thundercall.ui.Main;
 import com.roze.thundercall.ui.models.AuthResponse;
 import com.roze.thundercall.ui.services.ApiClient;
 import com.roze.thundercall.ui.services.DeepLinkService;
+import com.roze.thundercall.ui.services.DesktopBrowserAuthService;
 import com.roze.thundercall.ui.services.TokenManager;
 import com.roze.thundercall.ui.utils.AlertUtils;
 import com.roze.thundercall.ui.utils.CredentialStore;
@@ -34,6 +35,12 @@ public class AuthController {
     @FXML
     private PasswordField passwordField;
     @FXML
+    private TextField passwordTextField;
+    @FXML
+    private Button togglePasswordButton;
+    @FXML
+    private javafx.scene.layout.VBox emailBox;
+    @FXML
     private Button loginButton;
     @FXML
     private Button registerButton;
@@ -44,6 +51,8 @@ public class AuthController {
     @FXML
     private Hyperlink switchToLoginLink;
     @FXML
+    private Label switchPromptLabel;
+    @FXML
     private ProgressIndicator loadingSpinner;
     @FXML
     private Label authTitle;
@@ -53,9 +62,56 @@ public class AuthController {
     private CheckBox rememberMeCheck;
 
     private Boolean isLoginMode = true;
+    private boolean passwordVisible = false;
 
     @FXML
     public void initialize() {
+        if (passwordTextField != null) {
+            passwordTextField.textProperty().bindBidirectional(passwordField.textProperty());
+        }
+        if (togglePasswordButton != null) {
+            togglePasswordButton.setOnAction(e -> togglePasswordVisibility());
+        }
+
+        // Interactive keyboard navigation: Enter advances field or submits
+        usernameField.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                if (!isLoginMode && emailField != null && emailField.isManaged()) {
+                    emailField.requestFocus();
+                } else if (passwordField.isVisible()) {
+                    passwordField.requestFocus();
+                } else if (passwordTextField != null && passwordTextField.isVisible()) {
+                    passwordTextField.requestFocus();
+                }
+            }
+        });
+
+        if (emailField != null) {
+            emailField.setOnKeyPressed(e -> {
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                    if (passwordField.isVisible()) {
+                        passwordField.requestFocus();
+                    } else if (passwordTextField != null && passwordTextField.isVisible()) {
+                        passwordTextField.requestFocus();
+                    }
+                }
+            });
+        }
+
+        passwordField.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                handleAuthAction();
+            }
+        });
+
+        if (passwordTextField != null) {
+            passwordTextField.setOnKeyPressed(e -> {
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                    handleAuthAction();
+                }
+            });
+        }
+
         updateViewMode();
         // Remember me: pre-fill the most recent saved account
         if (rememberMeCheck != null && CredentialStore.hasSaved()) {
@@ -126,7 +182,7 @@ public class AuthController {
                     } else {
                         CredentialStore.clear();
                     }
-                    TokenManager.storeTokens(response);
+                    TokenManager.startNewSession(response);
                     Main.showMainView();
                 });
             } catch (IOException e) {
@@ -201,12 +257,49 @@ public class AuthController {
         updateViewMode();
     }
 
+    public void setRegisterMode(boolean registerMode) {
+        this.isLoginMode = !registerMode;
+        updateViewMode();
+    }
+
+    private void togglePasswordVisibility() {
+        if (passwordTextField == null || togglePasswordButton == null) {
+            return;
+        }
+        passwordVisible = !passwordVisible;
+        if (passwordVisible) {
+            passwordField.setVisible(false);
+            passwordField.setManaged(false);
+            passwordTextField.setVisible(true);
+            passwordTextField.setManaged(true);
+            togglePasswordButton.setText("🔒");
+            passwordTextField.requestFocus();
+            passwordTextField.positionCaret(passwordTextField.getText().length());
+        } else {
+            passwordTextField.setVisible(false);
+            passwordTextField.setManaged(false);
+            passwordField.setVisible(true);
+            passwordField.setManaged(true);
+            togglePasswordButton.setText("👁");
+            passwordField.requestFocus();
+            passwordField.positionCaret(passwordField.getText().length());
+        }
+    }
+
     private void updateViewMode() {
         if (isLoginMode) {
-            emailLabel.setVisible(false);
-            emailLabel.setManaged(false);
-            emailField.setVisible(false);
-            emailField.setManaged(false);   // FIX: was emailLabel.setManaged(false)
+            if (emailBox != null) {
+                emailBox.setVisible(false);
+                emailBox.setManaged(false);
+            }
+            if (emailLabel != null) {
+                emailLabel.setVisible(false);
+                emailLabel.setManaged(false);
+            }
+            if (emailField != null) {
+                emailField.setVisible(false);
+                emailField.setManaged(false);
+            }
 
             loginButton.setVisible(true);
             loginButton.setManaged(true);
@@ -220,6 +313,10 @@ public class AuthController {
             switchToLoginLink.setVisible(false);
             switchToLoginLink.setManaged(false);
 
+            if (switchPromptLabel != null) {
+                switchPromptLabel.setText("New to Thundercall?");
+            }
+
             usernameField.setPromptText("Enter username or email");
 
             if (authTitle != null) {
@@ -229,10 +326,18 @@ public class AuthController {
                 authSubtitle.setText("Sign in to continue to your workspace");
             }
         } else {
-            emailLabel.setVisible(true);
-            emailLabel.setManaged(true);
-            emailField.setVisible(true);
-            emailField.setManaged(true);
+            if (emailBox != null) {
+                emailBox.setVisible(true);
+                emailBox.setManaged(true);
+            }
+            if (emailLabel != null) {
+                emailLabel.setVisible(true);
+                emailLabel.setManaged(true);
+            }
+            if (emailField != null) {
+                emailField.setVisible(true);
+                emailField.setManaged(true);
+            }
 
             loginButton.setVisible(false);
             loginButton.setManaged(false);
@@ -244,13 +349,17 @@ public class AuthController {
             switchToLoginLink.setVisible(true);
             switchToLoginLink.setManaged(true);
 
+            if (switchPromptLabel != null) {
+                switchPromptLabel.setText("Already have an account?");
+            }
+
             usernameField.setPromptText("Enter username");
 
             if (authTitle != null) {
                 authTitle.setText("Create your account");
             }
             if (authSubtitle != null) {
-                authSubtitle.setText("A ready-to-use workspace is waiting for you");
+                authSubtitle.setText("Start building and testing your APIs in seconds");
             }
         }
     }
@@ -260,10 +369,34 @@ public class AuthController {
         loginButton.setDisable(loading);
         registerButton.setDisable(loading);
         browserLoginButton.setDisable(loading);
+        if (togglePasswordButton != null) {
+            togglePasswordButton.setDisable(loading);
+        }
     }
 
     @FXML
     private void handleBrowserLogin() {
-        DeepLinkService.openBrowserForAuth();
+        setLoading(true);
+        if (switchPromptLabel != null) {
+            switchPromptLabel.setText("Waiting for browser authorization...");
+        }
+        DesktopBrowserAuthService.startBrowserAuth(
+                status -> {
+                    if (switchPromptLabel != null) {
+                        switchPromptLabel.setText(status);
+                    }
+                },
+                () -> {
+                    setLoading(false);
+                    Main.showMainView();
+                },
+                errorMessage -> {
+                    setLoading(false);
+                    if (switchPromptLabel != null) {
+                        switchPromptLabel.setText("Sign in with browser cancelled.");
+                    }
+                    AlertUtils.showError(errorMessage);
+                }
+        );
     }
 }

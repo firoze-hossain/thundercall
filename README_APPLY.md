@@ -24,6 +24,31 @@ than a plain `git pull`.
 
 ---
 
+## 2026-10-23 — Release 1.0.0 & Documentation Overhaul
+
+### Where these go
+```
+README.md                               (modified)
+screenshots-folder-README.md            (modified)
+docs/screenshots/README.md              (new)
+docs/screenshots/01-light-request-builder.png (new)
+docs/screenshots/02-light-mock-servers.png    (new)
+docs/screenshots/03-light-monitors.png        (new)
+docs/screenshots/04-dark-request-response.png (new)
+docs/screenshots/05-dark-collections.png     (new)
+docs/screenshots/06-dark-editor.png          (new)
+```
+Docs and assets only.
+
+### What it does
+- **Overhauled [`README.md`](README.md)** with complete project architecture, technical stack breakdown, native vs Electron performance comparison, and responsive quick-navigation anchors.
+- **Visual Showcase Gallery**: Deployed 6 high-resolution screenshots highlighting both Light and Dark themes (Request builder, Mock servers, API Monitors, Dual-pane response viewer, Collections tree, and Code editor with assertion tests).
+- **Cross-Platform Installation Guides**: Step-by-step instructions for Linux (`.deb` via `apt`/`dpkg`), Windows 10/11 (`.exe` setup wizard and `.msi`), and macOS (`.dmg`).
+- **OS Security Warning Bypasses**: Comprehensive guides explaining and resolving macOS Gatekeeper ("unidentified developer") warnings (Finder Right-Click, `xattr -d com.apple.quarantine`, and System Settings override) and Windows SmartScreen ("More info -> Run anyway").
+- **Quickstart & Open Source Contribution**: Clear 5-step getting-started guide and standardized GitHub open-source contribution workflow.
+
+---
+
 ## 2026-08-14 — README: screenshots section + project status
 
 ### Where these go
@@ -62,7 +87,7 @@ Docs only — nothing to build or rebuild.
 
 ---
 
-## 2026-08-14 — Request/Response editor: Postman-parity polish
+## 2026-08-14 — Request/Response editor: Editor UX polish
 
 ### Where these go
 ```
@@ -90,8 +115,8 @@ together since they all touch the same code paths:
   "Invalid JSON format" error and block sending. Validation now
   strips comments (and any trailing comma left behind) before
   checking, but the literal text you typed — comments included — is
-  still exactly what gets sent, matching how Postman's own raw editor
-  behaves.
+  still exactly what gets sent, matching standard raw editor
+  behavior.
 - **Comments get their own color.** Previously a commented-out
   `"fatherName": ""` line was highlighted as if it were live JSON.
   Comments now render in a dedicated grey/italic style.
@@ -129,7 +154,7 @@ together since they all touch the same code paths:
   shuffle field order on every format. `JsonPrettyPrinter` is a small,
   dependency-free, hand-written parser/printer instead, specifically
   so field order is always preserved exactly as written — matching
-  Postman's own (JS-based, naturally order-preserving) beautify.
+  industry standard (JS-based, naturally order-preserving) beautify.
 - **The outside-click fix doesn't touch Escape.** Both paths can close
   a popup; whichever fires first wins, the other is just a no-op
   afterward.

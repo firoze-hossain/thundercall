@@ -46,4 +46,13 @@ public class WorkspaceManager {
     public static boolean canEditCurrentWorkspace() {
         return sharedRole == null || "EDITOR".equals(sharedRole);
     }
+
+    /**
+     * Clears all in-memory workspace context. Called on logout and before
+     * switching user accounts to prevent workspace leakage across accounts.
+     */
+    public static void clear() {
+        currentWorkspace = null;
+        sharedRole = null;
+    }
 }

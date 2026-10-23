@@ -1,5 +1,8 @@
 package com.roze.thundercall.ui;
 
+import com.roze.thundercall.ui.controllers.AuthController;
+import com.roze.thundercall.ui.services.ApiClient;
+import com.roze.thundercall.ui.services.TokenManager;
 import com.roze.thundercall.ui.utils.AlertUtils;
 import javafx.application.Application;
 import javafx.application.HostServices;
@@ -19,23 +22,36 @@ public class Main extends Application {
     public void start(Stage stage) {
         primaryStage = stage;
         hostServices = getHostServices();
-        // If a background call ever discovers the session has fully
-        // expired (refresh token expired too), return to the login screen
-        // with a clear explanation instead of leaving the app stuck.
-        com.roze.thundercall.ui.services.ApiClient.setOnSessionExpired(() -> {
-            AlertUtils.showInfo("Your session has expired — please log in again.");
+
+        // If an API call discovers the 7-day session has fully expired,
+        // return to the login screen with a clear explanation.
+        ApiClient.setOnSessionExpired(() -> {
+            com.roze.thundercall.ui.services.WorkspaceManager.clear();
+            AlertUtils.showInfo("Your 7-day session has expired — please log in again.");
             showLoginView();
         });
-        showLoginView();
+
+        // Check if an unexpired 7-day session exists
+        if (TokenManager.restoreSession()) {
+            System.out.println("[Main] Restored active 7-day session for " + TokenManager.getUsername()
+                    + " (" + TokenManager.getSessionTimeRemainingHumanReadable() + ")");
+            showMainView();
+        } else {
+            showLoginView();
+            if (TokenManager.wasSessionExpired()) {
+                TokenManager.clearSessionExpiredAlert();
+                AlertUtils.showInfo("Your 7-day session has expired. Please log in again.");
+            }
+        }
     }
 
     public static void showLoginView() {
         try {
             FXMLLoader fxmlLoader = new FXMLLoader(Main.class.getResource("/views/login.fxml"));
-            Scene scene = new Scene(fxmlLoader.load(), 800, 600);
+            Scene scene = new Scene(fxmlLoader.load(), 880, 600);
             primaryStage.setScene(scene);
-            primaryStage.setTitle("Login");
-            resetStageToSceneSize(800, 600);
+            primaryStage.setTitle("Thundercall — Sign In");
+            resetStageToSceneSize(880, 600);
             primaryStage.show();
         } catch (IOException e) {
             AlertUtils.showError("Failed to load login view");
@@ -46,8 +62,12 @@ public class Main extends Application {
         try {
             FXMLLoader fxmlLoader = new FXMLLoader(Main.class.getResource("/views/register.fxml"));
             Scene scene = new Scene(fxmlLoader.load(), 880, 600);
+            AuthController controller = fxmlLoader.getController();
+            if (controller != null) {
+                controller.setRegisterMode(true);
+            }
             primaryStage.setScene(scene);
-            primaryStage.setTitle("Register");
+            primaryStage.setTitle("Thundercall — Create Account");
             resetStageToSceneSize(880, 600);
             primaryStage.show();
         } catch (IOException e) {
@@ -70,24 +90,47 @@ public class Main extends Application {
         }
     }
 
-    /** FIX: setScene() alone never resets the STAGE's own width/height or
-     * maximized state — only the Scene's preferred size. If the main
-     * window had been resized or maximized, logging out would swap in
-     * the (smaller, fixed-layout) login scene but leave the stage at
-     * whatever large size it already was, stretching the login card
-     * across it. Auth views always get their own correct size now,
-     * regardless of what size the previous view left the window at. */
+    /**
+     * Resets stage size and maximized state when switching to an auth view.
+     */
     private static void resetStageToSceneSize(double width, double height) {
-        // FIX: this used to clear leftover Stage.setMinWidth/setMinHeight
-        // constraints from the main view first — but the main view no
-        // longer calls those APIs at all (they're what triggers the GTK
-        // resize assertion on this platform; see showMainView()), so
-        // there's nothing left to clear, and one less call to that API
-        // is one less chance to hit the same crash.
-        primaryStage.setMaximized(false);
+        if (primaryStage == null) {
+            return;
+        }
+
+        if (primaryStage.isMaximized()) {
+            javafx.beans.value.ChangeListener<Boolean> maxListener = new javafx.beans.value.ChangeListener<>() {
+                @Override
+                public void changed(javafx.beans.value.ObservableValue<? extends Boolean> obs, Boolean oldVal, Boolean newVal) {
+                    if (!newVal) {
+                        primaryStage.maximizedProperty().removeListener(this);
+                        primaryStage.setWidth(width);
+                        primaryStage.setHeight(height);
+                        primaryStage.centerOnScreen();
+                    }
+                }
+            };
+            primaryStage.maximizedProperty().addListener(maxListener);
+            primaryStage.setMaximized(false);
+        }
+
         primaryStage.setWidth(width);
         primaryStage.setHeight(height);
         primaryStage.centerOnScreen();
+
+        // On Linux / GTK, window manager unmaximize event is asynchronous.
+        // A brief delayed pass guarantees that even if X11 took time to finish
+        // the unmaximize transition, the stage bounds and center position are applied.
+        javafx.animation.PauseTransition pulse = new javafx.animation.PauseTransition(javafx.util.Duration.millis(80));
+        pulse.setOnFinished(e -> {
+            if (primaryStage.isMaximized()) {
+                primaryStage.setMaximized(false);
+            }
+            primaryStage.setWidth(width);
+            primaryStage.setHeight(height);
+            primaryStage.centerOnScreen();
+        });
+        pulse.play();
     }
 
     public static void showMainView() {

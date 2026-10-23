@@ -49,7 +49,7 @@ public class VerifyEmailController {
             try {
                 AuthResponse response = ApiClient.verifyEmail(email, code);
                 Platform.runLater(() -> {
-                    TokenManager.storeTokens(response);
+                    TokenManager.startNewSession(response);
                     AlertUtils.showSuccess("Email verified — welcome to Thundercall!");
                     Main.showMainView();
                 });

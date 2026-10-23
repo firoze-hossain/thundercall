@@ -21,6 +21,8 @@ public interface RequestHistoryService {
     
     void clearUserHistory(User user);
     
+    void deleteHistoryItem(Long id, User user);
+    
     void clearRequestHistory(Long requestId, User user);
     
     void clearOldHistory(User user, LocalDateTime beforeDate);

@@ -15,15 +15,20 @@
 
     <fx:define>
         <ToggleGroup fx:id="sidebarRailGroup"/>
+        <Tooltip fx:id="graphqlWarningTooltip"
+                 styleClass="graphql-warning-tooltip"
+                 wrapText="true" prefWidth="250"
+                 text="Could not auto fetch. Make sure Authorization, URL &amp; selected environment are valid. Check console for more details."/>
     </fx:define>
 
-    <BorderPane>
+    <BorderPane fx:id="mainRootPane">
         <!-- ============ TOP: menu bar + header + workspace bar (Postman rows 1-3) ============ -->
         <top>
             <VBox>
                 <!-- Row 1: application menu bar -->
                 <MenuBar styleClass="app-menu-bar">
                     <Menu text="File">
+                        <MenuItem text="New Tab" accelerator="Shortcut+T" onAction="#handleNewTab"/>
                         <MenuItem text="New Collection" onAction="#handleNewCollection"/>
                         <MenuItem text="New Environment" onAction="#handleNewEnvironment"/>
                         <SeparatorMenuItem/>
@@ -32,14 +37,44 @@
                         <SeparatorMenuItem/>
                         <MenuItem text="Settings…" onAction="#handleSettings"/>
                         <SeparatorMenuItem/>
+                        <MenuItem text="Close Tab" accelerator="Shortcut+W" onAction="#handleCloseTab"/>
+                        <MenuItem text="Force Close Tab" accelerator="Alt+Shortcut+W" onAction="#handleForceCloseTab"/>
+                        <MenuItem text="Close Window" accelerator="Shortcut+Shift+W" onAction="#handleCloseWindow"/>
+                        <SeparatorMenuItem/>
                         <MenuItem text="Logout" onAction="#handleLogout"/>
                         <MenuItem text="Exit" onAction="#handleExit"/>
                     </Menu>
+                    <Menu text="Edit">
+                        <MenuItem text="Undo" accelerator="Shortcut+Z" onAction="#handleUndo"/>
+                        <MenuItem text="Redo" accelerator="Shortcut+Shift+Z" onAction="#handleRedo"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Cut" accelerator="Shortcut+X" onAction="#handleCut"/>
+                        <MenuItem text="Copy" accelerator="Shortcut+C" onAction="#handleCopy"/>
+                        <MenuItem text="Paste" accelerator="Shortcut+V" onAction="#handlePaste"/>
+                        <MenuItem text="Paste and Match Style" accelerator="Shortcut+Shift+V" onAction="#handlePasteAndMatchStyle"/>
+                        <MenuItem text="Delete" onAction="#handleDelete"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Select All" accelerator="Shortcut+A" onAction="#handleSelectAll"/>
+                    </Menu>
                     <Menu text="View">
-                        <MenuItem text="Dark Theme" onAction="#handleThemeDark"/>
-                        <MenuItem text="Light Theme" onAction="#handleThemeLight"/>
+                        <MenuItem text="Toggle Full Screen" accelerator="F11" onAction="#handleToggleFullScreen"/>
+                        <MenuItem text="Zoom In" accelerator="Shortcut+=" onAction="#handleZoomIn"/>
+                        <MenuItem text="Zoom Out" accelerator="Shortcut+-" onAction="#handleZoomOut"/>
+                        <MenuItem text="Reset Zoom" accelerator="Shortcut+0" onAction="#handleResetZoom"/>
+                        <MenuItem text="Toggle Two-Pane View" accelerator="Alt+Shortcut+V" onAction="#handleToggleTwoPaneView"/>
+                        <MenuItem text="Toggle Sidebar" accelerator="Shortcut+\" onAction="#handleToggleSidebar"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Go Back" accelerator="Alt+Left" onAction="#handleGoBack"/>
+                        <MenuItem text="Go Forward" accelerator="Alt+Right" onAction="#handleGoForward"/>
+                        <MenuItem text="Next Tab" accelerator="Shortcut+Tab" onAction="#handleNextTab"/>
+                        <MenuItem text="Previous Tab" accelerator="Shortcut+Shift+Tab" onAction="#handlePreviousTab"/>
                     </Menu>
                     <Menu text="Help">
+                        <MenuItem text="Clear Cache and Reload" onAction="#handleClearCacheAndReload"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Documentation" onAction="#handleDocumentation"/>
+                        <MenuItem text="Support" onAction="#handleSupport"/>
+                        <SeparatorMenuItem/>
                         <MenuItem text="Check for Updates…" onAction="#handleCheckForUpdates"/>
                         <MenuItem text="About Thundercall" onAction="#handleAbout"/>
                     </Menu>
@@ -53,6 +88,14 @@
                     <ImageView fitHeight="24" fitWidth="24" preserveRatio="true">
                         <Image url="@../images/logo.png"/>
                     </ImageView>
+                    <Button fx:id="navBackBtn" styleClass="nav-arrow-button" onAction="#handleGoBack" focusTraversable="false">
+                        <tooltip><Tooltip text="Go Back (Alt+Left Arrow)"/></tooltip>
+                        <graphic><Label text="←" styleClass="nav-arrow-icon"/></graphic>
+                    </Button>
+                    <Button fx:id="navForwardBtn" styleClass="nav-arrow-button" onAction="#handleGoForward" focusTraversable="false">
+                        <tooltip><Tooltip text="Go Forward (Alt+Right Arrow)"/></tooltip>
+                        <graphic><Label text="→" styleClass="nav-arrow-icon"/></graphic>
+                    </Button>
                     <Label text="Home" styleClass="nav-item"/>
                     <MenuButton fx:id="workspacesMenuBtn" text="Workspaces" styleClass="nav-item-menu">
                         <items>
@@ -66,6 +109,7 @@
                     <Region HBox.hgrow="ALWAYS"/>
                     <TextField fx:id="globalSearchField" styleClass="global-search"
                                promptText="Search Thundercall  (Ctrl+K)" prefWidth="300"
+                               focusTraversable="false"
                                onAction="#handleGlobalSearch" onMouseClicked="#handleGlobalSearchFieldClicked"/>
                     <Region HBox.hgrow="ALWAYS"/>
 
@@ -78,7 +122,7 @@
                             <Tooltip text="Settings"/>
                         </tooltip>
                         <graphic>
-                            <Label text="⚙" styleClass="gear-icon"/>
+                            <Label text="⚙" styleClass="gear-icon" mouseTransparent="true"/>
                         </graphic>
                     </Button>
                     <MenuButton fx:id="userMenuBtn" text="User" styleClass="user-menu">
@@ -130,10 +174,10 @@
                  it back out (labels reappear in full) or narrow it down
                  to icons only — same orange-on-hover divider as the
                  sidebar/response ones. -->
-            <SplitPane fx:id="sidebarSplitPane" orientation="HORIZONTAL" dividerPositions="0.09, 0.27"
+            <SplitPane fx:id="sidebarSplitPane" orientation="HORIZONTAL" dividerPositions="0.10, 0.28"
                        styleClass="sidebar-split-pane">
                 <VBox styleClass="icon-rail" spacing="4" alignment="TOP_CENTER"
-                      prefWidth="78" minWidth="56" maxWidth="160">
+                      prefWidth="86" minWidth="80" maxWidth="160">
                     <padding>
                         <Insets top="8" bottom="8" left="4" right="4"/>
                     </padding>
@@ -222,14 +266,14 @@
                                     <Tooltip text="New request"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
                             </Button>
                             <MenuButton styleClass="icon-button" fx:id="collectionsMenuBtn">
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/more-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -261,7 +305,7 @@
                                     <Tooltip text="Import environment from JSON"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/folder-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -271,7 +315,7 @@
                                     <Tooltip text="New environment"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -292,16 +336,19 @@
                             <Region HBox.hgrow="ALWAYS"/>
                             <Button styleClass="icon-button" onAction="#handleClearHistory">
                                 <tooltip>
-                                    <Tooltip text="Clear history"/>
+                                    <Tooltip text="Clear all history"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/clear-icon.png"/>
                                     </ImageView>
                                 </graphic>
                             </Button>
                         </HBox>
-                        <ListView fx:id="historyList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
+                        <TextField fx:id="historySearchField" promptText="Search history"
+                                   styleClass="sidebar-search" maxWidth="10000"/>
+                        <TreeView fx:id="historyTree" styleClass="history-tree, tree-view"
+                                  showRoot="false" VBox.vgrow="ALWAYS"/>
                     </VBox>
 
                     <!-- Teams pane -->
@@ -317,7 +364,7 @@
                                     <Tooltip text="Join a team with an invite code"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/folder-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -327,7 +374,7 @@
                                     <Tooltip text="Create a team"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -351,14 +398,14 @@
                                     <Tooltip text="Create a mock server"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
                             </Button>
                         </HBox>
-                        <Label styleClass="sidebar-hint" wrapText="true"
-                               text="Double-click a mock server to manage its routes."/>
+                        <TextField fx:id="mockServersSearchField" promptText="Search mock servers"
+                                   styleClass="sidebar-search" maxWidth="10000"/>
                         <ListView fx:id="mockServersList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
 
@@ -375,14 +422,14 @@
                                     <Tooltip text="Create a monitor"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
                             </Button>
                         </HBox>
-                        <Label styleClass="sidebar-hint" wrapText="true"
-                               text="Double-click a monitor to see run history or run it now."/>
+                        <TextField fx:id="monitorsSearchField" promptText="Search monitors"
+                                   styleClass="sidebar-search" maxWidth="10000"/>
                         <ListView fx:id="monitorsList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
 
@@ -399,7 +446,7 @@
                                     <Tooltip text="Enter an invite code"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/add-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -409,7 +456,7 @@
                                     <Tooltip text="Refresh"/>
                                 </tooltip>
                                 <graphic>
-                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true">
+                                    <ImageView fitHeight="14" fitWidth="14" preserveRatio="true" mouseTransparent="true">
                                         <Image url="@../images/clear-icon.png"/>
                                     </ImageView>
                                 </graphic>
@@ -428,7 +475,7 @@
                         <FlowPane fx:id="onlineUsersBox" hgap="6" vgap="6" styleClass="online-users-box"/>
                     </VBox>
                 </StackPane>
-                    <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
+                    <SplitPane fx:id="mainSplitPane" orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
                 <!-- Request builder -->
                 <VBox styleClass="requestResponse-panel">
                     <!-- Postman-style open-request tabs -->
@@ -436,34 +483,34 @@
                              tabClosingPolicy="ALL_TABS"
                              minHeight="36" prefHeight="36" maxHeight="36"/>
                     <HBox styleClass="url-bar" spacing="8" alignment="CENTER_LEFT">
-                        <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"/>
-                        <StackPane HBox.hgrow="ALWAYS" alignment="CENTER_LEFT">
+                        <ComboBox fx:id="methodCombo" styleClass="method-combo" prefWidth="110"
+                                  minHeight="38" prefHeight="38" maxHeight="38"/>
+                        <StackPane HBox.hgrow="ALWAYS" alignment="CENTER_LEFT"
+                                   minHeight="38" prefHeight="38" maxHeight="38">
+                            <CodeArea fx:id="urlField" styleClass="url-field"
+                                      minHeight="38" prefHeight="38" maxHeight="38"/>
                             <Label fx:id="urlPromptLabel" styleClass="url-prompt-label"
-                                   text="Enter URL or paste text — use {{variables}} from the selected environment"
+                                   text="Enter URL or paste text"
                                    mouseTransparent="true"/>
-                            <CodeArea fx:id="urlField" styleClass="url-field"/>
                         </StackPane>
-                        <Button text="Send" fx:id="sendBtn" styleClass="send-button" onAction="#handleSendRequest"/>
+                        <Button text="Send" fx:id="sendBtn" styleClass="send-button"
+                                minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleSendRequest"/>
                         <Button text="Connect" fx:id="wsConnectBtn" styleClass="send-button" visible="false" managed="false"
-                                onAction="#handleWsConnectToggle"/>
+                                minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleWsConnectToggle"/>
                         <Button text="Connect" fx:id="socketIoConnectBtn" styleClass="send-button" visible="false" managed="false"
-                                onAction="#handleSocketIoConnectToggle"/>
-                        <Button styleClass="icon-button" onAction="#handleSaveRequest">
-                            <tooltip>
-                                <Tooltip text="Save request"/>
-                            </tooltip>
+                                minHeight="38" prefHeight="38" maxHeight="38" onAction="#handleSocketIoConnectToggle"/>
+                        <Button fx:id="saveRequestBtn" styleClass="icon-button" onAction="#handleSaveRequest"
+                                minHeight="38" prefHeight="38" maxHeight="38" prefWidth="38">
                             <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
+                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/save-icon.png"/>
                                 </ImageView>
                             </graphic>
                         </Button>
-                        <Button styleClass="icon-button" onAction="#handleSamplePostRequest">
-                            <tooltip>
-                                <Tooltip text="Load sample POST request"/>
-                            </tooltip>
+                        <Button fx:id="samplePostBtn" styleClass="icon-button" onAction="#handleSamplePostRequest"
+                                minHeight="38" prefHeight="38" maxHeight="38" prefWidth="38">
                             <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
+                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/sample-icon.png"/>
                                 </ImageView>
                             </graphic>
@@ -491,27 +538,41 @@
                                     </HBox>
                                 </VBox>
                             </Tab>
-                            <Tab text="Socket.IO" fx:id="socketIoTab">
-                                <VBox spacing="8">
+                            <Tab text="Message" fx:id="socketIoMessageTab">
+                                <VBox spacing="10">
                                     <padding>
                                         <Insets top="10" right="10" bottom="10" left="10"/>
                                     </padding>
-                                    <HBox spacing="8" alignment="CENTER_LEFT">
-                                        <Label text="Namespace"/>
+                                    <HBox spacing="12" alignment="CENTER_LEFT">
+                                        <Label text="Namespace:"/>
                                         <TextField fx:id="socketIoNamespaceField" promptText="/ (default)" prefWidth="160"/>
-                                        <Label fx:id="socketIoStatusLabel" text="Not connected" styleClass="ws-status-label"/>
+                                        <Label text="Event:"/>
+                                        <TextField fx:id="socketIoEventNameField" promptText="Event name (e.g. message, chat)" HBox.hgrow="ALWAYS"/>
                                     </HBox>
-                                    <ListView fx:id="socketIoEventLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
-                                    <HBox spacing="8" alignment="CENTER_LEFT">
-                                        <TextField fx:id="socketIoEventNameField" promptText="Event name, e.g. chat message" prefWidth="200"/>
-                                        <TextField fx:id="socketIoEventDataField" promptText="Data (JSON or plain text)"
-                                                   HBox.hgrow="ALWAYS" onAction="#handleSocketIoEmit"/>
-                                        <Button text="Emit" onAction="#handleSocketIoEmit" styleClass="add-row-button"/>
+                                    <TextArea fx:id="socketIoMessageComposeArea" promptText="Type a message or JSON payload to send..."
+                                              wrapText="true" VBox.vgrow="ALWAYS"/>
+                                    <HBox alignment="CENTER_RIGHT" spacing="8">
+                                        <Button text="Send" onAction="#handleSocketIoEmit" styleClass="send-button"/>
                                     </HBox>
                                 </VBox>
                             </Tab>
-                            <Tab text="Params">
+                            <Tab text="Events" fx:id="socketIoEventsTab">
                                 <VBox>
+                                    <TableView fx:id="socketIoEventsTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
+                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
+                                        <Button text="+ Add Event" onAction="#handleAddSocketIoEventRow"
+                                                styleClass="add-row-button"/>
+                                        <Button text="Delete Event" onAction="#handleDeleteSocketIoEventRow"
+                                                styleClass="delete-row-button"/>
+                                    </HBox>
+                                </VBox>
+                            </Tab>
+                            <Tab text="Params" fx:id="paramsTab">
+                                <VBox spacing="6">
+                                    <padding>
+                                        <Insets top="8" right="0" bottom="0" left="0"/>
+                                    </padding>
+                                    <Label text="Query Params" styleClass="params-section-title"/>
                                     <TableView fx:id="paramsTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddParamRow"
@@ -522,7 +583,7 @@
                                 </VBox>
                             </Tab>
 
-                            <Tab text="Authorization">
+                            <Tab text="Authorization" fx:id="authTab">
                                 <HBox spacing="24" styleClass="auth-panel">
                                     <VBox spacing="10" minWidth="200" maxWidth="200">
                                         <Label text="Auth Type" styleClass="scripts-section-label"/>
@@ -535,9 +596,9 @@
                                         <VBox fx:id="bearerAuthBox" spacing="6" managed="false" visible="false">
                                             <Label text="Token" styleClass="scripts-section-label"/>
                                             <StackPane>
+                                                <CodeArea fx:id="tokenField" styleClass="url-field"/>
                                                 <Label fx:id="tokenPromptLabel" styleClass="url-prompt-label"
                                                        text="{{Token}} or paste a token" mouseTransparent="true"/>
-                                                <CodeArea fx:id="tokenField" styleClass="url-field"/>
                                             </StackPane>
                                         </VBox>
                                         <!-- Basic Auth -->
@@ -545,9 +606,9 @@
                                             <VBox spacing="6">
                                                 <Label text="Username" styleClass="scripts-section-label"/>
                                                 <StackPane>
+                                                    <CodeArea fx:id="usernameField" styleClass="url-field"/>
                                                     <Label fx:id="usernamePromptLabel" styleClass="url-prompt-label"
                                                            text="Username or {{variable}}" mouseTransparent="true"/>
-                                                    <CodeArea fx:id="usernameField" styleClass="url-field"/>
                                                 </StackPane>
                                             </VBox>
                                             <VBox spacing="6">
@@ -618,8 +679,12 @@
                                 </HBox>
                             </Tab>
 
-                            <Tab text="Headers">
-                                <VBox>
+                            <Tab text="Headers" fx:id="headersTab">
+                                <VBox spacing="6">
+                                    <padding>
+                                        <Insets top="8" right="0" bottom="0" left="0"/>
+                                    </padding>
+                                    <Label text="Headers" styleClass="params-section-title"/>
                                     <TableView fx:id="headersTable" styleClass="key-value-table" VBox.vgrow="ALWAYS"/>
                                     <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
                                         <Button text="Add Row" onAction="#handleAddHeaderRow"
@@ -630,9 +695,9 @@
                                 </VBox>
                             </Tab>
 
-                            <Tab text="Body">
+                            <Tab text="Body" fx:id="bodyTab">
                                 <VBox>
-                                    <HBox styleClass="body-type-selector">
+                                    <HBox styleClass="body-type-selector" alignment="CENTER_LEFT" spacing="6">
                                         <ToggleButton fx:id="noneBodyTypeButton" text="None"
                                                       styleClass="body-type-btn"/>
                                         <ToggleButton fx:id="rawBodyTypeButton" text="Raw" styleClass="body-type-btn"/>
@@ -642,28 +707,69 @@
                                                       styleClass="body-type-btn"/>
                                         <ToggleButton fx:id="graphqlBodyTypeButton" text="GraphQL"
                                                       styleClass="body-type-btn"/>
+                                        <MenuButton fx:id="rawFormatMenu" text="JSON" styleClass="body-format-btn" visible="false" managed="false">
+                                             <items>
+                                                 <MenuItem text="JSON" onAction="#handleSelectRawFormatJson"/>
+                                                 <MenuItem text="XML" onAction="#handleSelectRawFormatXml"/>
+                                                 <MenuItem text="HTML" onAction="#handleSelectRawFormatHtml"/>
+                                                 <MenuItem text="Text" onAction="#handleSelectRawFormatText"/>
+                                                 <MenuItem text="JavaScript" onAction="#handleSelectRawFormatJs"/>
+                                             </items>
+                                         </MenuButton>
+                                         <Region HBox.hgrow="ALWAYS"/>
+                                         <Button fx:id="rawBeautifyBtn" text="Beautify" onAction="#handleBeautifyBody"
+                                                 styleClass="body-beautify-btn" visible="false" managed="false">
+                                             <tooltip>
+                                                 <Tooltip text="Beautify JSON (Ctrl+Shift+F)"/>
+                                             </tooltip>
+                                         </Button>
+                                        <HBox fx:id="graphqlToolbar" alignment="CENTER_LEFT" spacing="6" styleClass="graphql-toolbar" visible="false" managed="false">
+                                            <Button fx:id="graphqlAutoFetchBtn" text="Auto Fetch ▾" styleClass="graphql-toolbar-btn"/>
+                                            <Button fx:id="graphqlRefreshBtn" styleClass="graphql-icon-btn">
+                                                <graphic>
+                                                    <Region styleClass="graphql-refresh-icon" mouseTransparent="true"/>
+                                                </graphic>
+                                            </Button>
+                                            <Label fx:id="graphqlWarningLabel" styleClass="graphql-warning-container" visible="true">
+                                                <graphic>
+                                                    <Region styleClass="graphql-warning-icon" mouseTransparent="true"/>
+                                                </graphic>
+                                            </Label>
+                                        </HBox>
                                     </HBox>
                                     <StackPane VBox.vgrow="ALWAYS">
+                                        <VBox fx:id="noneBodyPane" alignment="CENTER" styleClass="body-none-pane">
+                                            <Label text="This request does not have a body" styleClass="body-none-label"/>
+                                        </VBox>
                                         <Label fx:id="bodyPromptLabel" styleClass="body-prompt-label"
-                                               text="Request body content" mouseTransparent="true"/>
-                                        <CodeArea fx:id="bodyTextArea" styleClass="body-textarea"/>
+                                               text="Request body content" mouseTransparent="true" visible="false"/>
+                                        <CodeArea fx:id="bodyTextArea" styleClass="body-textarea" visible="false"/>
                                         <TableView fx:id="formDataTable" styleClass="key-value-table" visible="false"/>
                                         <TableView fx:id="urlEncodedTable" styleClass="key-value-table" visible="false"/>
-                                        <SplitPane fx:id="graphqlPane" orientation="VERTICAL" dividerPositions="0.65"
+                                        <SplitPane fx:id="graphqlPane" orientation="HORIZONTAL" dividerPositions="0.5"
                                                    visible="false" styleClass="graphql-split">
-                                            <VBox spacing="4">
-                                                <Label text="Query" styleClass="graphql-section-label"/>
+                                            <VBox spacing="0" HBox.hgrow="ALWAYS" styleClass="graphql-pane-column">
+                                                <HBox alignment="CENTER_LEFT" styleClass="graphql-section-header">
+                                                    <Label text="QUERY" styleClass="graphql-section-title"/>
+                                                </HBox>
                                                 <CodeArea fx:id="graphqlQueryArea" styleClass="body-textarea"
                                                           VBox.vgrow="ALWAYS"/>
                                             </VBox>
-                                            <VBox spacing="4">
-                                                <Label text="Query Variables (JSON)" styleClass="graphql-section-label"/>
+                                            <VBox spacing="0" HBox.hgrow="ALWAYS" styleClass="graphql-pane-column">
+                                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="graphql-section-header">
+                                                    <Label text="GRAPHQL VARIABLES" styleClass="graphql-section-title"/>
+                                                    <Label text="ⓘ" styleClass="graphql-info-icon">
+                                                        <tooltip>
+                                                            <Tooltip text="Variables must be valid JSON"/>
+                                                        </tooltip>
+                                                    </Label>
+                                                </HBox>
                                                 <CodeArea fx:id="graphqlVariablesArea" styleClass="body-textarea"
                                                           VBox.vgrow="ALWAYS"/>
                                             </VBox>
                                         </SplitPane>
                                     </StackPane>
-                                    <HBox alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8">
+                                    <HBox fx:id="bodyTableButtonBar" alignment="CENTER_RIGHT" styleClass="table-button-bar" spacing="8" visible="false" managed="false">
                                         <Button text="Add Row" onAction="#handleAddFormDataRow"
                                                 styleClass="add-row-button"/>
                                         <Button text="Delete Row" onAction="#handleDeleteFormDataRow"
@@ -672,7 +778,7 @@
                                 </VBox>
                             </Tab>
 
-                            <Tab text="Scripts">
+                            <Tab text="Scripts" fx:id="scriptsTab">
                                 <VBox spacing="10" styleClass="scripts-panel">
                                     <Label text="Pre-request Scripts" styleClass="scripts-section-label"/>
                                     <TextArea fx:id="preRequestScriptsArea"
@@ -704,7 +810,7 @@
                                 <Tooltip text="Copy response"/>
                             </tooltip>
                             <graphic>
-                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true">
+                                <ImageView fitHeight="16" fitWidth="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/copy-icon.png"/>
                                 </ImageView>
                             </graphic>
@@ -714,48 +820,111 @@
                                 <Tooltip text="Save response"/>
                             </tooltip>
                             <graphic>
-                                <ImageView fitWidth="16" fitHeight="16" preserveRatio="true">
+                                <ImageView fitWidth="16" fitHeight="16" preserveRatio="true" mouseTransparent="true">
                                     <Image url="@../images/save-icon.png"/>
                                 </ImageView>
                             </graphic>
                         </Button>
                     </HBox>
 
-                    <TabPane styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
+                    <TabPane fx:id="responseTabPane" styleClass="response-tabs" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                         <tabs>
-                            <Tab text="Body">
-                                <SplitPane orientation="HORIZONTAL" dividerPositions="0.7">
-                                    <StackPane>
-                                        <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
-                                               text="Click Send to get a response" mouseTransparent="true"/>
-                                        <CodeArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
-                                        <VBox fx:id="responseSearchBarContainer" alignment="TOP_RIGHT"
-                                              pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
-                                            <padding>
-                                                <Insets top="8" right="8"/>
-                                            </padding>
-                                        </VBox>
+                            <Tab text="Body" fx:id="responseBodyTab">
+                                <VBox spacing="0" VBox.vgrow="ALWAYS">
+                                    <HBox styleClass="response-body-toolbar" alignment="CENTER_LEFT" spacing="6">
+                                        <MenuButton fx:id="responseFormatMenu" text="{ } JSON" styleClass="response-toolbar-menu">
+                                            <items>
+                                                <MenuItem fx:id="responseFormatJsonItem" text="✓   { } JSON" onAction="#handleSelectResponseJson"/>
+                                                <MenuItem fx:id="responseFormatXmlItem" text="     &lt;/&gt; XML" onAction="#handleSelectResponseXml"/>
+                                                <MenuItem fx:id="responseFormatHtmlItem" text="     &lt;i/&gt; HTML" onAction="#handleSelectResponseHtml"/>
+                                                <MenuItem fx:id="responseFormatJsItem" text="     JS JavaScript" onAction="#handleSelectResponseJs"/>
+                                                <SeparatorMenuItem/>
+                                                <MenuItem fx:id="responseFormatRawItem" text="     [=] Raw" onAction="#handleSelectResponseRaw"/>
+                                                <MenuItem fx:id="responseFormatHexItem" text="     0x Hex" onAction="#handleSelectResponseHex"/>
+                                                <MenuItem fx:id="responseFormatBase64Item" text="     64 Base64" onAction="#handleSelectResponseBase64"/>
+                                            </items>
+                                        </MenuButton>
+                                        <ToggleButton fx:id="responsePreviewToggle" text="▷ Preview" styleClass="response-toolbar-toggle" onAction="#handleToggleResponsePreview"/>
+                                        <MenuButton fx:id="responseVisualizationMenu" text="🖼 Visualization" styleClass="response-toolbar-menu inactive-view">
+                                            <items>
+                                                <MenuItem fx:id="visualizeItem" text="🖼   Visualize" onAction="#handleSelectVisualize"/>
+                                                <MenuItem fx:id="visualizeTableItem" text="⊞   Table" onAction="#handleSelectVisualizeTable"/>
+                                                <MenuItem fx:id="visualizeLinearChartItem" text="📈  Linear Chart" onAction="#handleSelectVisualizeLinearChart"/>
+                                                <MenuItem fx:id="visualizeBarGraphItem" text="📊  Bar Graph" onAction="#handleSelectVisualizeBarGraph"/>
+                                            </items>
+                                        </MenuButton>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <ToggleButton fx:id="responseWrapToggle" text="⏎ Wrap" styleClass="response-toolbar-btn" onAction="#handleToggleResponseWrap"/>
+                                        <Button fx:id="responseCollapseAllBtn" text="⊟ Collapse All" onAction="#handleCollapseAllResponse" styleClass="response-toolbar-btn">
+                                            <tooltip><Tooltip text="Collapse all JSON blocks"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseExpandAllBtn" text="⊞ Expand All" onAction="#handleExpandAllResponse" styleClass="response-toolbar-btn">
+                                            <tooltip><Tooltip text="Expand all JSON blocks"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseFindBtn" text="🔍 Find" onAction="#handleOpenResponseSearch" styleClass="response-toolbar-btn"/>
+                                        <Button fx:id="responseCopyBodyBtn" text="📋 Copy" onAction="#handleCopyResponse" styleClass="response-toolbar-btn"/>
+                                        <Button fx:id="responseVisCodeBtn" text="&lt;/&gt;" styleClass="response-toolbar-btn" visible="false" managed="false" onAction="#handleVisSwitchToCode">
+                                            <tooltip><Tooltip text="View source code"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseVisRefreshBtn" text="↻" styleClass="response-toolbar-btn" visible="false" managed="false" onAction="#handleVisRefresh">
+                                            <tooltip><Tooltip text="Refresh visualization"/></tooltip>
+                                        </Button>
+                                        <Button fx:id="responseVisCopyBtn" text="🔗" styleClass="response-toolbar-btn" visible="false" managed="false" onAction="#handleVisCopy">
+                                            <tooltip><Tooltip text="Copy visualization data"/></tooltip>
+                                        </Button>
+                                    </HBox>
+                                    <StackPane VBox.vgrow="ALWAYS" styleClass="response-content-stack">
+                                        <StackPane fx:id="responseCodeAreaPane">
+                                            <Label fx:id="responsePromptLabel" styleClass="response-prompt-label"
+                                                   text="Click Send to get a response" mouseTransparent="true"/>
+                                            <CodeArea fx:id="responseBodyArea" styleClass="response-body" editable="false"/>
+                                            <VBox fx:id="responseSearchBarContainer" alignment="TOP_RIGHT"
+                                                   pickOnBounds="false" StackPane.alignment="TOP_RIGHT">
+                                                <padding>
+                                                    <Insets top="8" right="8"/>
+                                                </padding>
+                                            </VBox>
+                                        </StackPane>
+                                        <WebView fx:id="responsePreview" visible="false" managed="false"/>
+                                        <WebView fx:id="responseVisualizationView" visible="false" managed="false"/>
                                     </StackPane>
-                                    <WebView fx:id="responsePreview"/>
-                                </SplitPane>
+                                </VBox>
                             </Tab>
                             <Tab text="Messages" fx:id="wsMessagesTab">
                                 <VBox spacing="6">
                                     <padding>
                                         <Insets top="6" right="6" bottom="6" left="6"/>
                                     </padding>
-                                    <Label fx:id="wsStatusLabel" text="Not connected — select the WS method and click Connect"
-                                           styleClass="ws-status-label"/>
+                                    <HBox spacing="10" alignment="CENTER_LEFT">
+                                        <Label fx:id="wsStatusLabel" text="Not connected — select the WS method and click Connect"
+                                               styleClass="ws-status-label"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Button text="Clear" onAction="#handleClearWsMessages" styleClass="delete-row-button"/>
+                                    </HBox>
                                     <ListView fx:id="wsMessageLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
                                 </VBox>
                             </Tab>
-                            <Tab text="Cookies">
+                            <Tab text="Messages" fx:id="socketIoMessagesTab">
+                                <VBox spacing="6">
+                                    <padding>
+                                        <Insets top="6" right="6" bottom="6" left="6"/>
+                                    </padding>
+                                    <HBox spacing="10" alignment="CENTER_LEFT">
+                                        <Label fx:id="socketIoStatusLabel" text="Not connected — click Connect above"
+                                               styleClass="ws-status-label"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Button text="Clear" onAction="#handleClearSocketIoMessages" styleClass="delete-row-button"/>
+                                    </HBox>
+                                    <ListView fx:id="socketIoEventLog" styleClass="ws-message-log" VBox.vgrow="ALWAYS"/>
+                                </VBox>
+                            </Tab>
+                            <Tab text="Cookies" fx:id="responseCookiesTab">
                                 <TableView fx:id="cookiesTable" styleClass="key-value-table"/>
                             </Tab>
-                            <Tab text="Headers">
+                            <Tab text="Headers" fx:id="responseHeadersTab">
                                 <TableView fx:id="responseHeadersTable" styleClass="key-value-table"/>
                             </Tab>
-                            <Tab text="Tests">
+                            <Tab text="Tests" fx:id="responseTestsTab">
                                 <VBox spacing="10">
                                     <Label styleClass="sidebar-hint" wrapText="true"
                                            text="Results from the request's Scripts tab appear here automatically after each Send."/>

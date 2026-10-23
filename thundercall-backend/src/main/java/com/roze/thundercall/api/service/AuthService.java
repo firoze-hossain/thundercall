@@ -16,6 +16,8 @@ public interface AuthService {
 
     AuthResponse login(LoginRequest request);
 
+    AuthResponse ssoLogin(com.roze.thundercall.api.dto.SsoLoginRequest request);
+
     AuthResponse refreshToken(String refreshToken);
 
     void logout(String refreshToken);

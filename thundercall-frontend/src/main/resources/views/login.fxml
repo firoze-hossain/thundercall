@@ -4,90 +4,169 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
-<HBox xmlns="http://javafx.com/javafx/21"
-      xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.roze.thundercall.ui.controllers.AuthController"
-      stylesheets="@../css/main.css"
-      styleClass="auth-root">
 
-    <!-- ================= Left: brand panel ================= -->
-    <VBox styleClass="brand-panel" alignment="CENTER_LEFT" spacing="18"
-          prefWidth="320" minWidth="280" HBox.hgrow="NEVER">
-        <padding>
-            <Insets top="48" right="36" bottom="48" left="36"/>
-        </padding>
+<StackPane xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.roze.thundercall.ui.controllers.AuthController"
+           stylesheets="@../css/main.css"
+           styleClass="auth-root"
+           alignment="CENTER"
+           prefWidth="880" prefHeight="600">
 
-        <ImageView fitHeight="64" fitWidth="64" preserveRatio="true">
-            <Image url="@../images/logo.png"/>
-        </ImageView>
+    <!-- Cohesive Auth Shell: keeps brand panel and form unified at all window sizes -->
+    <HBox styleClass="auth-shell" alignment="CENTER"
+          maxWidth="880" minWidth="720" maxHeight="600" minHeight="560">
 
-        <Label text="Thundercall" styleClass="brand-title" wrapText="true"/>
-        <Label text="Build, test and organize your APIs — fast."
-               styleClass="brand-tagline" wrapText="true"/>
-
-        <Region VBox.vgrow="ALWAYS"/>
-
-        <VBox spacing="12">
-            <Label text="⚡  Send requests in one click" styleClass="brand-feature" wrapText="true"/>
-            <Label text="🗂  Collections, folders &amp; history" styleClass="brand-feature" wrapText="true"/>
-            <Label text="🌱  Environments with variables" styleClass="brand-feature" wrapText="true"/>
-        </VBox>
-    </VBox>
-
-    <!-- ================= Right: form ================= -->
-    <StackPane styleClass="auth-form-side" HBox.hgrow="ALWAYS">
-        <VBox styleClass="auth-card" alignment="CENTER_LEFT" spacing="14"
-              maxWidth="380" minWidth="320">
+        <!-- ================= Left: Brand Panel ================= -->
+        <VBox styleClass="brand-panel" alignment="CENTER_LEFT" spacing="18"
+              prefWidth="350" minWidth="320" maxWidth="350" HBox.hgrow="NEVER">
             <padding>
-                <Insets top="36" right="36" bottom="36" left="36"/>
+                <Insets top="36" right="30" bottom="32" left="30"/>
             </padding>
 
-            <Label fx:id="authTitle" text="Welcome back" styleClass="auth-title" wrapText="true"/>
-            <Label fx:id="authSubtitle" text="Sign in to continue to your workspace"
-                   styleClass="auth-subtitle" wrapText="true"/>
+            <!-- Brand Header: Logo + Title -->
+            <VBox spacing="12" alignment="CENTER_LEFT">
+                <ImageView fitHeight="64" fitWidth="64" preserveRatio="true" styleClass="brand-logo-image">
+                    <Image url="@../images/TC.png"/>
+                </ImageView>
 
-            <VBox spacing="6">
-                <Label text="USERNAME" styleClass="field-label"/>
-                <TextField fx:id="usernameField" promptText="Enter username or email"/>
+                <VBox spacing="4">
+                    <HBox spacing="8" alignment="CENTER_LEFT">
+                        <Label text="Thundercall" styleClass="brand-title"/>
+                        <Label text="API PLATFORM" styleClass="brand-version-badge"/>
+                    </HBox>
+                    <Label text="Build, test, and organize your APIs with lightning speed."
+                           styleClass="brand-tagline" wrapText="true"/>
+                </VBox>
             </VBox>
 
-            <VBox spacing="6">
-                <Label fx:id="emailLabel" text="EMAIL" styleClass="field-label"
-                       visible="false" managed="false"/>
-                <TextField fx:id="emailField" promptText="Enter email"
-                           visible="false" managed="false"/>
+            <Region VBox.vgrow="ALWAYS"/>
+
+            <!-- Feature List with modern interactive cards -->
+            <VBox spacing="10" styleClass="brand-features-container">
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="brand-feature-item">
+                    <Label text="⚡" styleClass="feature-icon-badge"/>
+                    <VBox spacing="2">
+                        <Label text="Instant Request Runner" styleClass="feature-title"/>
+                        <Label text="REST, GraphQL, WebSocket &amp; Socket.IO" styleClass="feature-desc"/>
+                    </VBox>
+                </HBox>
+
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="brand-feature-item">
+                    <Label text="🗂" styleClass="feature-icon-badge"/>
+                    <VBox spacing="2">
+                        <Label text="Smart Workspaces" styleClass="feature-title"/>
+                        <Label text="Collections, environments &amp; dynamic scopes" styleClass="feature-desc"/>
+                    </VBox>
+                </HBox>
+
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="brand-feature-item">
+                    <Label text="🔒" styleClass="feature-icon-badge"/>
+                    <VBox spacing="2">
+                        <Label text="Session &amp; Vault Security" styleClass="feature-title"/>
+                        <Label text="7-day persistent login, local vault &amp; sync" styleClass="feature-desc"/>
+                    </VBox>
+                </HBox>
             </VBox>
 
-            <VBox spacing="6">
-                <Label text="PASSWORD" styleClass="field-label"/>
-                <PasswordField fx:id="passwordField" promptText="Enter password"/>
-            </VBox>
+            <Region VBox.vgrow="ALWAYS"/>
 
-            <CheckBox fx:id="rememberMeCheck" text="Remember me"/>
-
-            <HBox spacing="10" alignment="CENTER_LEFT">
-                <Button fx:id="loginButton" text="Sign in" onAction="#handleAuthAction"
-                        styleClass="primary-button" maxWidth="10000" HBox.hgrow="ALWAYS"/>
-                <Button fx:id="registerButton" text="Create account" onAction="#handleAuthAction"
-                        styleClass="primary-button" maxWidth="10000" HBox.hgrow="ALWAYS"
-                        visible="false" managed="false"/>
-                <ProgressIndicator fx:id="loadingSpinner" visible="false"
-                                   prefWidth="24" prefHeight="24"/>
-            </HBox>
-
-            <Button fx:id="browserLoginButton" text="Sign in with browser"
-                    onAction="#handleBrowserLogin"
-                    styleClass="secondary-button" maxWidth="10000"/>
-
-            <Separator styleClass="auth-separator"/>
-
-            <HBox spacing="5" alignment="CENTER">
-                <Hyperlink fx:id="switchToRegisterLink" text="New here? Create an account"
-                           onAction="#switchViewMode" styleClass="auth-link"/>
-                <Hyperlink fx:id="switchToLoginLink" text="Already have an account? Sign in"
-                           onAction="#switchViewMode" styleClass="auth-link"
-                           visible="false" managed="false"/>
+            <!-- Bottom brand footer -->
+            <HBox spacing="8" alignment="CENTER_LEFT" styleClass="brand-footer">
+                <Label text="●" styleClass="brand-status-dot"/>
+                <Label text="v1.0.0 · Ready to connect" styleClass="brand-footer-text"/>
             </HBox>
         </VBox>
-    </StackPane>
-</HBox>
+
+        <!-- ================= Right: Auth Form Side ================= -->
+        <StackPane styleClass="auth-form-side" HBox.hgrow="ALWAYS" alignment="CENTER">
+            <padding>
+                <Insets top="28" right="36" bottom="28" left="36"/>
+            </padding>
+
+            <VBox styleClass="auth-card" alignment="CENTER_LEFT" spacing="13"
+                  maxWidth="420" minWidth="320">
+
+                <!-- Header Titles -->
+                <VBox spacing="4">
+                    <Label fx:id="authTitle" text="Welcome back" styleClass="auth-title"/>
+                    <Label fx:id="authSubtitle" text="Sign in to continue to your workspace"
+                           styleClass="auth-subtitle" wrapText="true"/>
+                </VBox>
+
+                <!-- Username Field -->
+                <VBox spacing="5">
+                    <Label text="USERNAME OR EMAIL" styleClass="field-label"/>
+                    <TextField fx:id="usernameField" promptText="Enter username or email" styleClass="auth-text-field"/>
+                </VBox>
+
+                <!-- Email Field (Register Mode) -->
+                <VBox fx:id="emailBox" spacing="5" visible="false" managed="false">
+                    <Label fx:id="emailLabel" text="EMAIL" styleClass="field-label"/>
+                    <TextField fx:id="emailField" promptText="Enter your email" styleClass="auth-text-field"/>
+                </VBox>
+
+                <!-- Password Field with Show/Hide Eye Toggle -->
+                <VBox spacing="5">
+                    <Label text="PASSWORD" styleClass="field-label"/>
+                    <StackPane alignment="CENTER_RIGHT">
+                        <PasswordField fx:id="passwordField" promptText="Enter your password"
+                                       styleClass="auth-text-field, auth-password-field"/>
+                        <TextField fx:id="passwordTextField" promptText="Enter your password"
+                                   styleClass="auth-text-field, auth-password-field"
+                                   visible="false" managed="false"/>
+                        <Button fx:id="togglePasswordButton" text="👁" styleClass="password-toggle-btn"
+                                focusTraversable="false">
+                            <StackPane.margin>
+                                <Insets right="8"/>
+                            </StackPane.margin>
+                            <tooltip>
+                                <Tooltip text="Show/Hide password"/>
+                            </tooltip>
+                        </Button>
+                    </StackPane>
+                </VBox>
+
+                <!-- Remember Me -->
+                <HBox alignment="CENTER_LEFT">
+                    <CheckBox fx:id="rememberMeCheck" text="Remember me" styleClass="auth-checkbox"/>
+                </HBox>
+
+                <!-- Primary Buttons -->
+                <VBox spacing="9">
+                    <StackPane alignment="CENTER">
+                        <Button fx:id="loginButton" text="Sign in" onAction="#handleAuthAction"
+                                styleClass="auth-primary-btn" maxWidth="10000"/>
+                        <Button fx:id="registerButton" text="Create account" onAction="#handleAuthAction"
+                                styleClass="auth-primary-btn" maxWidth="10000"
+                                visible="false" managed="false"/>
+                        <ProgressIndicator fx:id="loadingSpinner" visible="false"
+                                           prefWidth="22" prefHeight="22" styleClass="auth-spinner"/>
+                    </StackPane>
+
+                    <HBox alignment="CENTER" spacing="10" styleClass="auth-or-row">
+                        <Separator HBox.hgrow="ALWAYS" styleClass="auth-separator"/>
+                        <Label text="or" styleClass="auth-or-label"/>
+                        <Separator HBox.hgrow="ALWAYS" styleClass="auth-separator"/>
+                    </HBox>
+
+                    <Button fx:id="browserLoginButton" text="🌐  Sign in with browser"
+                            onAction="#handleBrowserLogin"
+                            styleClass="auth-secondary-btn" maxWidth="10000"/>
+                </VBox>
+
+                <Separator styleClass="auth-separator"/>
+
+                <!-- Switch Mode Link -->
+                <HBox spacing="6" alignment="CENTER">
+                    <Label fx:id="switchPromptLabel" text="New here?" styleClass="auth-switch-prompt"/>
+                    <Hyperlink fx:id="switchToRegisterLink" text="Create an account"
+                               onAction="#switchViewMode" styleClass="auth-link"/>
+                    <Hyperlink fx:id="switchToLoginLink" text="Sign in"
+                               onAction="#switchViewMode" styleClass="auth-link"
+                               visible="false" managed="false"/>
+                </HBox>
+            </VBox>
+        </StackPane>
+    </HBox>
+</StackPane>

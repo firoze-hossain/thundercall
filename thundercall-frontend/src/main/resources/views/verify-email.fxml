@@ -4,70 +4,116 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
-<HBox xmlns="http://javafx.com/javafx/21"
-      xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.roze.thundercall.ui.controllers.VerifyEmailController"
-      stylesheets="@../css/main.css"
-      styleClass="auth-root">
 
-    <!-- ================= Left: brand panel ================= -->
-    <VBox styleClass="brand-panel" alignment="CENTER_LEFT" spacing="18"
-          prefWidth="320" minWidth="280" HBox.hgrow="NEVER">
-        <padding>
-            <Insets top="48" right="36" bottom="48" left="36"/>
-        </padding>
+<StackPane xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.roze.thundercall.ui.controllers.VerifyEmailController"
+           stylesheets="@../css/main.css"
+           styleClass="auth-root"
+           alignment="CENTER"
+           prefWidth="880" prefHeight="600">
 
-        <ImageView fitHeight="64" fitWidth="64" preserveRatio="true">
-            <Image url="@../images/logo.png"/>
-        </ImageView>
+    <!-- Cohesive Auth Shell: keeps brand panel and form unified at all window sizes -->
+    <HBox styleClass="auth-shell" alignment="CENTER"
+          maxWidth="880" minWidth="720" maxHeight="600" minHeight="560">
 
-        <Label text="Thundercall" styleClass="brand-title" wrapText="true"/>
-        <Label text="Build, test and organize your APIs — fast."
-               styleClass="brand-tagline" wrapText="true"/>
-
-        <Region VBox.vgrow="ALWAYS"/>
-
-        <VBox spacing="12">
-            <Label text="📬  One quick step left" styleClass="brand-feature" wrapText="true"/>
-            <Label text="🔒  Keeps your account secure" styleClass="brand-feature" wrapText="true"/>
-            <Label text="⚡  Then you're straight into your workspace" styleClass="brand-feature" wrapText="true"/>
-        </VBox>
-    </VBox>
-
-    <!-- ================= Right: form ================= -->
-    <StackPane styleClass="auth-form-side" HBox.hgrow="ALWAYS">
-        <VBox styleClass="auth-card" alignment="CENTER_LEFT" spacing="14"
-              maxWidth="380" minWidth="320">
+        <!-- ================= Left: brand panel ================= -->
+        <VBox styleClass="brand-panel" alignment="CENTER_LEFT" spacing="18"
+              prefWidth="350" minWidth="320" maxWidth="350" HBox.hgrow="NEVER">
             <padding>
-                <Insets top="36" right="36" bottom="36" left="36"/>
+                <Insets top="36" right="30" bottom="32" left="30"/>
             </padding>
 
-            <Label text="Verify your email" styleClass="auth-title" wrapText="true"/>
-            <Label fx:id="subtitleLabel" text="Enter the 6-digit code we sent to your email"
-                   styleClass="auth-subtitle" wrapText="true"/>
+            <!-- Brand Header: Logo + Title -->
+            <VBox spacing="12" alignment="CENTER_LEFT">
+                <ImageView fitHeight="64" fitWidth="64" preserveRatio="true" styleClass="brand-logo-image">
+                    <Image url="@../images/TC.png"/>
+                </ImageView>
 
-            <VBox spacing="6">
-                <Label text="6-DIGIT CODE" styleClass="field-label"/>
-                <TextField fx:id="codeField" promptText="000000" styleClass="verification-code-field"/>
+                <VBox spacing="4">
+                    <HBox spacing="8" alignment="CENTER_LEFT">
+                        <Label text="Thundercall" styleClass="brand-title"/>
+                        <Label text="API PLATFORM" styleClass="brand-version-badge"/>
+                    </HBox>
+                    <Label text="Build, test, and organize your APIs with lightning speed."
+                           styleClass="brand-tagline" wrapText="true"/>
+                </VBox>
             </VBox>
 
-            <HBox spacing="10" alignment="CENTER_LEFT">
-                <Button fx:id="verifyButton" text="Verify &amp; continue" onAction="#handleVerify"
-                        styleClass="primary-button" maxWidth="10000" HBox.hgrow="ALWAYS"/>
-                <ProgressIndicator fx:id="loadingSpinner" visible="false"
-                                   prefWidth="24" prefHeight="24"/>
-            </HBox>
+            <Region VBox.vgrow="ALWAYS"/>
 
-            <Label fx:id="statusLabel" styleClass="sidebar-hint" wrapText="true"/>
+            <!-- Feature List with modern interactive cards -->
+            <VBox spacing="10" styleClass="brand-features-container">
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="brand-feature-item">
+                    <Label text="📬" styleClass="feature-icon-badge"/>
+                    <VBox spacing="2">
+                        <Label text="One Quick Step Left" styleClass="feature-title"/>
+                        <Label text="Verify email code to activate your account" styleClass="feature-desc"/>
+                    </VBox>
+                </HBox>
 
-            <Separator styleClass="auth-separator"/>
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="brand-feature-item">
+                    <Label text="🔒" styleClass="feature-icon-badge"/>
+                    <VBox spacing="2">
+                        <Label text="Account Security" styleClass="feature-title"/>
+                        <Label text="End-to-end encrypted local session vault" styleClass="feature-desc"/>
+                    </VBox>
+                </HBox>
 
-            <HBox spacing="5" alignment="CENTER">
-                <Hyperlink text="Didn't get it? Resend code" onAction="#handleResend" styleClass="auth-link"/>
-            </HBox>
-            <HBox spacing="5" alignment="CENTER">
-                <Hyperlink text="Back to sign in" onAction="#handleBackToLogin" styleClass="auth-link"/>
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="brand-feature-item">
+                    <Label text="⚡" styleClass="feature-icon-badge"/>
+                    <VBox spacing="2">
+                        <Label text="Instant Access" styleClass="feature-title"/>
+                        <Label text="Straight into your high-velocity workspace" styleClass="feature-desc"/>
+                    </VBox>
+                </HBox>
+            </VBox>
+
+            <Region VBox.vgrow="ALWAYS"/>
+
+            <!-- Bottom brand footer -->
+            <HBox spacing="8" alignment="CENTER_LEFT" styleClass="brand-footer">
+                <Label text="●" styleClass="brand-status-dot"/>
+                <Label text="v1.0.0 · Security verification" styleClass="brand-footer-text"/>
             </HBox>
         </VBox>
-    </StackPane>
-</HBox>
+
+        <!-- ================= Right: form ================= -->
+        <StackPane styleClass="auth-form-side" HBox.hgrow="ALWAYS" alignment="CENTER">
+            <padding>
+                <Insets top="28" right="36" bottom="28" left="36"/>
+            </padding>
+
+            <VBox styleClass="auth-card" alignment="CENTER_LEFT" spacing="14"
+                  maxWidth="400" minWidth="320">
+
+                <Label text="Verify your email" styleClass="auth-title" wrapText="true"/>
+                <Label fx:id="subtitleLabel" text="Enter the 6-digit code we sent to your email"
+                       styleClass="auth-subtitle" wrapText="true"/>
+
+                <VBox spacing="6">
+                    <Label text="6-DIGIT CODE" styleClass="field-label"/>
+                    <TextField fx:id="codeField" promptText="000000" styleClass="verification-code-field"/>
+                </VBox>
+
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Button fx:id="verifyButton" text="Verify &amp; continue" onAction="#handleVerify"
+                            styleClass="auth-primary-btn" maxWidth="10000" HBox.hgrow="ALWAYS"/>
+                    <ProgressIndicator fx:id="loadingSpinner" visible="false"
+                                       prefWidth="22" prefHeight="22" styleClass="auth-spinner"/>
+                </HBox>
+
+                <Label fx:id="statusLabel" styleClass="sidebar-hint" wrapText="true"/>
+
+                <Separator styleClass="auth-separator"/>
+
+                <HBox spacing="5" alignment="CENTER">
+                    <Hyperlink text="Didn't get it? Resend code" onAction="#handleResend" styleClass="auth-link"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER">
+                    <Hyperlink text="Back to sign in" onAction="#handleBackToLogin" styleClass="auth-link"/>
+                </HBox>
+            </VBox>
+        </StackPane>
+    </HBox>
+</StackPane>

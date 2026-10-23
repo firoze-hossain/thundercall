@@ -50,6 +50,13 @@ public class MonitorController extends BaseController {
         return ok(monitorService.updateMonitor(id, request, user), "Monitor updated");
     }
 
+    @PatchMapping("/{id}/toggle")
+    public ResponseEntity<BaseResponse<MonitorResponse>> toggleEnabled(
+            @PathVariable Long id, Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        return ok(monitorService.toggleEnabled(id, user), "Monitor status updated");
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<BaseResponse<Void>> deleteMonitor(
             @PathVariable Long id, Authentication authentication) {

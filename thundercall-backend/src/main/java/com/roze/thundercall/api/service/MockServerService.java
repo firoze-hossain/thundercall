@@ -1,5 +1,6 @@
 package com.roze.thundercall.api.service;
 
+import com.roze.thundercall.api.dto.MockCallLogResponse;
 import com.roze.thundercall.api.dto.MockRouteRequest;
 import com.roze.thundercall.api.dto.MockRouteResponse;
 import com.roze.thundercall.api.dto.MockServerRequest;
@@ -9,6 +10,7 @@ import com.roze.thundercall.api.entity.User;
 import com.roze.thundercall.api.enums.HttpMethod;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface MockServerService {
@@ -17,6 +19,8 @@ public interface MockServerService {
     List<MockServerResponse> getMyMockServers(User owner);
 
     MockServerResponse getMockServer(Long id, User owner);
+
+    MockServerResponse updateMockServer(Long id, MockServerRequest request, User owner);
 
     void setEnabled(Long id, boolean enabled, User owner);
 
@@ -30,7 +34,20 @@ public interface MockServerService {
 
     void deleteRoute(Long mockServerId, Long routeId, User owner);
 
-    /** Public lookup used by the unauthenticated runtime endpoint — no
-     * owner check, since anyone hitting a live mock URL is the point. */
-    Optional<MockRoute> findMatchingRoute(Long mockServerId, HttpMethod method, String path);
+    record MatchedRoute(MockRoute route, Map<String, String> pathVariables) {}
+
+    /** Public lookup used by the runtime endpoint — matches exact, params (:id, {id}), and wildcards */
+    Optional<MatchedRoute> findMatchingRoute(Long mockServerId, HttpMethod method, String path);
+
+    /** Records an incoming mock server hit into the live call log */
+    void recordCallLog(Long mockServerId, HttpMethod method, String path, String queryParams,
+                       String requestHeaders, String requestBody, int responseStatus,
+                       String responseHeaders, String responseBody, long durationMs,
+                       boolean matched, String matchedRoutePattern);
+
+    List<MockCallLogResponse> getCallLogs(Long mockServerId, int limit, User owner);
+
+    void clearCallLogs(Long mockServerId, User owner);
+
+    List<MockRouteResponse> generateRoutesFromCollection(Long mockServerId, Long collectionId, User owner);
 }

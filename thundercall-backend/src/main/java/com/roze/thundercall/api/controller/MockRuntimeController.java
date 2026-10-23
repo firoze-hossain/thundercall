@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.roze.thundercall.api.entity.MockRoute;
 import com.roze.thundercall.api.enums.HttpMethod;
 import com.roze.thundercall.api.service.MockServerService;
+import com.roze.thundercall.api.util.MockDynamicVariableResolver;
+import com.roze.thundercall.api.util.MockPathMatcher;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,20 +14,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.HandlerMapping;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
-/** The actual "live" side of a mock server — this is what an external
- * tool, curl, or another app hits, not something Thundercall itself
- * calls. Deliberately public (see WebSecurityConfig): a mock server is
- * only useful if anyone can hit it without a Thundercall login. */
 @RestController
 @RequiredArgsConstructor
 @Slf4j
@@ -36,9 +31,20 @@ public class MockRuntimeController {
 
     @RequestMapping(value = "/{mockServerId}/**",
             method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT,
-                    RequestMethod.DELETE, RequestMethod.PATCH, RequestMethod.OPTIONS})
+                    RequestMethod.DELETE, RequestMethod.PATCH, RequestMethod.OPTIONS, RequestMethod.HEAD})
     public ResponseEntity<byte[]> handleMockRequest(@PathVariable Long mockServerId, HttpServletRequest request) {
-        String routePath = extractRoutePath(mockServerId, request);
+        long startTime = System.currentTimeMillis();
+
+        // Handle CORS Preflight OPTIONS request
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            HttpHeaders corsHeaders = buildCorsHeaders();
+            return ResponseEntity.ok().headers(corsHeaders).build();
+        }
+
+        String rawRoutePath = extractRoutePath(mockServerId, request);
+        String cleanPath = MockPathMatcher.extractPathWithoutQuery(rawRoutePath);
+        String queryParams = request.getQueryString() != null ? request.getQueryString() : "";
+
         HttpMethod method;
         try {
             method = HttpMethod.valueOf(request.getMethod());
@@ -46,16 +52,51 @@ public class MockRuntimeController {
             return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).build();
         }
 
-        Optional<MockRoute> matched = mockServerService.findMatchingRoute(mockServerId, method, routePath);
-        if (matched.isEmpty()) {
-            String message = "No mock route configured for " + method + " " + routePath;
-            log.info(message + " (mock server {})", mockServerId);
+        // Read request headers
+        Map<String, String> reqHeadersMap = new LinkedHashMap<>();
+        Enumeration<String> headerNames = request.getHeaderNames();
+        if (headerNames != null) {
+            while (headerNames.hasMoreElements()) {
+                String hn = headerNames.nextElement();
+                reqHeadersMap.put(hn, request.getHeader(hn));
+            }
+        }
+        String reqHeadersJson = "";
+        try {
+            reqHeadersJson = objectMapper.writeValueAsString(reqHeadersMap);
+        } catch (Exception ignored) {}
+
+        // Read request body
+        String reqBody = "";
+        try (InputStream is = request.getInputStream()) {
+            byte[] bytes = is.readAllBytes();
+            if (bytes.length > 0) {
+                reqBody = new String(bytes, StandardCharsets.UTF_8);
+            }
+        } catch (Exception ignored) {}
+
+        Optional<MockServerService.MatchedRoute> matchedOpt = mockServerService.findMatchingRoute(mockServerId, method, cleanPath);
+
+        if (matchedOpt.isEmpty()) {
+            long duration = System.currentTimeMillis() - startTime;
+            String errorJson = "{\n  \"error\": {\n    \"status\": 404,\n    \"message\": \"No mock route configured for "
+                    + method + " " + cleanPath + "\",\n    \"mockServerId\": " + mockServerId
+                    + ",\n    \"requestedMethod\": \"" + method + "\",\n    \"requestedPath\": \"" + cleanPath + "\"\n  }\n}";
+
+            mockServerService.recordCallLog(mockServerId, method, cleanPath, queryParams,
+                    reqHeadersJson, reqBody, 404,
+                    "{\"Content-Type\": \"application/json\"}", errorJson, duration, false, null);
+
+            HttpHeaders headers = buildCorsHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(message.getBytes(StandardCharsets.UTF_8));
+                    .headers(headers)
+                    .body(errorJson.getBytes(StandardCharsets.UTF_8));
         }
 
-        MockRoute route = matched.get();
+        MockRoute route = matchedOpt.get().route();
+        Map<String, String> pathVariables = matchedOpt.get().pathVariables();
+
         if (route.getDelayMs() > 0) {
             try {
                 Thread.sleep(route.getDelayMs());
@@ -64,35 +105,46 @@ public class MockRuntimeController {
             }
         }
 
-        HttpHeaders headers = new HttpHeaders();
+        long duration = System.currentTimeMillis() - startTime;
+
+        // Resolve dynamic tokens (e.g. {{$randomUUID}}, {{$randomEmail}}) and path variables
+        String resolvedBody = MockDynamicVariableResolver.resolve(route.getResponseBody(), pathVariables);
+
+        HttpHeaders headers = buildCorsHeaders();
         if (route.getResponseHeaders() != null && !route.getResponseHeaders().isBlank()) {
             try {
                 Map<String, String> map = objectMapper.readValue(
-                        route.getResponseHeaders(), new TypeReference<Map<String, String>>() {
-                        });
+                        route.getResponseHeaders(), new TypeReference<Map<String, String>>() {});
                 map.forEach((k, v) -> {
                     if (k != null && !k.isBlank() && v != null) {
-                        headers.add(k.trim(), v.trim());
+                        headers.set(k.trim(), v.trim());
                     }
                 });
-            } catch (Exception ignored) {
-                // malformed headers JSON — serve the response anyway, just without those headers
-            }
+            } catch (Exception ignored) {}
         }
         if (headers.getContentType() == null) {
             headers.setContentType(MediaType.APPLICATION_JSON);
         }
 
-        byte[] body = route.getResponseBody() != null
-                ? route.getResponseBody().getBytes(StandardCharsets.UTF_8) : new byte[0];
-        return ResponseEntity.status(route.getResponseStatus()).headers(headers).body(body);
+        byte[] bodyBytes = resolvedBody != null ? resolvedBody.getBytes(StandardCharsets.UTF_8) : new byte[0];
+
+        // Record successful call in live log
+        mockServerService.recordCallLog(mockServerId, method, cleanPath, queryParams,
+                reqHeadersJson, reqBody, route.getResponseStatus(),
+                route.getResponseHeaders(), resolvedBody, duration, true, route.getPath());
+
+        return ResponseEntity.status(route.getResponseStatus()).headers(headers).body(bodyBytes);
     }
 
-    /** Everything after "/mock/{mockServerId}" — e.g. a request to
-     * ".../mock/5/users/1" yields "/users/1". Uses Spring's own
-     * path-within-handler attribute rather than manually parsing
-     * getRequestURI(), so this works correctly regardless of the app's
-     * context-path. */
+    private HttpHeaders buildCorsHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Access-Control-Allow-Origin", "*");
+        headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
+        headers.set("Access-Control-Allow-Headers", "*");
+        headers.set("Access-Control-Max-Age", "86400");
+        return headers;
+    }
+
     private String extractRoutePath(Long mockServerId, HttpServletRequest request) {
         String fullPath = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
         if (fullPath == null) {

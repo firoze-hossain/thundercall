@@ -15,6 +15,10 @@ public class RequestHistoryResponse {
     private Long id;
     private Long requestId;
     private String requestName;
+    private String url;
+    private String method;
+    private String requestHeaders;
+    private String requestBody;
     private LocalDateTime timestamp;
     private Integer statusCode;
     private Long duration;

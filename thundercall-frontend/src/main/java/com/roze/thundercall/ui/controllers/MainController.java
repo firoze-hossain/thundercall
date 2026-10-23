@@ -1,6 +1,10 @@
 package com.roze.thundercall.ui.controllers;
 
 import com.roze.thundercall.ui.Main;
+import com.roze.thundercall.ui.dialogs.AboutDialog;
+import com.roze.thundercall.ui.dialogs.MockServerDetailDialog;
+import com.roze.thundercall.ui.dialogs.MonitorDetailDialog;
+import com.roze.thundercall.ui.dialogs.MonitorEditDialog;
 import com.roze.thundercall.ui.dialogs.WorkspaceSetupDialog;
 import com.roze.thundercall.ui.enums.HttpMethod;
 import com.roze.thundercall.ui.models.*;
@@ -9,18 +13,24 @@ import com.roze.thundercall.ui.utils.*;
 import com.roze.thundercall.ui.update.AppUpdateService;
 import com.roze.thundercall.ui.update.AppUpdateDialog;
 import javafx.application.Platform;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
+import javafx.geometry.Side;
 import javafx.scene.Node;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.control.cell.TextFieldTableCell;
@@ -28,9 +38,13 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
+import javafx.stage.Stage;
 import javafx.stage.Window;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
@@ -38,6 +52,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.XML;
 
+import java.time.LocalDateTime;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -45,13 +60,29 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
+import javafx.animation.PauseTransition;
+import javafx.animation.RotateTransition;
+import javafx.util.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class MainController implements Initializable {
+    @FXML
+    private BorderPane mainRootPane;
+    @FXML
+    private Button addRequestBtn;
+    @FXML
+    private Button navBackBtn;
+    @FXML
+    private Button navForwardBtn;
     @FXML
     private TreeView<String> collectionsTree;
     @FXML
@@ -67,7 +98,23 @@ public class MainController implements Initializable {
     @FXML
     private Button wsConnectBtn;
     @FXML
+    private Button saveRequestBtn;
+    @FXML
+    private Button samplePostBtn;
+    @FXML
+    private TabPane responseTabPane;
+    @FXML
+    private Tab responseBodyTab;
+    @FXML
     private Tab wsMessagesTab;
+    @FXML
+    private Tab socketIoMessagesTab;
+    @FXML
+    private Tab responseCookiesTab;
+    @FXML
+    private Tab responseHeadersTab;
+    @FXML
+    private Tab responseTestsTab;
     @FXML
     private Label wsStatusLabel;
     @FXML
@@ -77,11 +124,23 @@ public class MainController implements Initializable {
     @FXML
     private Tab wsMessageTab;
     @FXML
+    private Tab socketIoMessageTab;
+    @FXML
+    private Tab socketIoEventsTab;
+    @FXML
+    private Tab paramsTab;
+    @FXML
+    private Tab authTab;
+    @FXML
+    private Tab headersTab;
+    @FXML
+    private Tab bodyTab;
+    @FXML
+    private Tab scriptsTab;
+    @FXML
     private TabPane requestBuilderTabPane;
     @FXML
     private Button socketIoConnectBtn;
-    @FXML
-    private Tab socketIoTab;
     @FXML
     private TextField socketIoNamespaceField;
     @FXML
@@ -92,6 +151,11 @@ public class MainController implements Initializable {
     private TextField socketIoEventNameField;
     @FXML
     private TextField socketIoEventDataField;
+    @FXML
+    private TextArea socketIoMessageComposeArea;
+    @FXML
+    private TableView<SocketIoEventItem> socketIoEventsTable;
+    private final ObservableList<SocketIoEventItem> socketIoEventsData = FXCollections.observableArrayList();
     @FXML
     private ComboBox<String> authTypeCombo;
     @FXML
@@ -150,6 +214,10 @@ public class MainController implements Initializable {
     @FXML
     private Label bodyPromptLabel;
     @FXML
+    private VBox noneBodyPane;
+    @FXML
+    private HBox bodyTableButtonBar;
+    @FXML
     private ToggleGroup bodyTypeGroup;
     @FXML
     private Label statusLabel;
@@ -164,8 +232,12 @@ public class MainController implements Initializable {
     @FXML
     private VBox responseSearchBarContainer;
     private CodeAreaSearch responseSearch;
+    private JsonFoldManager responseFoldManager;
     @FXML
-    private ListView<String> historyList;
+    private TreeView<HistoryNode> historyTree;
+    @FXML
+    private TextField historySearchField;
+    private final List<HistoryEntry> allHistoryEntries = new ArrayList<>();
     @FXML
     private TextArea preRequestScriptsArea;
     @FXML
@@ -173,7 +245,63 @@ public class MainController implements Initializable {
     @FXML
     private ListView<String> testResultsList;
     @FXML
+    private SplitPane responseBodySplitPane;
+    @FXML
     private WebView responsePreview;
+    @FXML
+    private WebView responseVisualizationView;
+    @FXML
+    private MenuButton rawFormatMenu;
+    @FXML
+    private Button rawBeautifyBtn;
+    @FXML
+    private MenuButton responseFormatMenu;
+    @FXML
+    private MenuItem responseFormatJsonItem;
+    @FXML
+    private MenuItem responseFormatXmlItem;
+    @FXML
+    private MenuItem responseFormatHtmlItem;
+    @FXML
+    private MenuItem responseFormatJsItem;
+    @FXML
+    private MenuItem responseFormatRawItem;
+    @FXML
+    private MenuItem responseFormatHexItem;
+    @FXML
+    private MenuItem responseFormatBase64Item;
+    private String currentResponseFormat = "JSON";
+    @FXML
+    private ToggleButton responsePreviewToggle;
+    @FXML
+    private MenuButton responseVisualizationMenu;
+    @FXML
+    private MenuItem visualizeItem;
+    @FXML
+    private MenuItem visualizeTableItem;
+    @FXML
+    private MenuItem visualizeLinearChartItem;
+    @FXML
+    private MenuItem visualizeBarGraphItem;
+    @FXML
+    private Button responseVisCodeBtn;
+    @FXML
+    private Button responseVisRefreshBtn;
+    @FXML
+    private Button responseVisCopyBtn;
+    private ResponseVisualizerGenerator.VisType currentVisType = ResponseVisualizerGenerator.VisType.VISUALIZE;
+    @FXML
+    private ToggleButton responseWrapToggle;
+    @FXML
+    private Button responseFindBtn;
+    @FXML
+    private Button responseCollapseAllBtn;
+    @FXML
+    private Button responseExpandAllBtn;
+    @FXML
+    private Button responseCopyBodyBtn;
+    @FXML
+    private StackPane responseCodeAreaPane;
     @FXML
     private TableView<KeyValuePair> responseHeadersTable;
     @FXML
@@ -259,6 +387,10 @@ public class MainController implements Initializable {
     private ListView<EnvironmentResponse> environmentsList;
     private final Map<Tab, RequestTabState> tabStates = new HashMap<>();
     private boolean switchingTabs = false;
+    private SessionData currentSession;
+    private boolean restoringSession = false;
+    private boolean restoringTreeSelection = false;
+    private final PauseTransition sessionSaveDebounce = new PauseTransition(Duration.millis(500));
     private final Image collectionIconImg = loadTreeIcon("/images/collection-icon.png");
     private final Image folderIconImg = loadTreeIcon("/images/folder-icon.png");
 
@@ -301,6 +433,20 @@ public class MainController implements Initializable {
     private CodeArea graphqlQueryArea;
     @FXML
     private CodeArea graphqlVariablesArea;
+    @FXML
+    private HBox graphqlToolbar;
+    @FXML
+    private Button graphqlAutoFetchBtn;
+    @FXML
+    private Button graphqlRefreshBtn;
+    @FXML
+    private Label graphqlWarningLabel;
+    @FXML
+    private Tooltip graphqlWarningTooltip;
+
+    private boolean isGraphqlAutoFetchEnabled = true;
+    private String graphqlSchemaStatusText = "No schema";
+    private final List<String> introspectedTypeNames = new ArrayList<>();
     // Postman-style sidebar rail (may be null with the old FXML — always null-checked)
     @FXML
     private VBox collectionsPane;
@@ -317,13 +463,23 @@ public class MainController implements Initializable {
     @FXML
     private ListView<MockServerResponse> mockServersList;
     @FXML
+    private TextField mockServersSearchField;
+    @FXML
     private ToggleButton railMockServersBtn;
+
+    private final ObservableList<MockServerResponse> allMockServers = FXCollections.observableArrayList();
+    private FilteredList<MockServerResponse> filteredMockServers;
     @FXML
     private VBox monitorsPane;
     @FXML
     private ListView<MonitorResponse> monitorsList;
     @FXML
+    private TextField monitorsSearchField;
+    @FXML
     private ToggleButton railMonitorsBtn;
+
+    private final ObservableList<MonitorResponse> allMonitors = FXCollections.observableArrayList();
+    private FilteredList<MonitorResponse> filteredMonitors;
     @FXML
     private VBox teamWorkspacesPane;
     @FXML
@@ -342,6 +498,8 @@ public class MainController implements Initializable {
     private SplitPane sidebarSplitPane;
     @FXML
     private StackPane sidebarContentPane;
+    @FXML
+    private SplitPane mainSplitPane;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -393,6 +551,13 @@ public class MainController implements Initializable {
                                 javafx.scene.input.KeyCombination.CONTROL_DOWN,
                                 javafx.scene.input.KeyCombination.ALT_DOWN),
                         () -> closeTabSafely(activeRequestTab(), true));
+                if (urlField.getScene() != null) {
+                    urlField.getScene().focusOwnerProperty().addListener((focusObs, oldFocus, newFocus) -> {
+                        if (newFocus != null && resolveTextTarget(newFocus) != null) {
+                            lastFocusedEditor = newFocus;
+                        }
+                    });
+                }
             }
         });
         if (collectionsSearchField != null) {
@@ -401,6 +566,7 @@ public class MainController implements Initializable {
         }
         setupRequestTabs();
         setupUrlField();
+        setupTopBarTooltips();
         setupBodyCodeArea();
         setupGraphqlCodeAreas();
         setupResponseCodeArea();
@@ -410,6 +576,7 @@ public class MainController implements Initializable {
         setupMockServersList();
         setupMonitorsList();
         setupTeamWorkspacesList();
+        setupHistoryView();
 
         // Fix for TreeView context menu
         setupTreeViewContextMenu();
@@ -440,6 +607,7 @@ public class MainController implements Initializable {
             setupAuthCombo();
             setUpMethodCombo();
             setupBodyTypeHandling();
+            setupSessionPersistence();
             loadUserData();
             loadUserProfile();
             startPresenceUpdates();
@@ -533,70 +701,113 @@ public class MainController implements Initializable {
 
     private void setupBodyTypeHandling() {
         bodyTypeGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
-            if (newToggle != null) {
-                String selectedType = ((ToggleButton) newToggle).getText();
-                switch (selectedType) {
-                    case "Form Data":
-                        formDataTable.setVisible(true);
-                        urlEncodedTable.setVisible(false);
-                        bodyTextArea.setVisible(false);
-                        graphqlPane.setVisible(false);
-                        break;
-                    case "x-www-form-urlencoded":
-                        // FIX: this used to fall into the same "default"
-                        // branch as Raw/None and show the plain text
-                        // area — meaning there was no key/value table at
-                        // all for this body type, unlike every other
-                        // Postman-style client.
-                        formDataTable.setVisible(false);
-                        urlEncodedTable.setVisible(true);
-                        bodyTextArea.setVisible(false);
-                        graphqlPane.setVisible(false);
-                        break;
-                    case "GraphQL":
-                        formDataTable.setVisible(false);
-                        urlEncodedTable.setVisible(false);
-                        bodyTextArea.setVisible(false);
-                        graphqlPane.setVisible(true);
-                        // GraphQL always goes over POST — matches Postman,
-                        // which doesn't even offer a method choice for it.
-                        if (methodCombo != null) {
-                            methodCombo.setValue("POST");
-                        }
-                        break;
-                    default:
-                        formDataTable.setVisible(false);
-                        urlEncodedTable.setVisible(false);
-                        bodyTextArea.setVisible(true);
-                        graphqlPane.setVisible(false);
-                        break;
+            String bType = newToggle != null ? ((ToggleButton) newToggle).getText() : "None";
+            updateBodyViewsVisibility(bType);
+            if (!restoringTabState) {
+                Tab active = activeRequestTab();
+                if (active != null && tabStates.containsKey(active)) {
+                    RequestTabState state = tabStates.get(active);
+                    if (state != null) {
+                        state.bodyType = bType;
+                        scheduleSessionSave();
+                    }
                 }
             }
+            onEditorFieldChanged();
         });
 
-        // Initialize form data table
+        // Initialize form data and urlencoded tables
         setupFormDataTable();
-        // x-www-form-urlencoded is plain key/value pairs only — no file
-        // attachments make sense here, so the generic table (same as
-        // Params/Headers) is the right fit, not the Form Data one.
-        setupKeyValueTable(urlEncodedTable, urlEncodedData, "Key", "Value", "Description");
+        setupUrlEncodedTable();
+        setupGraphqlToolbar();
 
         // Default to "None" so the state is always visible
         if (bodyTypeGroup.getSelectedToggle() == null && noneBodyTypeButton != null) {
             noneBodyTypeButton.setSelected(true);
+        } else {
+            updateBodyViewsVisibility(bodyTypeGroup.getSelectedToggle() != null
+                    ? ((ToggleButton) bodyTypeGroup.getSelectedToggle()).getText() : "None");
         }
 
-        // FIX: typing a body while "None" is selected silently sent NO body
-        // (your login JSON never left the app → server said "Required request
-        // body is missing"). Typing now auto-selects "Raw", like Postman.
+        // When user types in raw body while Raw is active, keep Raw selected
         bodyTextArea.textProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null && !newVal.isBlank() && rawBodyTypeButton != null) {
+            if (!restoringTabState && newVal != null && !newVal.isBlank() && rawBodyTypeButton != null && bodyTextArea.isVisible()) {
                 Toggle selected = bodyTypeGroup.getSelectedToggle();
                 if (selected == null || selected == noneBodyTypeButton) {
                     rawBodyTypeButton.setSelected(true);
                 }
             }
         });
+    }
+
+    private void updateBodyViewsVisibility(String selectedType) {
+        if (selectedType == null) {
+            selectedType = "None";
+        }
+        boolean isNone = "None".equalsIgnoreCase(selectedType);
+        boolean isRaw = "Raw".equalsIgnoreCase(selectedType);
+        boolean isFormData = "Form Data".equalsIgnoreCase(selectedType);
+        boolean isUrlEncoded = "x-www-form-urlencoded".equalsIgnoreCase(selectedType);
+        boolean isGraphql = "GraphQL".equalsIgnoreCase(selectedType);
+
+        if (noneBodyPane != null) {
+            noneBodyPane.setVisible(isNone);
+            noneBodyPane.setManaged(isNone);
+        }
+        if (bodyTextArea != null) {
+            bodyTextArea.setVisible(isRaw);
+            bodyTextArea.setManaged(isRaw);
+        }
+        if (rawFormatMenu != null) {
+            rawFormatMenu.setVisible(isRaw);
+            rawFormatMenu.setManaged(isRaw);
+        }
+        if (rawBeautifyBtn != null) {
+            rawBeautifyBtn.setVisible(isRaw);
+            rawBeautifyBtn.setManaged(isRaw);
+        }
+        if (formDataTable != null) {
+            formDataTable.setVisible(isFormData);
+            formDataTable.setManaged(isFormData);
+            if (isFormData) {
+                ensureFormDataPlaceholderRow();
+                updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                updateFormDataMasterSelectBox(formDataMasterSelectBox);
+            }
+        }
+        if (urlEncodedTable != null) {
+            urlEncodedTable.setVisible(isUrlEncoded);
+            urlEncodedTable.setManaged(isUrlEncoded);
+            if (isUrlEncoded) {
+                ensureUrlEncodedPlaceholderRow();
+                updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+            }
+        }
+        if (graphqlPane != null) {
+            graphqlPane.setVisible(isGraphql);
+            graphqlPane.setManaged(isGraphql);
+        }
+        if (graphqlToolbar != null) {
+            graphqlToolbar.setVisible(isGraphql);
+            graphqlToolbar.setManaged(isGraphql);
+        }
+        if (bodyTableButtonBar != null) {
+            boolean showButtons = isFormData || isUrlEncoded;
+            bodyTableButtonBar.setVisible(showButtons);
+            bodyTableButtonBar.setManaged(showButtons);
+        }
+        if (!isGraphql && graphqlWarningTooltip != null && graphqlWarningTooltip.isShowing()) {
+            graphqlWarningTooltip.hide();
+        }
+        if (isGraphql) {
+            if (methodCombo != null) {
+                methodCombo.setValue("POST");
+            }
+            if (isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
+        }
     }
 
     private void loadCollectionsFromServer() {
@@ -651,7 +862,11 @@ public class MainController implements Initializable {
             // ISSUE 1 FIX: remember which collections/folders were expanded,
             // restore after rebuild — no more everything-expands-on-reload
             Set<String> expandedKeys = new HashSet<>();
-            captureExpandedKeys(fullCollectionsRoot, expandedKeys);
+            if (fullCollectionsRoot != null) {
+                captureExpandedKeys(fullCollectionsRoot, expandedKeys);
+            } else if (currentSession != null && currentSession.getExpandedTreeKeys() != null) {
+                expandedKeys.addAll(currentSession.getExpandedTreeKeys());
+            }
 
             collectionIdMap.clear();
             folderIdMap.clear();
@@ -730,6 +945,19 @@ public class MainController implements Initializable {
                     && !collectionsSearchField.getText().isBlank()) {
                 applyCollectionsFilter(collectionsSearchField.getText());
             }
+
+            // Restore sidebar tree selection (active tab or saved tree key)
+            String targetKey = (currentSession != null) ? currentSession.getSelectedTreeKey() : null;
+            if (targetKey == null) {
+                Tab active = activeRequestTab();
+                RequestTabState activeState = active != null ? tabStates.get(active) : null;
+                if (activeState != null && activeState.requestId != null) {
+                    targetKey = "r:" + activeState.requestId;
+                }
+            }
+            if (targetKey != null) {
+                restoreCollectionsTreeSelection(targetKey);
+            }
         });
     }
 
@@ -792,11 +1020,13 @@ public class MainController implements Initializable {
                         environments.stream().filter(e -> !"Globals".equals(e.getName())).toList());
             }
 
-            // Keep whatever was selected before if it still exists (e.g.
-            // after renaming/reloading); otherwise default to "No
-            // Environment" rather than silently picking one for the user.
-            if (previousSelection != null && environmentCombo.getItems().contains(previousSelection)) {
+            String savedEnv = (currentSession != null) ? currentSession.getSelectedEnvironment() : null;
+            if (savedEnv != null && environmentCombo.getItems().contains(savedEnv)) {
+                environmentCombo.setValue(savedEnv);
+                updateEnvironmentVariables(savedEnv);
+            } else if (previousSelection != null && environmentCombo.getItems().contains(previousSelection)) {
                 environmentCombo.setValue(previousSelection);
+                updateEnvironmentVariables(previousSelection);
             } else {
                 environmentCombo.getSelectionModel().select(0);
                 updateEnvironmentVariables(environmentCombo.getValue());
@@ -804,23 +1034,465 @@ public class MainController implements Initializable {
         });
     }
 
+    private void setupHistoryView() {
+        if (historyTree == null) {
+            return;
+        }
+        historyTree.setCellFactory(tv -> createHistoryTreeCell());
+        historyTree.setShowRoot(false);
+
+        // Single click on a history request item opens it in a new tab (Postman style)
+        historyTree.setOnMouseClicked(event -> {
+            if (event.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                TreeItem<HistoryNode> selected = historyTree.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.getValue() != null && !selected.getValue().isGroupHeader()) {
+                    HistoryEntry entry = selected.getValue().getEntry();
+                    if (entry != null) {
+                        openHistoryInNewTab(entry);
+                    }
+                }
+            }
+        });
+
+        historyTree.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ENTER) {
+                TreeItem<HistoryNode> selected = historyTree.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.getValue() != null && !selected.getValue().isGroupHeader()) {
+                    HistoryEntry entry = selected.getValue().getEntry();
+                    if (entry != null) {
+                        openHistoryInNewTab(entry);
+                        event.consume();
+                    }
+                }
+            }
+        });
+
+        if (historySearchField != null) {
+            historySearchField.textProperty().addListener((obs, oldV, newV) -> renderHistoryTree(newV));
+        }
+
+        // Instant local startup load — history never disappears upon reopen
+        List<HistoryEntry> local = HistoryStorageService.loadLocalHistory();
+        allHistoryEntries.clear();
+        allHistoryEntries.addAll(local);
+        renderHistoryTree(null);
+    }
+
+    private void renderHistoryTree(String query) {
+        if (historyTree == null) {
+            return;
+        }
+
+        TreeItem<HistoryNode> root = new TreeItem<>(HistoryNode.group("ROOT"));
+        root.setExpanded(true);
+
+        String filter = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
+        Map<String, List<HistoryEntry>> groups = new LinkedHashMap<>();
+
+        for (HistoryEntry entry : allHistoryEntries) {
+            if (entry == null) continue;
+            if (!filter.isEmpty()) {
+                String m = entry.getMethod() != null ? entry.getMethod().toLowerCase(Locale.ROOT) : "";
+                String u = entry.getUrl() != null ? entry.getUrl().toLowerCase(Locale.ROOT) : "";
+                String n = entry.getName() != null ? entry.getName().toLowerCase(Locale.ROOT) : "";
+                if (!m.contains(filter) && !u.contains(filter) && !n.contains(filter)) {
+                    continue;
+                }
+            }
+            String groupHeader = entry.getDateGroupHeader();
+            groups.computeIfAbsent(groupHeader, k -> new ArrayList<>()).add(entry);
+        }
+
+        for (Map.Entry<String, List<HistoryEntry>> grp : groups.entrySet()) {
+            TreeItem<HistoryNode> groupItem = new TreeItem<>(HistoryNode.group(grp.getKey()));
+            groupItem.setExpanded(true);
+            for (HistoryEntry item : grp.getValue()) {
+                groupItem.getChildren().add(new TreeItem<>(HistoryNode.item(item)));
+            }
+            root.getChildren().add(groupItem);
+        }
+
+        historyTree.setRoot(root);
+    }
+
+    private TreeCell<HistoryNode> createHistoryTreeCell() {
+        return new TreeCell<>() {
+            private final Label headerLabel = new Label();
+            private final Label methodChip = new Label();
+            private final Label urlLabel = new Label();
+            private final Label statusChip = new Label();
+            private final Button addBtn = new Button("+");
+            private final Button deleteBtn = new Button("🗑");
+            private final Button moreBtn = new Button("⋯");
+            private final Region spacer = new Region();
+            private final HBox rowBox = new HBox(6);
+
+            {
+                methodChip.getStyleClass().addAll("method-chip", "tree-method-chip");
+                methodChip.setMinWidth(48);
+                methodChip.setPrefWidth(48);
+                methodChip.setMaxWidth(Region.USE_PREF_SIZE);
+                methodChip.setTextOverrun(OverrunStyle.CLIP);
+                methodChip.setAlignment(Pos.CENTER);
+
+                urlLabel.getStyleClass().add("history-url-label");
+                HBox.setHgrow(urlLabel, Priority.ALWAYS);
+
+                statusChip.getStyleClass().add("history-status-chip");
+
+                addBtn.getStyleClass().add("tree-inline-btn");
+                HoverTooltip.attach(addBtn, "Add requests to Collection");
+
+                deleteBtn.getStyleClass().addAll("tree-inline-btn", "tree-delete-btn");
+                HoverTooltip.attach(deleteBtn, "Delete request");
+
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                HoverTooltip.attach(moreBtn, "More actions");
+
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                rowBox.setAlignment(Pos.CENTER_LEFT);
+
+                addBtn.setOnAction(e -> {
+                    e.consume();
+                    HistoryNode node = getItem();
+                    if (node != null && node.getEntry() != null) {
+                        saveHistoryToCollection(node.getEntry());
+                    }
+                });
+
+                deleteBtn.setOnAction(e -> {
+                    e.consume();
+                    HistoryNode node = getItem();
+                    if (node != null && node.getEntry() != null) {
+                        deleteSingleHistoryEntry(node.getEntry());
+                    }
+                });
+
+                moreBtn.setOnAction(e -> {
+                    e.consume();
+                    HistoryNode node = getItem();
+                    if (node != null && node.getEntry() != null) {
+                        showHistoryItemContextMenu(moreBtn, node.getEntry());
+                    }
+                });
+
+                // Hover buttons only (Postman style)
+                addBtn.visibleProperty().bind(hoverProperty());
+                addBtn.managedProperty().bind(addBtn.visibleProperty());
+                deleteBtn.visibleProperty().bind(hoverProperty());
+                deleteBtn.managedProperty().bind(deleteBtn.visibleProperty());
+                moreBtn.visibleProperty().bind(hoverProperty());
+                moreBtn.managedProperty().bind(moreBtn.visibleProperty());
+
+                statusChip.visibleProperty().bind(hoverProperty().not());
+                statusChip.managedProperty().bind(statusChip.visibleProperty());
+            }
+
+            @Override
+            protected void updateItem(HistoryNode node, boolean empty) {
+                super.updateItem(node, empty);
+                if (empty || node == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setTooltip(null);
+                    return;
+                }
+                if (node.isGroupHeader()) {
+                    headerLabel.setText(node.getHeaderTitle());
+                    headerLabel.getStyleClass().setAll("history-date-header");
+                    setText(null);
+                    setGraphic(headerLabel);
+                    setTooltip(null);
+                } else {
+                    HistoryEntry entry = node.getEntry();
+                    if (entry == null) {
+                        setText(null);
+                        setGraphic(null);
+                        setTooltip(null);
+                        return;
+                    }
+                    String method = entry.getMethod() != null ? entry.getMethod().toUpperCase(Locale.ROOT) : "GET";
+                    methodChip.setText(methodBadge(method));
+                    methodChip.getStyleClass().removeIf(s -> s.startsWith("method-chip-") || s.startsWith("method-"));
+                    methodChip.getStyleClass().addAll("method-chip", "tree-method-chip", "method-chip-" + method.toLowerCase(Locale.ROOT));
+
+                    String displayUrl = formatHistoryDisplayUrl(entry.getUrl());
+                    urlLabel.setText(displayUrl);
+
+                    rowBox.getChildren().clear();
+                    rowBox.getChildren().addAll(methodChip, urlLabel, spacer);
+
+                    if (entry.getStatusCode() != null && entry.getStatusCode() > 0) {
+                        statusChip.setText(String.valueOf(entry.getStatusCode()));
+                        statusChip.getStyleClass().removeIf(s -> s.startsWith("status-"));
+                        int code = entry.getStatusCode();
+                        if (code >= 200 && code < 300) statusChip.getStyleClass().add("status-2xx");
+                        else if (code >= 400 && code < 500) statusChip.getStyleClass().add("status-4xx");
+                        else if (code >= 500) statusChip.getStyleClass().add("status-5xx");
+                        rowBox.getChildren().add(statusChip);
+                    }
+
+                    rowBox.getChildren().addAll(addBtn, deleteBtn, moreBtn);
+
+                    setText(null);
+                    setGraphic(rowBox);
+                    setTooltip(new Tooltip(method + " " + displayUrl +
+                            (entry.getStatusCode() != null ? " (" + entry.getStatusCode() + ")" : "") +
+                            (entry.getDuration() != null ? " · " + entry.getDuration() + "ms" : "")));
+                }
+            }
+        };
+    }
+
+    private void showHistoryItemContextMenu(Node anchor, HistoryEntry entry) {
+        if (entry == null) return;
+        ContextMenu menu = new ContextMenu();
+
+        MenuItem openItem = new MenuItem("Open in New Tab");
+        openItem.setOnAction(e -> openHistoryInNewTab(entry));
+
+        MenuItem saveItem = new MenuItem("Save Request");
+        saveItem.setOnAction(e -> saveHistoryToCollection(entry));
+
+        MenuItem copyUrlItem = new MenuItem("Copy URL");
+        copyUrlItem.setOnAction(e -> {
+            if (entry.getUrl() != null) {
+                Clipboard clipboard = Clipboard.getSystemClipboard();
+                ClipboardContent content = new ClipboardContent();
+                content.putString(entry.getUrl());
+                clipboard.setContent(content);
+                updateStatus("Copied URL to clipboard");
+            }
+        });
+
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.setOnAction(e -> deleteSingleHistoryEntry(entry));
+
+        menu.getItems().addAll(openItem, saveItem, copyUrlItem, new SeparatorMenuItem(), deleteItem);
+        menu.show(anchor, Side.BOTTOM, 0, 0);
+    }
+
+    private void saveHistoryToCollection(HistoryEntry entry) {
+        if (entry == null) return;
+        if (collectionIdMap.isEmpty() || collectionsTree == null || collectionsTree.getRoot() == null) {
+            AlertUtils.showError("Please create a collection first before saving requests.");
+            return;
+        }
+
+        List<TreeItem<String>> collections = collectionsTree.getRoot().getChildren();
+        if (collections.isEmpty()) {
+            AlertUtils.showError("Please create a collection first before saving requests.");
+            return;
+        }
+
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(
+                collections.get(0).getValue(),
+                collections.stream().map(TreeItem::getValue).toList()
+        );
+        dialog.setTitle("Save to Collection");
+        dialog.setHeaderText("Choose a collection for \"" + extractHistoryTitle(entry) + "\"");
+        dialog.setContentText("Collection:");
+        initAndStyleDialog(dialog);
+
+        Optional<String> result = dialog.showAndWait();
+        if (result.isPresent()) {
+            String selectedCollectionName = result.get();
+            TreeItem<String> targetItem = collections.stream()
+                    .filter(item -> selectedCollectionName.equals(item.getValue()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (targetItem != null) {
+                Long collectionId = collectionIdMap.get(targetItem);
+                if (collectionId != null) {
+                    TextInputDialog nameDialog = new TextInputDialog(extractHistoryTitle(entry));
+                    nameDialog.setTitle("Request Name");
+                    nameDialog.setHeaderText("Enter request name");
+                    nameDialog.setContentText("Name:");
+                    initAndStyleDialog(nameDialog);
+                    Optional<String> nameResult = nameDialog.showAndWait();
+                    if (nameResult.isPresent() && !nameResult.get().isBlank()) {
+                        String reqName = nameResult.get().trim();
+                        new Thread(() -> {
+                            try {
+                                ApiRequest req = new ApiRequest();
+                                req.setName(reqName);
+                                req.setMethod(HttpMethod.valueOf(entry.getMethod() != null ? entry.getMethod() : "GET"));
+                                req.setUrl(entry.getUrl());
+                                req.setHeaders(entry.getHeaders() != null ? entry.getHeaders() : "{}");
+                                req.setBody(entry.getBody() != null ? entry.getBody() : "");
+                                req.setCollectionId(collectionId);
+                                Optional<RequestResponse> saved = RequestService.saveRequest(req);
+                                Platform.runLater(() -> {
+                                    if (saved.isPresent()) {
+                                        refreshCollectionsTree();
+                                        updateStatus("Saved to " + selectedCollectionName + ": " + reqName);
+                                        AlertUtils.showSuccess("Request saved to collection successfully");
+                                    } else {
+                                        AlertUtils.showError("Failed to save request to collection");
+                                    }
+                                });
+                            } catch (Exception ex) {
+                                Platform.runLater(() -> AlertUtils.showError("Failed to save request: " + ex.getMessage()));
+                            }
+                        }).start();
+                    }
+                }
+            }
+        }
+    }
+
+    private void deleteSingleHistoryEntry(HistoryEntry entry) {
+        if (entry == null) return;
+        allHistoryEntries.removeIf(e -> (entry.getLocalId() != null && Objects.equals(e.getLocalId(), entry.getLocalId()))
+                || (entry.getServerId() != null && Objects.equals(e.getServerId(), entry.getServerId())));
+        HistoryStorageService.removeEntry(entry);
+        if (entry.getServerId() != null) {
+            new Thread(() -> {
+                RequestHistoryService.deleteHistoryItem(entry.getServerId());
+            }).start();
+        }
+        renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
+        updateStatus("Deleted request from history");
+    }
+
+    private String formatHistoryDisplayUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "Untitled";
+        }
+        if (url.contains("{{")) {
+            return url;
+        }
+        try {
+            Map<String, String> vars = currentEnvironmentVariables();
+            if (vars != null && !vars.isEmpty()) {
+                List<Map.Entry<String, String>> sorted = new ArrayList<>(vars.entrySet());
+                sorted.sort((a, b) -> Integer.compare(
+                        b.getValue() != null ? b.getValue().length() : 0,
+                        a.getValue() != null ? a.getValue().length() : 0));
+
+                for (Map.Entry<String, String> var : sorted) {
+                    String val = var.getValue();
+                    if (val != null && val.length() >= 4) {
+                        String cleanVal = val.endsWith("/") ? val.substring(0, val.length() - 1) : val;
+                        if (url.startsWith(cleanVal)) {
+                            String suffix = url.substring(cleanVal.length());
+                            if (suffix.isEmpty() || suffix.startsWith("/")) {
+                                return "{{" + var.getKey() + "}}" + suffix;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return url;
+    }
+
+    private String extractHistoryTitle(HistoryEntry entry) {
+        if (entry == null) return "Untitled Request";
+        if (entry.getName() != null && !entry.getName().isBlank() && !"Untitled Request".equalsIgnoreCase(entry.getName())) {
+            return entry.getName();
+        }
+        String url = formatHistoryDisplayUrl(entry.getUrl());
+        if (url == null || url.isBlank()) {
+            return "Untitled Request";
+        }
+        try {
+            int qIdx = url.indexOf('?');
+            String cleanUrl = qIdx >= 0 ? url.substring(0, qIdx) : url;
+            while (cleanUrl.endsWith("/")) {
+                cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
+            }
+            int lastSlash = cleanUrl.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < cleanUrl.length() - 1) {
+                return cleanUrl.substring(lastSlash + 1);
+            }
+            return cleanUrl;
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+    private void openHistoryInNewTab(HistoryEntry entry) {
+        if (entry == null || requestTabPane == null) {
+            return;
+        }
+        String method = entry.getMethod() != null ? entry.getMethod().toUpperCase(Locale.ROOT) : "GET";
+        String targetUrl = formatHistoryDisplayUrl(entry.getUrl());
+        String title = extractHistoryTitle(entry);
+        Tab tab = openRequestTab(title, entry.getRequestId(), method);
+        RequestTabState state = tabStates.get(tab);
+        if (state != null) {
+            state.url = targetUrl != null ? targetUrl : "";
+            state.method = method;
+            state.name = title;
+            state.body = entry.getBody() != null ? entry.getBody() : "";
+            state.headers = parseHeadersFromJson(entry.getHeaders());
+            state.requestId = entry.getRequestId();
+
+            if (entry.getStatusCode() != null && entry.getStatusCode() > 0) {
+                state.lastApiResponse = ApiResponse.builder()
+                        .statusCode(entry.getStatusCode())
+                        .duration(entry.getDuration() != null ? entry.getDuration() : 0)
+                        .response(entry.getResponse() != null ? entry.getResponse() : "")
+                        .responseHeaders(entry.getResponseHeaders() != null ? entry.getResponseHeaders() : "")
+                        .success(entry.getStatusCode() >= 200 && entry.getStatusCode() < 300)
+                        .build();
+                if (entry.getResponseHeaders() != null) {
+                    state.lastResponseHeaders = parseHeaders(entry.getResponseHeaders());
+                }
+            }
+        }
+        restoreTabState(tab);
+        refreshTabGraphic(tab);
+        if (state != null && state.lastApiResponse != null) {
+            updateResponseUI(state.lastApiResponse, parseHeaders(state.lastApiResponse.getResponseHeaders()));
+        }
+        updateStatus("Opened: " + method + " " + (targetUrl != null ? targetUrl : ""));
+    }
+
+    private List<KeyValuePair> parseHeadersFromJson(String json) {
+        List<KeyValuePair> result = new ArrayList<>();
+        if (json == null || json.isBlank()) {
+            return result;
+        }
+        try {
+            JSONObject obj = new JSONObject(json);
+            Iterator<String> keys = obj.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                String v = obj.optString(k, "");
+                result.add(new KeyValuePair(true, k, v, "", false));
+            }
+        } catch (Exception e) {
+            String[] lines = json.split("\n");
+            for (String line : lines) {
+                int colon = line.indexOf(':');
+                if (colon > 0) {
+                    String k = line.substring(0, colon).trim();
+                    String v = line.substring(colon + 1).trim();
+                    result.add(new KeyValuePair(true, k, v, "", false));
+                }
+            }
+        }
+        return result;
+    }
+
     private void loadHistory() {
         new Thread(() -> {
             try {
                 Optional<List<RequestHistoryResponse>> history = RequestHistoryService.getUserRequestHistory();
-                if (history.isPresent()) {
+                if (history.isPresent() && !history.get().isEmpty()) {
+                    List<HistoryEntry> merged = HistoryStorageService.mergeWithServer(history.get());
                     Platform.runLater(() -> {
-                        historyData.clear();
-                        for (RequestHistoryResponse item : history.get()) {
-                            String historyEntry = item.getStatusCode() + " " + item.getRequestName() + " - " +
-                                    item.getDuration() + "ms";
-                            historyData.add(historyEntry);
-                        }
-                        historyList.setItems(historyData);
+                        allHistoryEntries.clear();
+                        allHistoryEntries.addAll(merged);
+                        renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
                     });
                 }
             } catch (Exception e) {
-                Platform.runLater(() -> handleApiError(e, "Loading history"));
+                // Keep local history intact
             }
         }).start();
     }
@@ -839,8 +1511,23 @@ public class MainController implements Initializable {
                         Platform.runLater(this::showWorkspaceSetup);
                     } else {
                         Platform.runLater(() -> {
-                            if (WorkspaceManager.getCurrentWorkspace() == null) {
-                                WorkspaceManager.setCurrentWorkspace(workspaces.get(0));
+                            Workspace current = WorkspaceManager.getCurrentWorkspace();
+                            boolean currentBelongsToUser = current != null
+                                    && workspaces.stream().anyMatch(w -> Objects.equals(w.getId(), current.getId()));
+
+                            if (!currentBelongsToUser) {
+                                Workspace target = null;
+                                if (currentSession != null && currentSession.getActiveWorkspaceId() != null) {
+                                    Long savedWsId = currentSession.getActiveWorkspaceId();
+                                    target = workspaces.stream()
+                                            .filter(w -> savedWsId.equals(w.getId()))
+                                            .findFirst()
+                                            .orElse(null);
+                                }
+                                if (target == null && !workspaces.isEmpty()) {
+                                    target = workspaces.get(0);
+                                }
+                                WorkspaceManager.setCurrentWorkspace(target);
                             }
                             refreshWorkspacesMenu(workspaces);
                             updateWorkspaceLabels();
@@ -919,6 +1606,7 @@ public class MainController implements Initializable {
         updateWorkspaceLabels();
         reloadWorkspacesAndCollections();
         updateStatus("Workspace: " + workspace.getName());
+        scheduleSessionSave();
     }
 
     /** Switches the whole app into a workspace someone else shared
@@ -984,6 +1672,7 @@ public class MainController implements Initializable {
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/views/feature-tour.fxml"));
             Parent tourView = loader.load();
+            HoverTooltip.convertAll(tourView);
             FeatureTourController controller = loader.getController();
             controller.setMainController(this);
 
@@ -1028,9 +1717,17 @@ public class MainController implements Initializable {
      * same autocomplete-and-auto-close behavior as the body editor. */
     private void setupUrlField() {
         urlField.setWrapText(false);
+        // Single-line URL bar: keep vertically locked so text/underscores never clip or shift
+        urlField.showParagraphAtTop(0);
+        urlField.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
+            if (e.getDeltaY() != 0) {
+                e.consume(); // prevent vertical scrolling inside the single-line URL field
+            }
+        });
         urlField.plainTextChanges().subscribe(change -> {
             urlField.setStyleSpans(0, JsonSyntaxHighlighter.computeUrlHighlighting(urlField.getText()));
-            if (!syncingUrlAndParams) {
+            urlField.showParagraphAtTop(0);
+            if (!syncingUrlAndParams && (urlField.isFocused() || restoringTabState)) {
                 syncUrlToParams();
             }
         });
@@ -1038,13 +1735,22 @@ public class MainController implements Initializable {
         if (urlPromptLabel != null) {
             urlPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> urlField.getText().isEmpty(), urlField.textProperty()));
+                            () -> urlField.getText().isEmpty() && !urlField.isFocused(),
+                            urlField.textProperty(),
+                            urlField.focusedProperty()));
         }
-        // Enter in the URL bar sends the request, like Postman
+        // Enter in the URL bar sends the request, like Postman; Up/Down prevented from vertical scrolling
         urlField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+            if (e.getCode() == javafx.scene.input.KeyCode.UP || e.getCode() == javafx.scene.input.KeyCode.DOWN) {
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
                 handleSendRequest();
                 e.consume();
+            }
+        });
+        urlField.focusedProperty().addListener((obs, oldVal, isFocused) -> {
+            if (!isFocused && isGraphqlActive() && isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
             }
         });
     }
@@ -1062,7 +1768,9 @@ public class MainController implements Initializable {
         if (bodyPromptLabel != null) {
             bodyPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> bodyTextArea.getText().isEmpty(), bodyTextArea.textProperty()));
+                            () -> bodyTextArea.isVisible() && bodyTextArea.getText().isEmpty(),
+                            bodyTextArea.visibleProperty(), bodyTextArea.textProperty()));
+            bodyPromptLabel.managedProperty().bind(bodyPromptLabel.visibleProperty());
         }
         // Postman-style right-click menu: Comment, Set as variable, Cut/Copy/
         // Paste, EncodeURIComponent/DecodeURIComponent, Find.
@@ -1070,6 +1778,9 @@ public class MainController implements Initializable {
         // Ctrl+/ toggles "//" line-comments — independent of the "Comment"
         // annotation feature above, exactly like Postman.
         attachCommentToggleShortcut(bodyTextArea, TextEditTarget.of(bodyTextArea));
+        if (bodyCommentHighlighter != null) {
+            bodyCommentHighlighter.refresh();
+        }
     }
 
     /** GraphQL's query is its own syntax (not JSON), so it doesn't get the
@@ -1099,6 +1810,296 @@ public class MainController implements Initializable {
         EditorContextMenu.attach(TextEditTarget.of(graphqlVariablesArea), false, false, bodyMenuExtensions());
         attachCommentToggleShortcut(graphqlQueryArea, TextEditTarget.of(graphqlQueryArea));
         attachCommentToggleShortcut(graphqlVariablesArea, TextEditTarget.of(graphqlVariablesArea));
+    }
+
+    private void setupGraphqlToolbar() {
+        if (graphqlAutoFetchBtn == null || graphqlRefreshBtn == null) {
+            return;
+        }
+
+        // Context menu for Auto Fetch button
+        ContextMenu autoFetchMenu = new ContextMenu();
+        CheckMenuItem autoFetchItem = new CheckMenuItem("Auto Fetch");
+        autoFetchItem.setSelected(isGraphqlAutoFetchEnabled);
+        autoFetchItem.setOnAction(e -> {
+            isGraphqlAutoFetchEnabled = autoFetchItem.isSelected();
+            if (isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
+        });
+
+        MenuItem schemaStatusItem = new MenuItem(graphqlSchemaStatusText);
+        schemaStatusItem.setDisable(true);
+
+        autoFetchMenu.getItems().addAll(autoFetchItem, new SeparatorMenuItem(), schemaStatusItem);
+
+        autoFetchMenu.setOnShowing(e -> {
+            autoFetchItem.setSelected(isGraphqlAutoFetchEnabled);
+            schemaStatusItem.setText(graphqlSchemaStatusText);
+        });
+
+        graphqlAutoFetchBtn.setOnAction(e -> {
+            if (autoFetchMenu.isShowing()) {
+                autoFetchMenu.hide();
+            } else {
+                schemaStatusItem.setText(graphqlSchemaStatusText);
+                autoFetchItem.setSelected(isGraphqlAutoFetchEnabled);
+                autoFetchMenu.show(graphqlAutoFetchBtn, Side.BOTTOM, 0, 4);
+            }
+        });
+
+        graphqlRefreshBtn.setOnAction(e -> {
+            triggerGraphqlAutoFetch(true);
+        });
+
+        if (graphqlRefreshBtn != null) {
+            attachHoverTooltip(graphqlRefreshBtn, "Refresh");
+        }
+
+        if (graphqlWarningLabel != null) {
+            graphqlWarningLabel.setVisible(true);
+            graphqlWarningLabel.setManaged(true);
+            graphqlWarningLabel.setTooltip(null); // Detach default TooltipBehavior to eliminate any flickering
+
+            if (graphqlWarningTooltip != null) {
+                graphqlWarningTooltip.setText(
+                        "Could not auto fetch. Make sure Authorization, URL & selected environment are valid. Check console for more details.");
+                graphqlWarningTooltip.setAutoHide(false);
+            }
+
+            PauseTransition showDelay = new PauseTransition(Duration.millis(80));
+            PauseTransition hideDelay = new PauseTransition(Duration.millis(150));
+
+            showDelay.setOnFinished(e -> {
+                if (!graphqlWarningLabel.isVisible() || graphqlWarningTooltip == null) {
+                    return;
+                }
+                Point2D p = graphqlWarningLabel.localToScreen(0, graphqlWarningLabel.getHeight());
+                if (p != null) {
+                    double x = Math.max(10, p.getX() - 110);
+                    double y = p.getY() + 6;
+                    if (!graphqlWarningTooltip.isShowing()) {
+                        graphqlWarningTooltip.show(graphqlWarningLabel, x, y);
+                    }
+                }
+            });
+
+            hideDelay.setOnFinished(e -> {
+                if (graphqlWarningTooltip != null && graphqlWarningTooltip.isShowing()) {
+                    graphqlWarningTooltip.hide();
+                }
+            });
+
+            graphqlWarningLabel.setOnMouseEntered(e -> {
+                hideDelay.stop();
+                if (graphqlWarningTooltip != null && !graphqlWarningTooltip.isShowing()) {
+                    showDelay.playFromStart();
+                }
+            });
+
+            graphqlWarningLabel.setOnMouseExited(e -> {
+                showDelay.stop();
+                hideDelay.playFromStart();
+            });
+
+            if (graphqlWarningTooltip != null) {
+                graphqlWarningTooltip.setOnShowing(ev -> {
+                    if (graphqlWarningTooltip.getScene() != null) {
+                        ThemeManager.apply(graphqlWarningTooltip.getScene());
+                        if (graphqlWarningTooltip.getScene().getRoot() != null) {
+                            Node root = graphqlWarningTooltip.getScene().getRoot();
+                            root.setOnMouseEntered(me -> hideDelay.stop());
+                            root.setOnMouseExited(me -> hideDelay.playFromStart());
+                        }
+                    }
+                });
+            }
+
+            // Also allow clicking the warning icon to toggle/pin the tooltip
+            graphqlWarningLabel.setOnMouseClicked(e -> {
+                showDelay.stop();
+                hideDelay.stop();
+                if (graphqlWarningTooltip != null) {
+                    if (graphqlWarningTooltip.isShowing()) {
+                        graphqlWarningTooltip.hide();
+                    } else {
+                        Point2D p = graphqlWarningLabel.localToScreen(0, graphqlWarningLabel.getHeight());
+                        if (p != null) {
+                            graphqlWarningTooltip.show(graphqlWarningLabel, Math.max(10, p.getX() - 110), p.getY() + 6);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    private void setupTopBarTooltips() {
+        if (saveRequestBtn != null) {
+            HoverTooltip.attach(saveRequestBtn, "Save request");
+        }
+        if (samplePostBtn != null) {
+            HoverTooltip.attach(samplePostBtn, "Load sample POST request");
+        }
+        if (addRequestBtn != null) {
+            HoverTooltip.attach(addRequestBtn, "New request");
+        }
+        if (mainRootPane != null) {
+            HoverTooltip.convertAll(mainRootPane);
+        }
+        Platform.runLater(() -> {
+            if (mainRootPane != null) {
+                HoverTooltip.convertAll(mainRootPane);
+            }
+        });
+    }
+
+    /**
+     * Attaches a zero-flicker, persistent hover tooltip to a control.
+     */
+    private void attachHoverTooltip(Control control, String text) {
+        HoverTooltip.attach(control, text);
+    }
+
+    private void triggerGraphqlAutoFetch(boolean userTriggered) {
+        String rawUrl = buildFullUrl();
+        if (rawUrl == null || rawUrl.isBlank()) {
+            rawUrl = urlField != null ? urlField.getText().trim() : "";
+        }
+
+        Map<String, String> vars = currentEnvironmentVariables();
+        String resolvedUrl = VariableResolver.resolve(rawUrl, vars);
+        Set<String> unresolved = VariableResolver.findUnresolved(resolvedUrl, vars);
+
+        if (rawUrl.isBlank() || !unresolved.isEmpty() || !isValidHttpUrl(resolvedUrl)) {
+            Platform.runLater(() -> {
+                graphqlSchemaStatusText = "No schema";
+                if (graphqlWarningLabel != null) {
+                    graphqlWarningLabel.setVisible(true);
+                    graphqlWarningLabel.setManaged(true);
+                }
+            });
+            if (userTriggered) {
+                logger.warning("GraphQL auto fetch failed: URL is empty, contains unresolved variables, or is not a valid HTTP URL: " + rawUrl);
+            }
+            return;
+        }
+
+        Map<String, String> resolvedHeaders = VariableResolver.resolveMap(buildHeadersForSend(), vars);
+
+        // Spin refresh button for visual feedback
+        if (graphqlRefreshBtn != null && graphqlRefreshBtn.getGraphic() != null) {
+            RotateTransition rt = new RotateTransition(Duration.millis(800), graphqlRefreshBtn.getGraphic());
+            rt.setByAngle(360);
+            rt.setCycleCount(2);
+            rt.play();
+        }
+
+        String introspectionPayload = "{\"query\":\"query IntrospectionQuery { __schema { queryType { name } mutationType { name } subscriptionType { name } types { kind name description } } }\"}";
+
+        Thread t = new Thread(() -> {
+            try {
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(java.time.Duration.ofSeconds(4))
+                        .build();
+
+                HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+                        .uri(URI.create(resolvedUrl))
+                        .timeout(java.time.Duration.ofSeconds(5))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(introspectionPayload, StandardCharsets.UTF_8));
+
+                if (resolvedHeaders != null) {
+                    for (Map.Entry<String, String> entry : resolvedHeaders.entrySet()) {
+                        String k = entry.getKey();
+                        if (k != null && !k.equalsIgnoreCase("Content-Type")
+                                && !k.equalsIgnoreCase("Content-Length")
+                                && !k.equalsIgnoreCase("Host")) {
+                            try {
+                                reqBuilder.header(k, entry.getValue() != null ? entry.getValue() : "");
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                }
+
+                HttpResponse<String> resp = client.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("__schema")) {
+                    JSONObject json = new JSONObject(resp.body());
+                    JSONObject data = json.optJSONObject("data");
+                    JSONObject schema = data != null ? data.optJSONObject("__schema") : null;
+                    JSONArray types = schema != null ? schema.optJSONArray("types") : null;
+                    int count = types != null ? types.length() : 0;
+                    List<String> names = new ArrayList<>();
+                    if (types != null) {
+                        for (int i = 0; i < types.length(); i++) {
+                            JSONObject typeObj = types.optJSONObject(i);
+                            if (typeObj != null && typeObj.has("name")) {
+                                String name = typeObj.getString("name");
+                                if (!name.startsWith("__")) {
+                                    names.add(name);
+                                }
+                            }
+                        }
+                    }
+                    int displayCount = names.isEmpty() ? count : names.size();
+                    Platform.runLater(() -> {
+                        introspectedTypeNames.clear();
+                        introspectedTypeNames.addAll(names);
+                        graphqlSchemaStatusText = "Schema loaded (" + displayCount + " types)";
+                        if (graphqlWarningTooltip != null && graphqlWarningTooltip.isShowing()) {
+                            graphqlWarningTooltip.hide();
+                        }
+                        if (graphqlWarningLabel != null) {
+                            graphqlWarningLabel.setVisible(false);
+                            graphqlWarningLabel.setManaged(false);
+                        }
+                    });
+                    logger.info("GraphQL schema introspected successfully: " + displayCount + " types");
+                } else {
+                    Platform.runLater(() -> {
+                        graphqlSchemaStatusText = "No schema";
+                        if (graphqlWarningLabel != null) {
+                            graphqlWarningLabel.setVisible(true);
+                            graphqlWarningLabel.setManaged(true);
+                        }
+                    });
+                    logger.warning("GraphQL auto fetch returned HTTP " + resp.statusCode());
+                }
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    graphqlSchemaStatusText = "No schema";
+                    if (graphqlWarningLabel != null) {
+                        graphqlWarningLabel.setVisible(true);
+                        graphqlWarningLabel.setManaged(true);
+                    }
+                });
+                logger.warning("GraphQL auto fetch failed: " + ex.getMessage());
+            }
+        }, "graphql-schema-autofetch");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private boolean isValidHttpUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        String lower = url.trim().toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(url.trim());
+            return uri.getHost() != null && !uri.getHost().isBlank();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isGraphqlActive() {
+        Toggle sel = bodyTypeGroup != null ? bodyTypeGroup.getSelectedToggle() : null;
+        return sel instanceof ToggleButton tb && "GraphQL".equalsIgnoreCase(tb.getText());
     }
 
     /** Postman-style right-click menu for the Pre-request/Tests script
@@ -1162,6 +2163,11 @@ public class MainController implements Initializable {
             String pretty = JsonPrettyPrinter.prettyPrint(forParsing);
             area.replaceText(pretty);
             area.moveTo(0);
+            if (area == bodyTextArea && bodyCommentHighlighter != null) {
+                bodyCommentHighlighter.refresh();
+            } else {
+                area.setStyleSpans(0, JsonSyntaxHighlighter.computeHighlighting(area.getText()));
+            }
             updateStatus(hadComments ? "Formatted JSON (comments removed)" : "Formatted JSON");
         } catch (Exception ex) {
             AlertUtils.showError("Can't format — invalid JSON");
@@ -1428,16 +2434,25 @@ public class MainController implements Initializable {
     /** Response viewer: read-only JSON + {{variable}} coloring, plus a
      * Ctrl/Cmd+F find bar overlaid in its top-right corner. */
     private void setupResponseCodeArea() {
+        if (responsePreview != null && !responsePreview.getStyleClass().contains("response-preview")) {
+            responsePreview.getStyleClass().add("response-preview");
+        }
+        if (responseWrapToggle != null) {
+            responseWrapToggle.setSelected(true);
+        }
         responseBodyArea.setWrapText(true);
-        // Postman-style line numbers down the left edge of the response viewer.
-        responseBodyArea.setParagraphGraphicFactory(LineNumberFactory.get(responseBodyArea));
+        // Postman-style code folding & line numbers down the left edge of the response viewer.
+        responseFoldManager = JsonFoldManager.attach(responseBodyArea);
         attachPrettifyShortcut(responseBodyArea);
         responseBodyArea.plainTextChanges().subscribe(change -> {
             if (responseSearch == null || responseSearch.getBar().isManaged()) {
                 return; // the search bar owns styling (base + match highlight) while open
             }
+            if (responseFoldManager != null && responseFoldManager.isUpdating()) {
+                return;
+            }
             responseBodyArea.setStyleSpans(0,
-                    JsonSyntaxHighlighter.computeHighlighting(responseBodyArea.getText()));
+                    ResponseSyntaxHighlighter.computeHighlighting(responseBodyArea.getText(), currentResponseFormat));
         });
         if (responsePromptLabel != null) {
             responsePromptLabel.visibleProperty().bind(
@@ -1447,6 +2462,36 @@ public class MainController implements Initializable {
         responseSearch = CodeAreaSearch.attach(responseBodyArea);
         if (responseSearchBarContainer != null) {
             responseSearchBarContainer.getChildren().add(responseSearch.getBar());
+        }
+
+        // Postman-style right-click context menu with fold controls
+        ContextMenu responseContextMenu = new ContextMenu();
+        MenuItem copyItem = new MenuItem("Copy Response");
+        copyItem.setOnAction(e -> handleCopyResponse());
+        MenuItem foldAllItem = new MenuItem("Collapse All");
+        foldAllItem.setOnAction(e -> handleCollapseAllResponse());
+        MenuItem unfoldAllItem = new MenuItem("Expand All");
+        unfoldAllItem.setOnAction(e -> handleExpandAllResponse());
+        MenuItem findItem = new MenuItem("Find...");
+        findItem.setOnAction(e -> handleOpenResponseSearch());
+        responseContextMenu.getItems().addAll(copyItem, new SeparatorMenuItem(), foldAllItem, unfoldAllItem, new SeparatorMenuItem(), findItem);
+        responseBodyArea.setContextMenu(responseContextMenu);
+
+        updateFormatMenuSelection(currentResponseFormat);
+
+        if (responseBodyArea.getText() != null && !responseBodyArea.getText().isEmpty()) {
+            responseFoldManager.setFullText(responseBodyArea.getText(), currentResponseFormat);
+        }
+
+        // When in Preview or Visualization mode, clicking { } JSON acts as a direct button to switch back to code view
+        if (responseFormatMenu != null) {
+            responseFormatMenu.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+                if ((responsePreviewToggle != null && responsePreviewToggle.isSelected())
+                        || (responseVisualizationView != null && responseVisualizationView.isVisible())) {
+                    showResponseCodeView(null);
+                    event.consume();
+                }
+            });
         }
     }
 
@@ -1490,16 +2535,8 @@ public class MainController implements Initializable {
                 socketIoConnectBtn.setVisible(isSocketIo);
                 socketIoConnectBtn.setManaged(isSocketIo);
             }
-            // FIX: the compose box used to be buried in the response
-            // area's Messages tab, easy to miss entirely — it's now the
-            // first tab at the top (matching Postman's own layout), and
-            // switching to WS jumps straight to it so there's no hunting.
-            if (isWs && requestBuilderTabPane != null && wsMessageTab != null) {
-                requestBuilderTabPane.getSelectionModel().select(wsMessageTab);
-            }
-            if (isSocketIo && requestBuilderTabPane != null && socketIoTab != null) {
-                requestBuilderTabPane.getSelectionModel().select(socketIoTab);
-            }
+            updateRequestBuilderTabs(newMethod);
+            updateResponseTabs(newMethod);
             // Switching away from WS while still connected would leave a
             // socket open with no way to see or close it from the UI —
             // disconnect cleanly instead.
@@ -1510,6 +2547,59 @@ public class MainController implements Initializable {
                 closeActiveSocketIoSession();
             }
         });
+
+        updateRequestBuilderTabs(methodCombo.getValue() != null ? methodCombo.getValue() : "GET");
+        updateResponseTabs(methodCombo.getValue() != null ? methodCombo.getValue() : "GET");
+    }
+
+    private void updateRequestBuilderTabs(String method) {
+        if (requestBuilderTabPane == null) {
+            return;
+        }
+        Tab selectedBefore = requestBuilderTabPane.getSelectionModel().getSelectedItem();
+        List<Tab> targetTabs;
+        if ("WS".equals(method)) {
+            targetTabs = Arrays.asList(wsMessageTab, paramsTab, headersTab);
+        } else if ("SOCKETIO".equals(method)) {
+            targetTabs = Arrays.asList(socketIoMessageTab, socketIoEventsTab, paramsTab, headersTab);
+        } else {
+            targetTabs = Arrays.asList(paramsTab, authTab, headersTab, bodyTab, scriptsTab);
+        }
+
+        List<Tab> validTabs = targetTabs.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        if (!requestBuilderTabPane.getTabs().equals(validTabs)) {
+            requestBuilderTabPane.getTabs().setAll(validTabs);
+            if (selectedBefore != null && validTabs.contains(selectedBefore)) {
+                requestBuilderTabPane.getSelectionModel().select(selectedBefore);
+            } else if (!validTabs.isEmpty()) {
+                requestBuilderTabPane.getSelectionModel().select(validTabs.get(0));
+            }
+        }
+    }
+
+    private void updateResponseTabs(String method) {
+        if (responseTabPane == null) {
+            return;
+        }
+        Tab selectedBefore = responseTabPane.getSelectionModel().getSelectedItem();
+        List<Tab> targetTabs;
+        if ("WS".equals(method)) {
+            targetTabs = Collections.singletonList(wsMessagesTab);
+        } else if ("SOCKETIO".equals(method)) {
+            targetTabs = Collections.singletonList(socketIoMessagesTab);
+        } else {
+            targetTabs = Arrays.asList(responseBodyTab, responseCookiesTab, responseHeadersTab, responseTestsTab);
+        }
+
+        List<Tab> validTabs = targetTabs.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        if (!responseTabPane.getTabs().equals(validTabs)) {
+            responseTabPane.getTabs().setAll(validTabs);
+            if (selectedBefore != null && validTabs.contains(selectedBefore)) {
+                responseTabPane.getSelectionModel().select(selectedBefore);
+            } else if (!validTabs.isEmpty()) {
+                responseTabPane.getSelectionModel().select(validTabs.get(0));
+            }
+        }
     }
 
     private void loadUserData() {
@@ -1537,7 +2627,9 @@ public class MainController implements Initializable {
         if (tokenPromptLabel != null) {
             tokenPromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> tokenField.getText().isEmpty(), tokenField.textProperty()));
+                            () -> tokenField.getText().isEmpty() && !tokenField.isFocused(),
+                            tokenField.textProperty(),
+                            tokenField.focusedProperty()));
         }
 
         usernameField.setWrapText(false);
@@ -1547,7 +2639,9 @@ public class MainController implements Initializable {
         if (usernamePromptLabel != null) {
             usernamePromptLabel.visibleProperty().bind(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                            () -> usernameField.getText().isEmpty(), usernameField.textProperty()));
+                            () -> usernameField.getText().isEmpty() && !usernameField.isFocused(),
+                            usernameField.textProperty(),
+                            usernameField.focusedProperty()));
         }
 
         // Any edit to the auth fields marks the tab unsaved, same as url/body
@@ -1816,20 +2910,882 @@ public class MainController implements Initializable {
     }
 
     private void setupTables() {
-        setupKeyValueTable(paramsTable, paramsData, this::syncParamsToUrl, "Key", "Value", "Description");
-        setupKeyValueTable(headersTable, headersData, "Key", "Value", "Description");
+        setupParamsTable();
+        addCommonHeaders();
+        setupHeadersTable();
         setupKeyValueTable(responseHeadersTable, responseHeadersData, "Key", "Value");
         setupKeyValueTable(cookiesTable, cookiesData, "Name", "Value", "Domain");
+        setupSocketIoEventsTable();
+    }
 
-        addCommonHeaders();
+    private static final javafx.css.PseudoClass ROW_SELECTED_PSEUDO =
+            javafx.css.PseudoClass.getPseudoClass("row-selected");
+    private CheckBox paramsMasterCheckBox;
+    private CheckBox paramsMasterSelectBox;
+    private int pendingFocusParamRow = -1;
+
+    private CheckBox headersMasterCheckBox;
+    private CheckBox headersMasterSelectBox;
+    private int pendingFocusHeaderRow = -1;
+
+    private CheckBox formDataMasterCheckBox;
+    private CheckBox formDataMasterSelectBox;
+    private int pendingFocusFormDataRow = -1;
+
+    private CheckBox urlEncodedMasterCheckBox;
+    private CheckBox urlEncodedMasterSelectBox;
+    private int pendingFocusUrlEncodedRow = -1;
+
+    private void setupParamsTable() {
+        paramsTable.getColumns().clear();
+        paramsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        paramsTable.setItems(paramsData);
+        paramsTable.setEditable(true);
+        paramsTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        // Row factory applies user-friendly selection color dynamically via listener
+        paramsTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        CheckBox masterCheckBox = new CheckBox();
+        this.paramsMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : paramsData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            paramsTable.refresh();
+            syncParamsToUrl();
+            onEditorFieldChanged();
+        });
+
+        // 1. Tick mark (enable/disable param in URL query string)
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        syncParamsToUrl();
+                        onEditorFieldChanged();
+                        updateMasterCheckBox(paramsMasterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Key column
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(140);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createParamCell("Key", 0, KeyValuePair::getKey, KeyValuePair::setKey));
+
+        // 3. Value column
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(140);
+        valueCol.setPrefWidth(240);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createParamCell("Value", 1, KeyValuePair::getValue, KeyValuePair::setValue));
+
+        // 4. Description column
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createParamCell("Description", 2, KeyValuePair::getDescription, KeyValuePair::setDescription));
+
+        // 5. Select column (row select option: centered checkbox in header, aligned above row checkboxes)
+        CheckBox masterSelectBox = new CheckBox();
+        this.paramsMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : paramsData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            paramsTable.getSelectionModel().clearSelection();
+            paramsTable.refresh();
+        });
+
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateMasterSelectBox(paramsMasterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        paramsTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddParamRow());
+        deleteItem.setOnAction(e -> handleDeleteParamRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        paramsTable.setContextMenu(contextMenu);
+
+        ensurePlaceholderRow();
+        updateMasterCheckBox(paramsMasterCheckBox);
+        updateMasterSelectBox(paramsMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createParamCell(String placeholder,
+                                                            int colIndex,
+                                                            Function<KeyValuePair, String> getter,
+                                                            BiConsumer<KeyValuePair, String> setter) {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    String safeVal = newVal != null ? newVal : "";
+                    setter.accept(row, safeVal);
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensurePlaceholderRow();
+                        updateMasterCheckBox(paramsMasterCheckBox);
+                        updateMasterSelectBox(paramsMasterSelectBox);
+                    } else {
+                        row.setPlaceholder(true);
+                        ensurePlaceholderRow();
+                        updateMasterCheckBox(paramsMasterCheckBox);
+                        updateMasterSelectBox(paramsMasterSelectBox);
+                    }
+
+                    if (!syncingUrlAndParams) {
+                        syncParamsToUrl();
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                        e.consume();
+                        navigateNextParamCell(colIndex);
+                    }
+                });
+            }
+
+            private void navigateNextParamCell(int currentCol) {
+                int rowIndex = getIndex();
+                if (currentCol < 2) {
+                    focusParamCell(rowIndex, currentCol + 2);
+                } else {
+                    int nextRow = rowIndex + 1;
+                    if (nextRow < paramsData.size()) {
+                        focusParamCell(nextRow, 1);
+                    }
+                }
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    // Check if this row was just added and needs Key focus
+                    if (colIndex == 0 && getIndex() == pendingFocusParamRow) {
+                        pendingFocusParamRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusParamCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            paramsTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < paramsTable.getColumns().size()) {
+                paramsTable.getFocusModel().focus(rowIdx, paramsTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < paramsTable.getColumns().size()) {
+                    var targetCol = paramsTable.getColumns().get(colIdx);
+                    for (Node n : paramsTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private static boolean isRowEmpty(KeyValuePair kv) {
+        if (kv == null) {
+            return true;
+        }
+        String k = kv.getKey();
+        String v = kv.getValue();
+        String d = kv.getDescription();
+        String fp = kv.getFilePath();
+        return (k == null || k.trim().isEmpty())
+                && (v == null || v.trim().isEmpty())
+                && (d == null || d.trim().isEmpty())
+                && (fp == null || fp.trim().isEmpty());
+    }
+
+    private void ensurePlaceholderRow() {
+        while (paramsData.size() > 1 && isRowEmpty(paramsData.get(paramsData.size() - 1)) && isRowEmpty(paramsData.get(paramsData.size() - 2))) {
+            paramsData.remove(paramsData.size() - 1);
+        }
+        if (paramsData.isEmpty()) {
+            paramsData.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        KeyValuePair last = paramsData.get(paramsData.size() - 1);
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
+            paramsData.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) {
+            return;
+        }
+        long totalActive = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) {
+            return;
+        }
+        long totalActive = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = paramsData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
     }
 
     private void addCommonHeaders() {
         headersData.addAll(
-                new KeyValuePair("Content-Type", "application/json", "Request content type"),
-                new KeyValuePair("Accept", "application/json", "Response format"),
-                new KeyValuePair("User-Agent", "JavaFX-API-Client/1.0", "Client identifier")
+                new KeyValuePair(true, "Content-Type", "application/json", "Request content type", false),
+                new KeyValuePair(true, "Accept", "application/json", "Response format", false),
+                new KeyValuePair(true, "User-Agent", "JavaFX-API-Client/1.0", "Client identifier", false)
         );
+    }
+
+    private void setupHeadersTable() {
+        headersTable.getColumns().clear();
+        headersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        headersTable.setItems(headersData);
+        headersTable.setEditable(true);
+        headersTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        // Row factory applies user-friendly selection color dynamically via listener
+        headersTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        CheckBox masterCheckBox = new CheckBox();
+        this.headersMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : headersData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            headersTable.refresh();
+            onEditorFieldChanged();
+        });
+
+        // 1. Tick mark (enable/disable header in request)
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        onEditorFieldChanged();
+                        updateHeadersMasterCheckBox(headersMasterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Key column (with HeaderAutocomplete attached)
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(140);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createHeaderCell("Key", 0, KeyValuePair::getKey, KeyValuePair::setKey));
+
+        // 3. Value column
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(140);
+        valueCol.setPrefWidth(240);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createHeaderCell("Value", 1, KeyValuePair::getValue, KeyValuePair::setValue));
+
+        // 4. Description column
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createHeaderCell("Description", 2, KeyValuePair::getDescription, KeyValuePair::setDescription));
+
+        // 5. Select column (row select checkbox for delete)
+        CheckBox masterSelectBox = new CheckBox();
+        this.headersMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : headersData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            headersTable.getSelectionModel().clearSelection();
+            headersTable.refresh();
+        });
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateHeadersMasterSelectBox(headersMasterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        headersTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddHeaderRow());
+        deleteItem.setOnAction(e -> handleDeleteHeaderRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        headersTable.setContextMenu(contextMenu);
+
+        ensureHeadersPlaceholderRow();
+        updateHeadersMasterCheckBox(headersMasterCheckBox);
+        updateHeadersMasterSelectBox(headersMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createHeaderCell(String placeholder,
+                                                             int colIndex,
+                                                             Function<KeyValuePair, String> getter,
+                                                             BiConsumer<KeyValuePair, String> setter) {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                if (colIndex == 0) {
+                    HeaderAutocomplete.attach(textField, selectedHeader -> {
+                        KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                        if (row != null) {
+                            row.setKey(selectedHeader);
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) {
+                                row.setEnabled(true);
+                            }
+                            ensureHeadersPlaceholderRow();
+                            updateHeadersMasterCheckBox(headersMasterCheckBox);
+                            updateHeadersMasterSelectBox(headersMasterSelectBox);
+                            onEditorFieldChanged();
+                            focusHeaderCell(getIndex(), 2);
+                        }
+                    });
+                }
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    String safeVal = newVal != null ? newVal : "";
+                    setter.accept(row, safeVal);
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureHeadersPlaceholderRow();
+                        updateHeadersMasterCheckBox(headersMasterCheckBox);
+                        updateHeadersMasterSelectBox(headersMasterSelectBox);
+                    }
+
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                    if (e.isConsumed()) {
+                        return;
+                    }
+                    if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                        e.consume();
+                        navigateNextHeaderCell(colIndex);
+                    }
+                });
+            }
+
+            private void navigateNextHeaderCell(int currentCol) {
+                int rowIndex = getIndex();
+                if (currentCol < 2) {
+                    focusHeaderCell(rowIndex, currentCol + 2);
+                } else {
+                    int nextRow = rowIndex + 1;
+                    if (nextRow < headersData.size()) {
+                        focusHeaderCell(nextRow, 1);
+                    }
+                }
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    // Check if this row was just added and needs Key focus
+                    if (colIndex == 0 && getIndex() == pendingFocusHeaderRow) {
+                        pendingFocusHeaderRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusHeaderCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            headersTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < headersTable.getColumns().size()) {
+                headersTable.getFocusModel().focus(rowIdx, headersTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < headersTable.getColumns().size()) {
+                    var targetCol = headersTable.getColumns().get(colIdx);
+                    for (Node n : headersTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void ensureHeadersPlaceholderRow() {
+        while (headersData.size() > 1 && isRowEmpty(headersData.get(headersData.size() - 1)) && isRowEmpty(headersData.get(headersData.size() - 2))) {
+            headersData.remove(headersData.size() - 1);
+        }
+        if (headersData.isEmpty()) {
+            headersData.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        KeyValuePair last = headersData.get(headersData.size() - 1);
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
+            headersData.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateHeadersMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) {
+            return;
+        }
+        long totalActive = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateHeadersMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) {
+            return;
+        }
+        long totalActive = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = headersData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
     }
 
     private void setupKeyValueTable(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data, String... columns) {
@@ -1932,105 +3888,1140 @@ public class MainController implements Initializable {
 
     /** Form-data gets its own table (not the generic key/value one) so
      * each row can be either plain text or a real file attachment —
-     * matching Postman's Text/File toggle, with actual file bytes read
-     * off disk at send time (CSV, Excel, images, anything). */
+     * matching Postman's Text/File toggle, with single-click editing,
+     * left tickmark, right row selection, and auto-growing placeholder row. */
     private void setupFormDataTable() {
         formDataTable.getColumns().clear();
         formDataTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         formDataTable.setItems(formData);
         formDataTable.setEditable(true);
+        formDataTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 
-        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
-        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
-        keyCol.setCellFactory(col -> commitOnFocusLossCell());
-        keyCol.setOnEditCommit(event -> event.getRowValue().setKey(event.getNewValue()));
-        keyCol.setPrefWidth(150);
+        // Row factory applies soft pink selection color dynamically via listener
+        formDataTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
 
-        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
-        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
-        valueCol.setCellFactory(col -> createFormDataValueCell());
-        valueCol.setOnEditCommit(event -> event.getRowValue().setValue(event.getNewValue()));
-        valueCol.setPrefWidth(220);
-
-        TableColumn<KeyValuePair, String> typeCol = new TableColumn<>("Type");
-        typeCol.setCellValueFactory(cellData -> cellData.getValue().typeProperty());
-        typeCol.setCellFactory(javafx.scene.control.cell.ComboBoxTableCell.forTableColumn("Text", "File"));
-        typeCol.setOnEditCommit(event -> {
-            event.getRowValue().setType(event.getNewValue());
-            // The Value column's rendering (text field vs. file picker)
-            // depends on this row's type, and TableView doesn't know to
-            // re-check a SIBLING column on its own — force it to.
-            formDataTable.refresh();
-        });
-        typeCol.setPrefWidth(80);
-
-        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
-        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
-        descCol.setCellFactory(col -> commitOnFocusLossCell());
-        descCol.setOnEditCommit(event -> event.getRowValue().setDescription(event.getNewValue()));
-        descCol.setPrefWidth(150);
-
-        formDataTable.getColumns().addAll(keyCol, valueCol, typeCol, descCol);
-
-        ContextMenu contextMenu = new ContextMenu();
-        MenuItem addItem = new MenuItem("Add Row");
-        MenuItem deleteItem = new MenuItem("Delete Row");
-        addItem.setOnAction(e -> formData.add(new KeyValuePair("", "", "")));
-        deleteItem.setOnAction(e -> {
-            KeyValuePair selected = formDataTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                formData.remove(selected);
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
             }
         });
-        contextMenu.getItems().addAll(addItem, deleteItem);
-        formDataTable.setContextMenu(contextMenu);
-    }
 
-    /** Behaves exactly like the normal editable text cell for "Text"
-     * rows (reuses TextFieldTableCell's own machinery), but for "File"
-     * rows shows the chosen file name plus a "Choose File..." button
-     * instead — clicking it opens a real file picker. */
-    private TableCell<KeyValuePair, String> createFormDataValueCell() {
-        return new TextFieldTableCell<>(new javafx.util.converter.DefaultStringConverter()) {
-            private final Button chooseFileBtn = new Button("Choose File...");
-            private final Label fileLabel = new Label();
-            private final HBox fileBox = new HBox(6, fileLabel, chooseFileBtn);
+        // 1. Tick mark (enable/disable row in request)
+        CheckBox masterCheckBox = new CheckBox();
+        this.formDataMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : formData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            formDataTable.refresh();
+            onEditorFieldChanged();
+        });
+
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
 
             {
-                fileBox.setAlignment(Pos.CENTER_LEFT);
-                chooseFileBtn.setOnAction(e -> {
-                    if (!(getTableRow() != null && getTableRow().getItem() instanceof KeyValuePair kv)) {
-                        return;
-                    }
-                    FileChooser chooser = new FileChooser();
-                    chooser.setTitle("Choose File");
-                    chooser.getExtensionFilters().addAll(
-                            new FileChooser.ExtensionFilter("CSV Files", "*.csv"),
-                            new FileChooser.ExtensionFilter("Excel Files", "*.xlsx", "*.xls"),
-                            new FileChooser.ExtensionFilter("All Files", "*.*"));
-                    File file = chooser.showOpenDialog(Main.getPrimaryStage());
-                    if (file != null) {
-                        kv.setFilePath(file.getAbsolutePath());
-                        kv.setFileName(file.getName());
-                        kv.setValue(file.getName());
-                        fileLabel.setText(file.getName());
-                        getTableView().refresh();
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        onEditorFieldChanged();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
                     }
                 });
             }
 
-            private boolean isFileRow() {
-                return getTableRow() != null && getTableRow().getItem() instanceof KeyValuePair kv
-                        && "File".equalsIgnoreCase(kv.getType());
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Key column with inline Postman-style Type dropdown (Text ▾ / File ▾)
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(160);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createFormDataKeyCell());
+
+        // 3. Value column (single-click text field or file picker button depending on type)
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(180);
+        valueCol.setPrefWidth(260);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createFormDataValueCell());
+
+        // 4. Description column
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createFormDataDescCell());
+
+        // 5. Select column
+        CheckBox masterSelectBox = new CheckBox();
+        this.formDataMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : formData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            formDataTable.getSelectionModel().clearSelection();
+            formDataTable.refresh();
+        });
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                });
             }
 
             @Override
-            public void startEdit() {
-                if (isFileRow()) {
-                    return; // file rows use the button, not the normal text editor
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
                 }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        formDataTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddFormDataRow());
+        deleteItem.setOnAction(e -> handleDeleteFormDataRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        formDataTable.setContextMenu(contextMenu);
+
+        ensureFormDataPlaceholderRow();
+        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createFormDataKeyCell() {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private final Button typeBtn = new Button("Text \u25BE");
+            private final HBox cellBox = new HBox(4, textField, typeBtn);
+            private boolean updating = false;
+
+            {
+                textField.setPromptText("Key");
+                textField.getStyleClass().add("param-cell-field");
+                HBox.setHgrow(textField, Priority.ALWAYS);
+
+                typeBtn.getStyleClass().add("form-data-type-btn");
+                typeBtn.setFocusTraversable(false);
+
+                cellBox.setAlignment(Pos.CENTER_LEFT);
+                cellBox.setPadding(new Insets(0, 4, 0, 0));
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(cellBox);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> {
+                    if (e.getTarget() != typeBtn) {
+                        textField.requestFocus();
+                    }
+                });
+
+                typeBtn.setOnAction(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    ContextMenu typeMenu = new ContextMenu();
+                    MenuItem textItem = new MenuItem("Text");
+                    MenuItem fileItem = new MenuItem("File");
+                    textItem.setOnAction(ev -> {
+                        row.setType("Text");
+                        typeBtn.setText("Text \u25BE");
+                        if (row.isPlaceholder()) {
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) row.setEnabled(true);
+                            ensureFormDataPlaceholderRow();
+                            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                        }
+                        formDataTable.refresh();
+                        onEditorFieldChanged();
+                    });
+                    fileItem.setOnAction(ev -> {
+                        row.setType("File");
+                        typeBtn.setText("File \u25BE");
+                        if (row.isPlaceholder()) {
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) row.setEnabled(true);
+                            ensureFormDataPlaceholderRow();
+                            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                        }
+                        formDataTable.refresh();
+                        onEditorFieldChanged();
+                    });
+                    typeMenu.getItems().addAll(textItem, fileItem);
+                    typeMenu.show(typeBtn, Side.BOTTOM, 0, 2);
+                });
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    row.setKey(newVal != null ? newVal : "");
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureFormDataPlaceholderRow();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        focusFormDataCell(getIndex(), 2);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        cellBox.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    cellBox.setVisible(true);
+                    String current = row.getKey();
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    boolean isFile = "File".equalsIgnoreCase(row.getType());
+                    typeBtn.setText(isFile ? "File \u25BE" : "Text \u25BE");
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                        typeBtn.setOpacity(0.5);
+                    } else {
+                        textField.setStyle("");
+                        typeBtn.setOpacity(1.0);
+                    }
+
+                    if (getIndex() == pendingFocusFormDataRow) {
+                        pendingFocusFormDataRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private TableCell<KeyValuePair, String> createFormDataValueCell() {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private final HBox fileBox = new HBox(6);
+            private final Label fileNameLabel = new Label();
+            private final Button chooseFileBtn = new Button("Select Files");
+            private final Button clearFileBtn = new Button("\u00D7");
+            private final StackPane container = new StackPane();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText("Value");
+                textField.getStyleClass().add("param-cell-field");
+
+                fileBox.setAlignment(Pos.CENTER_LEFT);
+                fileBox.setPadding(new Insets(2, 8, 2, 8));
+
+                fileNameLabel.getStyleClass().add("form-data-file-label");
+                HBox.setHgrow(fileNameLabel, Priority.ALWAYS);
+
+                chooseFileBtn.getStyleClass().add("form-data-file-btn");
+                clearFileBtn.getStyleClass().add("form-data-file-clear-btn");
+                HoverTooltip.attach(clearFileBtn, "Clear selected file");
+
+                fileBox.getChildren().addAll(fileNameLabel, chooseFileBtn, clearFileBtn);
+
+                container.setAlignment(Pos.CENTER_LEFT);
+                container.getChildren().addAll(textField, fileBox);
+
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(container);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row != null && !"File".equalsIgnoreCase(row.getType())) {
+                        textField.requestFocus();
+                    }
+                });
+
+                chooseFileBtn.setOnAction(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    FileChooser chooser = new FileChooser();
+                    chooser.setTitle("Select File");
+                    chooser.getExtensionFilters().addAll(
+                            new FileChooser.ExtensionFilter("All Files", "*.*"),
+                            new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"),
+                            new FileChooser.ExtensionFilter("PDF Documents", "*.pdf"),
+                            new FileChooser.ExtensionFilter("Text / CSV / JSON", "*.txt", "*.csv", "*.json"),
+                            new FileChooser.ExtensionFilter("Excel Spreadsheets", "*.xlsx", "*.xls")
+                    );
+                    File file = chooser.showOpenDialog(Main.getPrimaryStage());
+                    if (file != null) {
+                        row.setFilePath(file.getAbsolutePath());
+                        row.setFileName(file.getName());
+                        row.setValue(file.getName());
+                        if (row.isPlaceholder()) {
+                            row.setPlaceholder(false);
+                            if (!row.isEnabled()) row.setEnabled(true);
+                            ensureFormDataPlaceholderRow();
+                            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                        }
+                        formDataTable.refresh();
+                        onEditorFieldChanged();
+                    }
+                });
+
+                clearFileBtn.setOnAction(e -> {
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    row.setFilePath("");
+                    row.setFileName("");
+                    row.setValue("");
+                    formDataTable.refresh();
+                    onEditorFieldChanged();
+                });
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null || "File".equalsIgnoreCase(row.getType())) {
+                        return;
+                    }
+                    row.setValue(newVal != null ? newVal : "");
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureFormDataPlaceholderRow();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        focusFormDataCell(getIndex(), 3);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        container.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    container.setVisible(true);
+                    boolean isFile = "File".equalsIgnoreCase(row.getType());
+                    if (isFile) {
+                        textField.setVisible(false);
+                        fileBox.setVisible(true);
+                        boolean hasFile = row.getFilePath() != null && !row.getFilePath().isBlank();
+                        if (hasFile) {
+                            fileNameLabel.setText(row.getFileName() != null ? row.getFileName() : new File(row.getFilePath()).getName());
+                            fileNameLabel.setVisible(true);
+                            fileNameLabel.setManaged(true);
+                            chooseFileBtn.setText("Change");
+                            clearFileBtn.setVisible(true);
+                            clearFileBtn.setManaged(true);
+                        } else {
+                            fileNameLabel.setText("");
+                            fileNameLabel.setVisible(false);
+                            fileNameLabel.setManaged(false);
+                            chooseFileBtn.setText("Select Files");
+                            clearFileBtn.setVisible(false);
+                            clearFileBtn.setManaged(false);
+                        }
+                    } else {
+                        fileBox.setVisible(false);
+                        textField.setVisible(true);
+                        String current = row.getValue();
+                        String safeCurrent = current != null ? current : "";
+                        if (!safeCurrent.equals(textField.getText())) {
+                            updating = true;
+                            try {
+                                textField.setText(safeCurrent);
+                            } finally {
+                                updating = false;
+                            }
+                        }
+                    }
+
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                        fileBox.setOpacity(0.6);
+                    } else {
+                        textField.setStyle("");
+                        fileBox.setOpacity(1.0);
+                    }
+                }
+            }
+        };
+    }
+
+    private TableCell<KeyValuePair, String> createFormDataDescCell() {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText("Description");
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    row.setDescription(newVal != null ? newVal : "");
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureFormDataPlaceholderRow();
+                        updateFormDataMasterCheckBox(formDataMasterCheckBox);
+                        updateFormDataMasterSelectBox(formDataMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        int nextRow = getIndex() + 1;
+                        if (nextRow < formData.size()) {
+                            focusFormDataCell(nextRow, 1);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = row.getDescription();
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusFormDataCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            formDataTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < formDataTable.getColumns().size()) {
+                formDataTable.getFocusModel().focus(rowIdx, formDataTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < formDataTable.getColumns().size()) {
+                    var targetCol = formDataTable.getColumns().get(colIdx);
+                    for (Node n : formDataTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            } else if (tc.getGraphic() instanceof Pane pane) {
+                                for (Node child : pane.getChildren()) {
+                                    if (child instanceof TextField tf && tf.isVisible()) {
+                                        tf.requestFocus();
+                                        tf.selectAll();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void ensureFormDataPlaceholderRow() {
+        while (formData.size() > 1 && isRowEmpty(formData.get(formData.size() - 1)) && isRowEmpty(formData.get(formData.size() - 2))) {
+            formData.remove(formData.size() - 1);
+        }
+        if (formData.isEmpty()) {
+            KeyValuePair ph = new KeyValuePair(true, "", "", "", true);
+            ph.setType("Text");
+            formData.add(ph);
+            return;
+        }
+        KeyValuePair last = formData.get(formData.size() - 1);
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
+            KeyValuePair ph = new KeyValuePair(true, "", "", "", true);
+            ph.setType("Text");
+            formData.add(ph);
+        }
+    }
+
+    private void updateFormDataMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) return;
+        long totalActive = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateFormDataMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) return;
+        long totalActive = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = formData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
+    }
+
+    private void setupUrlEncodedTable() {
+        urlEncodedTable.getColumns().clear();
+        urlEncodedTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        urlEncodedTable.setItems(urlEncodedData);
+        urlEncodedTable.setEditable(true);
+        urlEncodedTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        urlEncodedTable.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        CheckBox masterCheckBox = new CheckBox();
+        this.urlEncodedMasterCheckBox = masterCheckBox;
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : urlEncodedData) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            urlEncodedTable.refresh();
+            onEditorFieldChanged();
+        });
+
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        onEditorFieldChanged();
+                        updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Key");
+        keyCol.setMinWidth(140);
+        keyCol.setPrefWidth(220);
+        keyCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        keyCol.setCellFactory(col -> createUrlEncodedCell("Key", 0, KeyValuePair::getKey, KeyValuePair::setKey));
+
+        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
+        valueCol.setMinWidth(140);
+        valueCol.setPrefWidth(240);
+        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valueCol.setCellFactory(col -> createUrlEncodedCell("Value", 1, KeyValuePair::getValue, KeyValuePair::setValue));
+
+        TableColumn<KeyValuePair, String> descCol = new TableColumn<>("Description");
+        descCol.setMinWidth(140);
+        descCol.setPrefWidth(240);
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> createUrlEncodedCell("Description", 2, KeyValuePair::getDescription, KeyValuePair::setDescription));
+
+        CheckBox masterSelectBox = new CheckBox();
+        this.urlEncodedMasterSelectBox = masterSelectBox;
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : urlEncodedData) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            urlEncodedTable.getSelectionModel().clearSelection();
+            urlEncodedTable.refresh();
+        });
+
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        urlEncodedTable.getColumns().addAll(checkCol, keyCol, valueCol, descCol, selectCol);
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Row");
+        MenuItem deleteItem = new MenuItem("Delete Row");
+        addItem.setOnAction(e -> handleAddFormDataRow());
+        deleteItem.setOnAction(e -> handleDeleteFormDataRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        urlEncodedTable.setContextMenu(contextMenu);
+
+        ensureUrlEncodedPlaceholderRow();
+        updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+        updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+    }
+
+    private TableCell<KeyValuePair, String> createUrlEncodedCell(String placeholder,
+                                                                 int colIndex,
+                                                                 Function<KeyValuePair, String> getter,
+                                                                 BiConsumer<KeyValuePair, String> setter) {
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    setter.accept(row, newVal != null ? newVal : "");
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureUrlEncodedPlaceholderRow();
+                        updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                        updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+                    }
+                    onEditorFieldChanged();
+                });
+
+                textField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() == KeyCode.ENTER) {
+                        e.consume();
+                        if (colIndex < 2) {
+                            focusUrlEncodedCell(getIndex(), colIndex + 2);
+                        } else {
+                            int nextRow = getIndex() + 1;
+                            if (nextRow < urlEncodedData.size()) {
+                                focusUrlEncodedCell(nextRow, 1);
+                            }
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    if (colIndex == 0 && getIndex() == pendingFocusUrlEncodedRow) {
+                        pendingFocusUrlEncodedRow = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusUrlEncodedCell(int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            urlEncodedTable.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < urlEncodedTable.getColumns().size()) {
+                urlEncodedTable.getFocusModel().focus(rowIdx, urlEncodedTable.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < urlEncodedTable.getColumns().size()) {
+                    var targetCol = urlEncodedTable.getColumns().get(colIdx);
+                    for (Node n : urlEncodedTable.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void ensureUrlEncodedPlaceholderRow() {
+        while (urlEncodedData.size() > 1 && isRowEmpty(urlEncodedData.get(urlEncodedData.size() - 1)) && isRowEmpty(urlEncodedData.get(urlEncodedData.size() - 2))) {
+            urlEncodedData.remove(urlEncodedData.size() - 1);
+        }
+        if (urlEncodedData.isEmpty()) {
+            urlEncodedData.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        KeyValuePair last = urlEncodedData.get(urlEncodedData.size() - 1);
+        if (isRowEmpty(last)) {
+            last.setPlaceholder(true);
+        } else {
+            urlEncodedData.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateUrlEncodedMasterCheckBox(CheckBox masterCheckBox) {
+        if (masterCheckBox == null) return;
+        long totalActive = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateUrlEncodedMasterSelectBox(CheckBox masterSelectBox) {
+        if (masterSelectBox == null) return;
+        long totalActive = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = urlEncodedData.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
+    }
+
+    private void setupSocketIoEventsTable() {
+        if (socketIoEventsTable == null) {
+            return;
+        }
+        socketIoEventsTable.getColumns().clear();
+        socketIoEventsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        socketIoEventsTable.setItems(socketIoEventsData);
+        socketIoEventsTable.setEditable(true);
+
+        TableColumn<SocketIoEventItem, String> eventCol = new TableColumn<>("EVENTS");
+        eventCol.setCellValueFactory(cellData -> cellData.getValue().eventNameProperty());
+        eventCol.setCellFactory(col -> commitOnFocusLossEventCell("Add event"));
+        eventCol.setOnEditCommit(event -> {
+            event.getRowValue().setEventName(event.getNewValue());
+            onEditorFieldChanged();
+        });
+        eventCol.setPrefWidth(220);
+
+        TableColumn<SocketIoEventItem, Boolean> listenCol = new TableColumn<>("LISTEN");
+        listenCol.setCellValueFactory(cellData -> cellData.getValue().listenProperty());
+        listenCol.setCellFactory(col -> createListenToggleCell());
+        listenCol.setPrefWidth(100);
+        listenCol.setStyle("-fx-alignment: CENTER;");
+
+        TableColumn<SocketIoEventItem, String> descCol = new TableColumn<>("DESCRIPTION");
+        descCol.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        descCol.setCellFactory(col -> commitOnFocusLossEventCell("Add description"));
+        descCol.setOnEditCommit(event -> {
+            event.getRowValue().setDescription(event.getNewValue());
+            onEditorFieldChanged();
+        });
+        descCol.setPrefWidth(260);
+
+        socketIoEventsTable.getColumns().addAll(eventCol, listenCol, descCol);
+
+        if (socketIoEventsData.isEmpty()) {
+            socketIoEventsData.add(new SocketIoEventItem("", true, ""));
+        }
+
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Event");
+        MenuItem deleteItem = new MenuItem("Delete Event");
+        addItem.setOnAction(e -> handleAddSocketIoEventRow());
+        deleteItem.setOnAction(e -> handleDeleteSocketIoEventRow());
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        socketIoEventsTable.setContextMenu(contextMenu);
+    }
+
+    private TableCell<SocketIoEventItem, String> commitOnFocusLossEventCell(String promptText) {
+        return new TextFieldTableCell<SocketIoEventItem, String>(new javafx.util.converter.DefaultStringConverter()) {
+            @Override
+            public void startEdit() {
                 super.startEdit();
                 if (getGraphic() instanceof TextField field) {
+                    field.setPromptText(promptText);
                     field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
                         if (!isFocused && isEditing()) {
                             commitEdit(field.getText());
@@ -2040,23 +5031,106 @@ public class MainController implements Initializable {
             }
 
             @Override
-            public void updateItem(String value, boolean empty) {
-                super.updateItem(value, empty);
+            public void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
                 if (empty) {
+                    setText(null);
                     setGraphic(null);
-                    setText(null);
-                    return;
+                } else if (!isEditing()) {
+                    if (item == null || item.trim().isEmpty()) {
+                        setText(promptText);
+                        setStyle("-fx-text-fill: -text-muted; -fx-font-style: italic;");
+                    } else {
+                        setText(item);
+                        setStyle("-fx-text-fill: -text-primary; -fx-font-style: normal;");
+                    }
                 }
-                if (isFileRow()) {
-                    KeyValuePair kv = (KeyValuePair) getTableRow().getItem();
-                    fileLabel.setText(kv.getFileName() == null || kv.getFileName().isEmpty()
-                            ? "(no file chosen)" : kv.getFileName());
-                    setGraphic(fileBox);
-                    setText(null);
-                }
-                // else: super.updateItem() above already set the normal text correctly
             }
         };
+    }
+
+    private TableCell<SocketIoEventItem, Boolean> createListenToggleCell() {
+        return new TableCell<>() {
+            private final ToggleButton toggle = new ToggleButton();
+            private final Region thumb = new Region();
+            {
+                thumb.getStyleClass().add("toggle-thumb");
+                thumb.setMouseTransparent(true);
+                toggle.getStyleClass().add("event-toggle-switch");
+                toggle.setGraphic(thumb);
+                toggle.setOnAction(e -> {
+                    SocketIoEventItem item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setListen(toggle.isSelected());
+                        updateToggleAppearance(toggle.isSelected());
+                        onEditorFieldChanged();
+                    }
+                });
+                setAlignment(Pos.CENTER);
+            }
+
+            private void updateToggleAppearance(boolean selected) {
+                if (selected) {
+                    toggle.setStyle("-fx-background-color: #007acc; -fx-alignment: center-right;");
+                } else {
+                    toggle.setStyle("-fx-background-color: #3e4451; -fx-alignment: center-left;");
+                }
+            }
+
+            @Override
+            protected void updateItem(Boolean item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    setText(null);
+                } else {
+                    boolean val = item != null && item;
+                    toggle.setSelected(val);
+                    updateToggleAppearance(val);
+                    setGraphic(toggle);
+                    setText(null);
+                }
+            }
+        };
+    }
+
+    @FXML
+    private void handleAddSocketIoEventRow() {
+        SocketIoEventItem newItem = new SocketIoEventItem("", true, "");
+        socketIoEventsData.add(newItem);
+        if (socketIoEventsTable != null) {
+            int newIdx = socketIoEventsData.size() - 1;
+            socketIoEventsTable.getSelectionModel().select(newIdx);
+            socketIoEventsTable.scrollTo(newIdx);
+            socketIoEventsTable.edit(newIdx, socketIoEventsTable.getColumns().get(0));
+        }
+        onEditorFieldChanged();
+    }
+
+    @FXML
+    private void handleDeleteSocketIoEventRow() {
+        if (socketIoEventsTable != null) {
+            SocketIoEventItem selected = socketIoEventsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                socketIoEventsData.remove(selected);
+                onEditorFieldChanged();
+            }
+        }
+    }
+
+    @FXML
+    private void handleClearWsMessages() {
+        if (wsMessageLog != null) {
+            wsMessageLog.getItems().clear();
+        }
+    }
+
+    @FXML
+    private void handleClearSocketIoMessages() {
+        if (socketIoEventLog != null) {
+            socketIoEventLog.getItems().clear();
+        }
+        socketIoEventsSeen = 0;
     }
 
     private void setupEnvironmentCombo() {
@@ -2064,6 +5138,13 @@ public class MainController implements Initializable {
         environmentCombo.getSelectionModel().select(0);
         environmentCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
             updateEnvironmentVariables(newVal);
+            if (isGraphqlActive() && isGraphqlAutoFetchEnabled) {
+                triggerGraphqlAutoFetch(false);
+            }
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+            renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
         });
     }
 
@@ -2214,11 +5295,28 @@ public class MainController implements Initializable {
         // Handle collection selection
         collectionsTree.getSelectionModel().selectedItemProperty().addListener(
                 (observable, oldValue, newValue) -> {
+                    if (restoringTreeSelection) {
+                        return;
+                    }
                     if (newValue != null && newValue.isLeaf()) {
                         handleItemSelected(newValue);
                     }
+                    if (!restoringSession) {
+                        scheduleSessionSave();
+                    }
                 }
         );
+
+        collectionsTree.addEventHandler(TreeItem.branchExpandedEvent(), e -> {
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+        });
+        collectionsTree.addEventHandler(TreeItem.branchCollapsedEvent(), e -> {
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+        });
     }
 
     private void handleItemSelected(TreeItem<String> item) {
@@ -2261,16 +5359,31 @@ public class MainController implements Initializable {
                     state.name = requestResponse.getName();
                     state.requestId = requestResponse.getId();
                 }
-                methodCombo.setValue(requestResponse.getMethod().name());
-                urlField.replaceText(requestResponse.getUrl() != null ? requestResponse.getUrl() : "");
+                if (requestResponse.getMethod() != null) {
+                    String m = requestResponse.getMethod().name();
+                    if (state != null) {
+                        state.method = m;
+                    }
+                    methodCombo.setValue(m);
+                    updateRequestBuilderTabs(m);
+                    updateResponseTabs(m);
+                }
+                String reqUrl = requestResponse.getUrl();
+                if (reqUrl == null || reqUrl.isEmpty()
+                        || "https://api.example.com/endpoint".equalsIgnoreCase(reqUrl.trim())
+                        || "Enter URL or paste text".equalsIgnoreCase(reqUrl.trim())) {
+                    urlField.replaceText("");
+                } else {
+                    urlField.replaceText(reqUrl);
+                }
 
                 // Load headers
+                headersData.clear();
                 if (requestResponse.getHeaders() != null && !requestResponse.getHeaders().isEmpty()) {
                     try {
                         JSONObject headersJson = new JSONObject(requestResponse.getHeaders());
-                        headersData.clear();
                         for (String key : headersJson.keySet()) {
-                            headersData.add(new KeyValuePair(key, headersJson.getString(key), ""));
+                            headersData.add(new KeyValuePair(true, key, headersJson.getString(key), "", false));
                         }
                     } catch (Exception e) {
                         // Fallback to simple header parsing
@@ -2278,14 +5391,22 @@ public class MainController implements Initializable {
                         for (String line : headerLines) {
                             String[] parts = line.split(":", 2);
                             if (parts.length == 2) {
-                                headersData.add(new KeyValuePair(parts[0].trim(), parts[1].trim(), ""));
+                                headersData.add(new KeyValuePair(true, parts[0].trim(), parts[1].trim(), "", false));
                             }
                         }
                     }
                 }
+                ensureHeadersPlaceholderRow();
+                updateHeadersMasterCheckBox(headersMasterCheckBox);
+                updateHeadersMasterSelectBox(headersMasterSelectBox);
+                ensureFormDataPlaceholderRow();
+                ensureUrlEncodedPlaceholderRow();
 
                 // Load body
                 bodyTextArea.replaceText(requestResponse.getBody() != null ? requestResponse.getBody() : "");
+                if (bodyCommentHighlighter != null) {
+                    bodyCommentHighlighter.refresh();
+                }
                 // Scripts are saved WITH the request (like Postman) — restore them
                 if (preRequestScriptsArea != null) {
                     preRequestScriptsArea.setText(
@@ -2297,11 +5418,43 @@ public class MainController implements Initializable {
                             requestResponse.getTestsScript() != null
                                     ? requestResponse.getTestsScript() : "");
                 }
-                if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
-                        && rawBodyTypeButton != null) {
-                    rawBodyTypeButton.setSelected(true);
-                } else if (noneBodyTypeButton != null) {
-                    noneBodyTypeButton.setSelected(true);
+                boolean isGraphqlBody = false;
+                if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()) {
+                    String rawBody = requestResponse.getBody().trim();
+                    if (rawBody.startsWith("{") && rawBody.contains("\"query\"")) {
+                        try {
+                            JSONObject obj = new JSONObject(rawBody);
+                            if (obj.has("query")) {
+                                isGraphqlBody = true;
+                                String q = obj.optString("query", "");
+                                if (graphqlQueryArea != null) {
+                                    graphqlQueryArea.replaceText(q);
+                                }
+                                if (graphqlVariablesArea != null) {
+                                    Object vars = obj.opt("variables");
+                                    if (vars instanceof JSONObject jo) {
+                                        graphqlVariablesArea.replaceText(jo.toString(2));
+                                    } else if (vars != null) {
+                                        graphqlVariablesArea.replaceText(vars.toString());
+                                    } else {
+                                        graphqlVariablesArea.replaceText("");
+                                    }
+                                }
+                                if (graphqlBodyTypeButton != null) {
+                                    graphqlBodyTypeButton.setSelected(true);
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                if (!isGraphqlBody) {
+                    if (requestResponse.getBody() != null && !requestResponse.getBody().isBlank()
+                            && rawBodyTypeButton != null) {
+                        rawBodyTypeButton.setSelected(true);
+                    } else if (noneBodyTypeButton != null) {
+                        noneBodyTypeButton.setSelected(true);
+                    }
                 }
 
                 // Authorization tab (saved WITH the request too)
@@ -2323,6 +5476,7 @@ public class MainController implements Initializable {
             if (currentTab != null) {
                 refreshTabGraphic(currentTab);
             }
+            scheduleSessionSave();
 
             updateStatus("Request loaded: " + requestResponse.getName());
         });
@@ -2341,9 +5495,34 @@ public class MainController implements Initializable {
             if (username != null && !username.isBlank()) {
                 userMenuBtn.setText(username);
             }
+            updateUserMenuSessionItem();
+            userMenuBtn.setOnShowing(ev -> updateUserMenuSessionItem());
         }
         new Thread(() -> UserService.getMe().ifPresent(profile ->
                 Platform.runLater(() -> applyProfileToHeader(profile)))).start();
+    }
+
+    private void updateUserMenuSessionItem() {
+        if (userMenuBtn == null) {
+            return;
+        }
+        MenuItem sessionItem = null;
+        for (MenuItem item : userMenuBtn.getItems()) {
+            if ("sessionInfoItem".equals(item.getId())) {
+                sessionItem = item;
+                break;
+            }
+        }
+        String remaining = TokenManager.getSessionTimeRemainingHumanReadable();
+        if (sessionItem == null) {
+            sessionItem = new MenuItem("Session: " + remaining);
+            sessionItem.setId("sessionInfoItem");
+            sessionItem.setDisable(true);
+            userMenuBtn.getItems().add(0, sessionItem);
+            userMenuBtn.getItems().add(1, new SeparatorMenuItem());
+        } else {
+            sessionItem.setText("Session: " + remaining);
+        }
     }
 
     private void applyProfileToHeader(UserProfile profile) {
@@ -2483,7 +5662,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(12, mainRow, statusLabel);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         // Save asynchronously and only close on success — consuming the
         // event keeps the dialog open so an error is actually visible.
@@ -2595,87 +5774,267 @@ public class MainController implements Initializable {
             HBox chip = new HBox(5, dot, name);
             chip.setAlignment(Pos.CENTER_LEFT);
             chip.getStyleClass().add("online-user-chip");
-            Tooltip.install(chip, new Tooltip(user.getUsername() + " is online now"));
+            HoverTooltip.attach(chip, user.getUsername() + " is online now");
             onlineUsersBox.getChildren().add(chip);
         }
     }
 
     @FXML
     private void handleSettings() {
-        /*
-         * Settings uses one window with a simple, flat navigation list.
-         * Appearance, Updates and Mail are top-level items — there is no
-         * "Appearance & Behavior" parent and no nested settings tree.
-         */
         Dialog<ButtonType> dialog = new Dialog<>();
-        if (urlField != null && urlField.getScene() != null) {
-            dialog.initOwner(urlField.getScene().getWindow());
+        Window owner = (urlField != null && urlField.getScene() != null)
+                ? urlField.getScene().getWindow() : null;
+        if (owner != null) {
+            dialog.initOwner(owner);
         }
         dialog.setTitle("Settings");
         dialog.setResizable(false);
-        dialog.getDialogPane().getButtonTypes().addAll(
-                ButtonType.APPLY, ButtonType.CANCEL, ButtonType.OK);
 
-        VBox navigation = new VBox();
-        navigation.setPrefWidth(205);
-        navigation.setMinWidth(205);
-        navigation.setMaxWidth(205);
-        navigation.setPadding(new Insets(18, 8, 12, 8));
-        navigation.setSpacing(2);
-        navigation.setStyle("-fx-background-color: -fx-control-inner-background;");
+        DialogPane dialogPane = dialog.getDialogPane();
+        dialogPane.getStyleClass().add("settings-dialog-pane");
+        dialogPane.getButtonTypes().addAll(ButtonType.APPLY, ButtonType.CANCEL, ButtonType.OK);
 
-        VBox page = new VBox(0);
-        page.setPadding(new Insets(28, 20, 18, 20));
-        page.setPrefWidth(455);
-        page.setMinWidth(455);
+        // Sidebar Navigation
+        VBox navigation = new VBox(4);
+        navigation.setPrefWidth(210);
+        navigation.setMinWidth(210);
+        navigation.setMaxWidth(210);
+        navigation.getStyleClass().add("settings-nav-sidebar");
 
-        BorderPane root = new BorderPane();
-        root.setLeft(navigation);
-        root.setCenter(page);
-        root.setPrefSize(660, 500);
-        root.setMinSize(660, 500);
+        Label navHeader = new Label("PREFERENCES");
+        navHeader.getStyleClass().add("settings-nav-header");
+        navigation.getChildren().add(navHeader);
 
-        Button appearanceNav = settingsNavigationButton("Appearance");
-        Button updatesNav = settingsNavigationButton("Updates");
+        Button appearanceNav = new Button("🎨  Appearance");
+        appearanceNav.getStyleClass().add("settings-nav-item");
+        appearanceNav.setMaxWidth(Double.MAX_VALUE);
+
+        Button updatesNav = new Button("🚀  Updates");
+        updatesNav.getStyleClass().add("settings-nav-item");
+        updatesNav.setMaxWidth(Double.MAX_VALUE);
+
         navigation.getChildren().addAll(appearanceNav, updatesNav);
 
         Button mailNav = null;
         if (TokenManager.isAdmin()) {
-            mailNav = settingsNavigationButton("Mail");
+            mailNav = new Button();
+            mailNav.getStyleClass().add("settings-nav-item");
+            mailNav.setMaxWidth(Double.MAX_VALUE);
+
+            HBox mailNavBox = new HBox(8);
+            mailNavBox.setAlignment(Pos.CENTER_LEFT);
+            Label mailTitle = new Label("✉  Mail Server");
+            Region mailSpacer = new Region();
+            HBox.setHgrow(mailSpacer, Priority.ALWAYS);
+            Label adminBadge = new Label("ADMIN");
+            adminBadge.getStyleClass().add("settings-admin-badge");
+            mailNavBox.getChildren().addAll(mailTitle, mailSpacer, adminBadge);
+            mailNav.setGraphic(mailNavBox);
+            mailNav.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+
             navigation.getChildren().add(mailNav);
         }
 
-        // ---------------- Appearance ----------------
-        RadioButton darkBtn = new RadioButton("Dark theme");
-        RadioButton lightBtn = new RadioButton("Light theme");
-        ToggleGroup themeGroup = new ToggleGroup();
-        darkBtn.setToggleGroup(themeGroup);
-        lightBtn.setToggleGroup(themeGroup);
-        if (ThemeManager.isLight()) {
-            lightBtn.setSelected(true);
-        } else {
-            darkBtn.setSelected(true);
-        }
+        // Right-side page container inside ScrollPane
+        VBox pageContainer = new VBox(16);
+        pageContainer.getStyleClass().add("settings-page-container");
+        pageContainer.setFillWidth(true);
+        pageContainer.setPrefWidth(570);
+        pageContainer.setMinWidth(550);
 
-        VBox appearancePage = createSettingsPage(
-                "Appearance",
-                "Theme and visual preferences");
-        appearancePage.getChildren().addAll(
-                new Label("Choose how Thundercall should look."),
-                new Separator(),
-                darkBtn,
-                lightBtn);
-        VBox.setMargin(darkBtn, new Insets(8, 0, 0, 0));
-        VBox.setMargin(lightBtn, new Insets(8, 0, 0, 0));
+        ScrollPane scrollPane = new ScrollPane(pageContainer);
+        scrollPane.getStyleClass().add("settings-scroll-pane");
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setPrefWidth(590);
+        scrollPane.setMinWidth(570);
 
-        // ---------------- Updates ----------------
-        CheckBox autoUpdate = new CheckBox("Automatically check for application updates");
+        // ============================================================
+        // 1. Appearance Page
+        // ============================================================
+        final boolean[] selectedLight = new boolean[]{ThemeManager.isLight()};
+
+        Label appTitle = new Label("Appearance");
+        appTitle.getStyleClass().add("settings-page-title");
+        Label appSub = new Label("Customize the interface theme and visual presentation of Thundercall.");
+        appSub.getStyleClass().add("settings-page-subtitle");
+        VBox appHeader = new VBox(4, appTitle, appSub);
+
+        VBox themeCard = new VBox(12);
+        themeCard.getStyleClass().add("settings-card");
+        Label themeCardTitle = new Label("Interface Theme");
+        themeCardTitle.getStyleClass().add("settings-card-title");
+        Label themeCardDesc = new Label("Select your preferred appearance. Thundercall adapts contrast and palettes instantly.");
+        themeCardDesc.getStyleClass().add("settings-card-desc");
+
+        HBox themeCardsBox = new HBox(16);
+
+        // Dark Theme Card
+        VBox darkCard = new VBox(10);
+        darkCard.getStyleClass().add("settings-theme-card");
+        HBox.setHgrow(darkCard, Priority.ALWAYS);
+        StackPane darkMockup = createThemeMockup(false);
+        HBox darkTitleRow = new HBox(8);
+        darkTitleRow.setAlignment(Pos.CENTER_LEFT);
+        Label darkTitle = new Label("🌙  Dark Theme");
+        darkTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+        Region darkSp = new Region();
+        HBox.setHgrow(darkSp, Priority.ALWAYS);
+        Label darkBadge = new Label("✓ Active");
+        darkBadge.getStyleClass().add("settings-status-badge-ok");
+        darkTitleRow.getChildren().addAll(darkTitle, darkSp, darkBadge);
+        Label darkDesc = new Label("Refined slate and charcoal canvas engineered for focus, code readability, and low eye fatigue.");
+        darkDesc.getStyleClass().add("settings-card-desc");
+        darkDesc.setWrapText(true);
+        darkCard.getChildren().addAll(darkMockup, darkTitleRow, darkDesc);
+
+        // Light Theme Card
+        VBox lightCard = new VBox(10);
+        lightCard.getStyleClass().add("settings-theme-card");
+        HBox.setHgrow(lightCard, Priority.ALWAYS);
+        StackPane lightMockup = createThemeMockup(true);
+        HBox lightTitleRow = new HBox(8);
+        lightTitleRow.setAlignment(Pos.CENTER_LEFT);
+        Label lightTitle = new Label("☀️  Light Theme");
+        lightTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+        Region lightSp = new Region();
+        HBox.setHgrow(lightSp, Priority.ALWAYS);
+        Label lightBadge = new Label("✓ Active");
+        lightBadge.getStyleClass().add("settings-status-badge-ok");
+        lightTitleRow.getChildren().addAll(lightTitle, lightSp, lightBadge);
+        Label lightDesc = new Label("Clean, bright surfaces offering crisp contrast optimized for daylight and high-ambient lighting.");
+        lightDesc.getStyleClass().add("settings-card-desc");
+        lightDesc.setWrapText(true);
+        lightCard.getChildren().addAll(lightMockup, lightTitleRow, lightDesc);
+
+        themeCardsBox.getChildren().addAll(darkCard, lightCard);
+
+        Runnable refreshThemeSelection = () -> {
+            if (selectedLight[0]) {
+                if (!lightCard.getStyleClass().contains("selected")) lightCard.getStyleClass().add("selected");
+                darkCard.getStyleClass().remove("selected");
+                lightBadge.setVisible(true);
+                darkBadge.setVisible(false);
+            } else {
+                if (!darkCard.getStyleClass().contains("selected")) darkCard.getStyleClass().add("selected");
+                lightCard.getStyleClass().remove("selected");
+                darkBadge.setVisible(true);
+                lightBadge.setVisible(false);
+            }
+        };
+
+        darkCard.setOnMouseClicked(e -> {
+            selectedLight[0] = false;
+            refreshThemeSelection.run();
+        });
+        lightCard.setOnMouseClicked(e -> {
+            selectedLight[0] = true;
+            refreshThemeSelection.run();
+        });
+        refreshThemeSelection.run();
+
+        themeCard.getChildren().addAll(themeCardTitle, themeCardDesc, themeCardsBox);
+
+        // Brand Info Card
+        VBox brandCard = new VBox(10);
+        brandCard.getStyleClass().add("settings-card");
+        Label brandTitle = new Label("Design System & Typography");
+        brandTitle.getStyleClass().add("settings-card-title");
+        Label brandDesc = new Label("Thundercall combines Postman-grade workflow ergonomics with modern reactive design tokens.");
+        brandDesc.getStyleClass().add("settings-card-desc");
+
+        HBox tokensRow = new HBox(12);
+        tokensRow.setAlignment(Pos.CENTER_LEFT);
+        Label accentPill = new Label("● Thundercall Orange (#ff6c37)");
+        accentPill.setStyle("-fx-background-color: rgba(255, 108, 55, 0.15); -fx-text-fill: #ff6c37; -fx-font-weight: bold; -fx-font-size: 11px; -fx-padding: 4 10 4 10; -fx-background-radius: 6;");
+        Label fontPill = new Label("JetBrains Mono Code Rendering");
+        fontPill.getStyleClass().add("settings-status-badge-muted");
+        Label uiFontPill = new Label("Inter / System UI");
+        uiFontPill.getStyleClass().add("settings-status-badge-muted");
+        tokensRow.getChildren().addAll(accentPill, fontPill, uiFontPill);
+
+        brandCard.getChildren().addAll(brandTitle, brandDesc, tokensRow);
+
+        List<Node> appearancePageNodes = List.of(appHeader, themeCard, brandCard);
+
+        // ============================================================
+        // 2. Updates Page
+        // ============================================================
+        Label updTitle = new Label("Updates");
+        updTitle.getStyleClass().add("settings-page-title");
+        Label updSub = new Label("Manage application updates, release channels, and distribution endpoints.");
+        updSub.getStyleClass().add("settings-page-subtitle");
+        VBox updHeader = new VBox(4, updTitle, updSub);
+
+        // Current Version Card
+        VBox versionCard = new VBox(12);
+        versionCard.getStyleClass().add("settings-card");
+
+        HBox versionRow = new HBox(12);
+        versionRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label rocketIcon = new Label("🚀");
+        rocketIcon.setStyle("-fx-font-size: 24px; -fx-background-color: -accent-soft; -fx-background-radius: 8; -fx-padding: 6 10 6 10;");
+
+        VBox versionInfoBox = new VBox(4);
+        HBox versionBadges = new HBox(8);
+        versionBadges.setAlignment(Pos.CENTER_LEFT);
+        Label appVer = new Label("Thundercall v" + AppUpdateService.CURRENT_VERSION);
+        appVer.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label okBadge = new Label("Up to date");
+        okBadge.getStyleClass().add("settings-status-badge-ok");
+        Label channelBadge = new Label(AppUpdateService.getChannel().toUpperCase() + " CHANNEL");
+        channelBadge.getStyleClass().add("settings-status-badge-muted");
+        versionBadges.getChildren().addAll(appVer, okBadge, channelBadge);
+
+        Label integrityLabel = new Label("Packages are cryptographically verified with SHA-256 before installation.");
+        integrityLabel.getStyleClass().add("settings-card-desc");
+        versionInfoBox.getChildren().addAll(versionBadges, integrityLabel);
+
+        Region vSpacer = new Region();
+        HBox.setHgrow(vSpacer, Priority.ALWAYS);
+
+        Button checkBtn = new Button("Check for Updates...");
+        checkBtn.getStyleClass().add("custom-button");
+        checkBtn.setOnAction(e -> {
+            Window w = dialog.getDialogPane().getScene() != null
+                    ? dialog.getDialogPane().getScene().getWindow() : null;
+            if (w != null) {
+                AppUpdateDialog.check(w, true);
+            }
+        });
+
+        versionRow.getChildren().addAll(rocketIcon, versionInfoBox, vSpacer, checkBtn);
+        versionCard.getChildren().add(versionRow);
+
+        // Auto Update Card
+        VBox autoUpdateCard = new VBox(8);
+        autoUpdateCard.getStyleClass().add("settings-card");
+        CheckBox autoUpdate = new CheckBox("Automatically check for application updates on startup");
+        autoUpdate.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
         autoUpdate.setSelected(AppUpdateService.isAutoCheckEnabled());
+        Label autoUpdateDesc = new Label("Recommended. Thundercall silently checks for bug fixes and security patches on launch.");
+        autoUpdateDesc.getStyleClass().add("settings-card-desc");
+        autoUpdateCard.getChildren().addAll(autoUpdate, autoUpdateDesc);
+
+        // Channels & Endpoints Card
+        VBox endpointsCard = new VBox(12);
+        endpointsCard.getStyleClass().add("settings-card");
+        Label endpointsTitle = new Label("Distribution Channel & Update Mirrors");
+        endpointsTitle.getStyleClass().add("settings-card-title");
+        Label endpointsDesc = new Label("Thundercall supports dual-source update distribution with automatic fallback.");
+        endpointsDesc.getStyleClass().add("settings-card-desc");
 
         ComboBox<String> channel = new ComboBox<>();
         channel.getItems().addAll("Stable", "Beta", "Nightly");
         channel.setValue(AppUpdateService.getChannel());
         channel.setMaxWidth(Double.MAX_VALUE);
+        channel.setOnAction(e -> {
+            if (channel.getValue() != null) {
+                channelBadge.setText(channel.getValue().toUpperCase() + " CHANNEL");
+            }
+        });
 
         TextField endpoint = new TextField(AppUpdateService.getEndpoint());
         endpoint.setPromptText(AppUpdateService.DEFAULT_ENDPOINT);
@@ -2683,148 +6042,555 @@ public class MainController implements Initializable {
         TextField githubRepo = new TextField(AppUpdateService.getGitHubRepo());
         githubRepo.setPromptText(AppUpdateService.DEFAULT_GITHUB_REPO);
 
-        Label updateHint = new Label(
-                "Updates are checked first from the RozeHub website API (Priority 1) with automatic " +
-                "fallback to GitHub Releases (Priority 2). Packages are verified with SHA-256 before installation.");
-        updateHint.setWrapText(true);
-        updateHint.setStyle("-fx-opacity: 0.68;");
+        Label channelLbl = new Label("Release Channel");
+        channelLbl.getStyleClass().add("settings-input-label");
+        Label endpLbl = new Label("RozeHub Update Endpoint (Priority 1)");
+        endpLbl.getStyleClass().add("settings-input-label");
+        Label gitLbl = new Label("GitHub Repository Mirror (Priority 2 Fallback)");
+        gitLbl.getStyleClass().add("settings-input-label");
 
-        Button checkButton = new Button("Check for Updates...");
-        checkButton.setOnAction(e -> {
-            Window owner = dialog.getDialogPane().getScene() != null
-                    ? dialog.getDialogPane().getScene().getWindow() : null;
-            if (owner != null) {
-                AppUpdateDialog.check(owner, true);
-            }
-        });
+        HBox mirrorNotice = new HBox(8);
+        mirrorNotice.setAlignment(Pos.CENTER_LEFT);
+        Label mirrorIcon = new Label("ℹ");
+        mirrorIcon.setStyle("-fx-font-weight: bold; -fx-text-fill: -info;");
+        Label mirrorText = new Label("Updates are checked first against RozeHub website API. If unreachable, Thundercall falls back automatically to GitHub Releases.");
+        mirrorText.getStyleClass().add("settings-card-desc");
+        mirrorText.setWrapText(true);
+        mirrorNotice.getChildren().addAll(mirrorIcon, mirrorText);
 
-        VBox updatesPage = createSettingsPage(
-                "Updates",
-                "Application update and RozeHub settings");
-        updatesPage.getChildren().addAll(
-                autoUpdate,
-                new Separator(),
-                settingsFieldLabel("Update channel:"),
-                channel,
-                settingsFieldLabel("RozeHub endpoint (Priority 1):"),
-                endpoint,
-                settingsFieldLabel("GitHub repository (Priority 2 fallback):"),
-                githubRepo,
-                updateHint,
-                checkButton);
-        VBox.setMargin(autoUpdate, new Insets(4, 0, 0, 0));
-        VBox.setMargin(channel, new Insets(6, 0, 8, 0));
-        VBox.setMargin(endpoint, new Insets(6, 0, 8, 0));
-        VBox.setMargin(githubRepo, new Insets(6, 0, 8, 0));
-        VBox.setMargin(checkButton, new Insets(8, 0, 0, 0));
+        endpointsCard.getChildren().addAll(endpointsTitle, endpointsDesc,
+                channelLbl, channel,
+                endpLbl, endpoint,
+                gitLbl, githubRepo,
+                mirrorNotice);
 
-        final Button settingsMailNav = mailNav;
+        List<Node> updatesPageNodes = List.of(updHeader, versionCard, autoUpdateCard, endpointsCard);
 
-        Runnable showAppearance = () -> {
-            page.getChildren().setAll(appearancePage);
-            selectSettingsNavigation(appearanceNav, appearanceNav, updatesNav, settingsMailNav);
-        };
-        Runnable showUpdates = () -> {
-            page.getChildren().setAll(updatesPage);
-            selectSettingsNavigation(updatesNav, appearanceNav, updatesNav, settingsMailNav);
-        };
-        appearanceNav.setOnAction(e -> showAppearance.run());
-        updatesNav.setOnAction(e -> showUpdates.run());
-        if (mailNav != null) {
-            // Mail uses its existing dedicated SMTP settings dialog/action.
-            // Keep Mail as a flat top-level Settings item, but do not duplicate
-            // the SMTP form inside the generic Settings page.
-            mailNav.setOnAction(e -> {
-                Window owner = dialog.getDialogPane().getScene() != null
-                        ? dialog.getDialogPane().getScene().getWindow() : null;
-                openMailSettingsDialog(owner);
+        // ============================================================
+        // 3. Mail (SMTP) Page (Inside Settings!)
+        // ============================================================
+        List<Node> mailPageNodes = new ArrayList<>();
+        final Runnable[] saveMailSettingsRef = new Runnable[1];
+
+        final Button finalMailNav = mailNav;
+
+        if (TokenManager.isAdmin()) {
+            Label mailPageTitle = new Label("Mail Server");
+            mailPageTitle.getStyleClass().add("settings-page-title");
+            Label mailPageSub = new Label("Configure outgoing SMTP server for team invitations and email OTP verification codes.");
+            mailPageSub.getStyleClass().add("settings-page-subtitle");
+            VBox mailHeader = new VBox(4, mailPageTitle, mailPageSub);
+
+            // Master switch card
+            VBox masterCard = new VBox(8);
+            masterCard.getStyleClass().add("settings-card");
+            HBox masterRow = new HBox(12);
+            masterRow.setAlignment(Pos.CENTER_LEFT);
+
+            CheckBox enabledCheck = new CheckBox("Outgoing Mail Service Enabled");
+            enabledCheck.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+            enabledCheck.setSelected(true);
+
+            Region mSpacer = new Region();
+            HBox.setHgrow(mSpacer, Priority.ALWAYS);
+
+            Label enabledPill = new Label("ACTIVE");
+            enabledPill.getStyleClass().add("settings-status-badge-ok");
+
+            masterRow.getChildren().addAll(enabledCheck, mSpacer, enabledPill);
+
+            Label masterDesc = new Label("Master switch for all outbound emails. When disabled, workspace invitations and password verification emails will be queued or skipped.");
+            masterDesc.getStyleClass().add("settings-card-desc");
+            masterDesc.setWrapText(true);
+            masterCard.getChildren().addAll(masterRow, masterDesc);
+
+            enabledCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal) {
+                    enabledPill.setText("ACTIVE");
+                    enabledPill.getStyleClass().setAll("settings-status-badge-ok");
+                } else {
+                    enabledPill.setText("DISABLED");
+                    enabledPill.getStyleClass().setAll("settings-status-badge-muted");
+                }
+            });
+
+            // Quick Presets
+            HBox presetsBox = new HBox(8);
+            presetsBox.setAlignment(Pos.CENTER_LEFT);
+            Label presetsTitle = new Label("Quick Presets:");
+            presetsTitle.getStyleClass().add("settings-input-label");
+
+            Button gmailPreset = new Button("Gmail");
+            gmailPreset.getStyleClass().add("custom-button");
+
+            Button outlookPreset = new Button("Outlook / Office 365");
+            outlookPreset.getStyleClass().add("custom-button");
+
+            Button sendgridPreset = new Button("SendGrid");
+            sendgridPreset.getStyleClass().add("custom-button");
+
+            presetsBox.getChildren().addAll(presetsTitle, gmailPreset, outlookPreset, sendgridPreset);
+
+            // Server Config Card
+            VBox smtpCard = new VBox(12);
+            smtpCard.getStyleClass().add("settings-card");
+            Label smtpCardTitle = new Label("SMTP Credentials & Encryption");
+            smtpCardTitle.getStyleClass().add("settings-card-title");
+
+            TextField hostField = new TextField();
+            hostField.setPromptText("smtp.gmail.com");
+            TextField portField = new TextField();
+            portField.setPromptText("587");
+            portField.setPrefWidth(90);
+            portField.setMinWidth(90);
+
+            HBox hostPortRow = new HBox(12);
+            VBox hostBox = new VBox(4);
+            HBox.setHgrow(hostBox, Priority.ALWAYS);
+            Label hostLbl = new Label("SMTP Host");
+            hostLbl.getStyleClass().add("settings-input-label");
+            hostBox.getChildren().addAll(hostLbl, hostField);
+
+            VBox portBox = new VBox(4);
+            Label portLbl = new Label("Port");
+            portLbl.getStyleClass().add("settings-input-label");
+            portBox.getChildren().addAll(portLbl, portField);
+            hostPortRow.getChildren().addAll(hostBox, portBox);
+
+            TextField usernameField = new TextField();
+            usernameField.setPromptText("you@domain.com");
+
+            PasswordField passwordField = new PasswordField();
+            passwordField.setPromptText("(leave blank to keep current password)");
+            TextField passwordVisibleField = new TextField();
+            passwordVisibleField.setPromptText("(leave blank to keep current password)");
+            passwordVisibleField.setVisible(false);
+            passwordVisibleField.setManaged(false);
+            passwordVisibleField.textProperty().bindBidirectional(passwordField.textProperty());
+
+            Button eyeToggle = new Button("👁");
+            eyeToggle.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 0 8 0 8; -fx-font-size: 13px;");
+            StackPane.setAlignment(eyeToggle, Pos.CENTER_RIGHT);
+            StackPane.setMargin(eyeToggle, new Insets(0, 4, 0, 0));
+
+            eyeToggle.setOnAction(e -> {
+                boolean show = !passwordVisibleField.isVisible();
+                passwordVisibleField.setVisible(show);
+                passwordVisibleField.setManaged(show);
+                passwordField.setVisible(!show);
+                passwordField.setManaged(!show);
+                eyeToggle.setStyle(show
+                        ? "-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 0 8 0 8; -fx-font-size: 13px; -fx-text-fill: -accent;"
+                        : "-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 0 8 0 8; -fx-font-size: 13px;");
+            });
+
+            StackPane passContainer = new StackPane(passwordField, passwordVisibleField, eyeToggle);
+
+            HBox userPassRow = new HBox(12);
+            VBox userBox = new VBox(4);
+            HBox.setHgrow(userBox, Priority.ALWAYS);
+            Label userLbl = new Label("Username / Email");
+            userLbl.getStyleClass().add("settings-input-label");
+            userBox.getChildren().addAll(userLbl, usernameField);
+
+            VBox passBox = new VBox(4);
+            HBox.setHgrow(passBox, Priority.ALWAYS);
+            Label passLbl = new Label("SMTP Password");
+            passLbl.getStyleClass().add("settings-input-label");
+            passBox.getChildren().addAll(passLbl, passContainer);
+            userPassRow.getChildren().addAll(userBox, passBox);
+
+            TextField fromAddressField = new TextField();
+            fromAddressField.setPromptText("noreply@thundercall.io");
+            TextField fromNameField = new TextField();
+            fromNameField.setPromptText("Thundercall");
+
+            HBox fromRow = new HBox(12);
+            VBox fromAddrBox = new VBox(4);
+            HBox.setHgrow(fromAddrBox, Priority.ALWAYS);
+            Label fromAddrLbl = new Label("Sender Email (From)");
+            fromAddrLbl.getStyleClass().add("settings-input-label");
+            fromAddrBox.getChildren().addAll(fromAddrLbl, fromAddressField);
+
+            VBox fromNameBox = new VBox(4);
+            HBox.setHgrow(fromNameBox, Priority.ALWAYS);
+            Label fromNameLbl = new Label("Sender Display Name");
+            fromNameLbl.getStyleClass().add("settings-input-label");
+            fromNameBox.getChildren().addAll(fromNameLbl, fromNameField);
+            fromRow.getChildren().addAll(fromAddrBox, fromNameBox);
+
+            CheckBox tlsCheck = new CheckBox("Use STARTTLS (port 587)");
+            tlsCheck.setSelected(true);
+            CheckBox sslCheck = new CheckBox("Use SSL/TLS (port 465)");
+            HBox securityRow = new HBox(20, tlsCheck, sslCheck);
+
+            // Preset handlers
+            gmailPreset.setOnAction(e -> {
+                hostField.setText("smtp.gmail.com");
+                portField.setText("587");
+                tlsCheck.setSelected(true);
+                sslCheck.setSelected(false);
+            });
+            outlookPreset.setOnAction(e -> {
+                hostField.setText("smtp.office365.com");
+                portField.setText("587");
+                tlsCheck.setSelected(true);
+                sslCheck.setSelected(false);
+            });
+            sendgridPreset.setOnAction(e -> {
+                hostField.setText("smtp.sendgrid.net");
+                portField.setText("587");
+                tlsCheck.setSelected(true);
+                sslCheck.setSelected(false);
+            });
+
+            smtpCard.getChildren().addAll(smtpCardTitle, presetsBox, hostPortRow, userPassRow, fromRow, securityRow);
+
+            // Diagnostic & Live Test Card
+            VBox testCard = new VBox(10);
+            testCard.getStyleClass().add("settings-card");
+            Label testCardTitle = new Label("Diagnostic SMTP Test");
+            testCardTitle.getStyleClass().add("settings-card-title");
+            Label testCardDesc = new Label("Dispatch a real-time verification test to confirm server connectivity and authentication.");
+            testCardDesc.getStyleClass().add("settings-card-desc");
+
+            TextField testEmailField = new TextField();
+            testEmailField.setPromptText("Enter recipient email address...");
+            HBox.setHgrow(testEmailField, Priority.ALWAYS);
+
+            Button sendTestBtn = new Button("Send Test Email");
+            sendTestBtn.getStyleClass().add("custom-button");
+
+            Button saveMailBtn = new Button("Save Configuration");
+            saveMailBtn.getStyleClass().add("primary-button");
+
+            HBox testRow = new HBox(10, testEmailField, sendTestBtn, saveMailBtn);
+            testRow.setAlignment(Pos.CENTER_LEFT);
+
+            Label mailStatusLabel = new Label();
+            mailStatusLabel.setWrapText(true);
+            mailStatusLabel.setMaxWidth(Double.MAX_VALUE);
+
+            testCard.getChildren().addAll(testCardTitle, testCardDesc, testRow, mailStatusLabel);
+
+            mailPageNodes.addAll(List.of(mailHeader, masterCard, smtpCard, testCard));
+
+            // Load existing mail settings
+            new Thread(() -> {
+                try {
+                    Optional<MailSettingsResponse> current = MailSettingsService.getSettings();
+                    Platform.runLater(() -> current.ifPresent(settings -> {
+                        if (settings.getSmtpHost() != null) hostField.setText(settings.getSmtpHost());
+                        if (settings.getSmtpPort() != null) portField.setText(String.valueOf(settings.getSmtpPort()));
+                        if (settings.getSmtpUsername() != null) usernameField.setText(settings.getSmtpUsername());
+                        if (settings.getFromAddress() != null) fromAddressField.setText(settings.getFromAddress());
+                        if (settings.getFromName() != null) fromNameField.setText(settings.getFromName());
+                        tlsCheck.setSelected(settings.isUseTls());
+                        sslCheck.setSelected(settings.isUseSsl());
+                        enabledCheck.setSelected(settings.isEnabled());
+                        if (settings.isHasPassword()) {
+                            passwordField.setPromptText("(password is saved on server — leave blank to keep)");
+                            passwordVisibleField.setPromptText("(password is saved on server — leave blank to keep)");
+                        }
+                    }));
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        mailStatusLabel.setText("Couldn't fetch current SMTP settings: " + ex.getMessage());
+                        mailStatusLabel.setStyle("-fx-text-fill: -warning;");
+                    });
+                }
+            }).start();
+
+            // Save logic
+            saveMailSettingsRef[0] = () -> {
+                String host = hostField.getText().trim();
+                String portStr = portField.getText().trim();
+                if (host.isEmpty() && portStr.isEmpty()) {
+                    return;
+                }
+                int port = 587;
+                if (!portStr.isEmpty()) {
+                    try {
+                        port = Integer.parseInt(portStr);
+                    } catch (NumberFormatException nfe) {
+                        mailStatusLabel.setText("Port must be a valid integer number (e.g. 587 or 465).");
+                        mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                        return;
+                    }
+                }
+                MailSettingsRequest request = new MailSettingsRequest(
+                        host, port, usernameField.getText().trim(),
+                        passwordField.getText(),
+                        fromAddressField.getText().trim(),
+                        fromNameField.getText().trim(),
+                        tlsCheck.isSelected(), sslCheck.isSelected(), enabledCheck.isSelected());
+
+                mailStatusLabel.setText("Saving mail configuration...");
+                mailStatusLabel.setStyle("-fx-text-fill: -text-secondary;");
+
+                new Thread(() -> {
+                    try {
+                        MailSettingsService.updateSettings(request);
+                        Platform.runLater(() -> {
+                            mailStatusLabel.setText("✓ Mail server settings saved successfully.");
+                            mailStatusLabel.setStyle("-fx-text-fill: -success; -fx-font-weight: bold;");
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> {
+                            mailStatusLabel.setText("Failed to save mail settings: " + ex.getMessage());
+                            mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                        });
+                    }
+                }).start();
+            };
+
+            saveMailBtn.setOnAction(e -> {
+                if (saveMailSettingsRef[0] != null) saveMailSettingsRef[0].run();
+            });
+
+            // Test email logic
+            sendTestBtn.setOnAction(e -> {
+                String to = testEmailField.getText().trim();
+                if (to.isEmpty()) {
+                    mailStatusLabel.setText("Please enter an email address to send the diagnostic test.");
+                    mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                    return;
+                }
+                sendTestBtn.setDisable(true);
+                mailStatusLabel.setText("Connecting to SMTP server and dispatching test email...");
+                mailStatusLabel.setStyle("-fx-text-fill: -text-secondary;");
+
+                new Thread(() -> {
+                    try {
+                        MailSettingsService.sendTestEmail(to);
+                        Platform.runLater(() -> {
+                            sendTestBtn.setDisable(false);
+                            mailStatusLabel.setText("✓ Diagnostic test email sent to " + to + " — check your inbox.");
+                            mailStatusLabel.setStyle("-fx-text-fill: -success; -fx-font-weight: bold;");
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> {
+                            sendTestBtn.setDisable(false);
+                            mailStatusLabel.setText("Test delivery failed: " + ex.getMessage());
+                            mailStatusLabel.setStyle("-fx-text-fill: -danger;");
+                        });
+                    }
+                }).start();
             });
         }
 
-        showAppearance.run();
+        // ============================================================
+        // Navigation Switching (In-Page Swap!)
+        // ============================================================
+        appearanceNav.setOnAction(e -> {
+            pageContainer.getChildren().setAll(appearancePageNodes);
+            selectSettingsNav(appearanceNav, appearanceNav, updatesNav, finalMailNav);
+        });
 
-        dialog.getDialogPane().setContent(root);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-        dialog.getDialogPane().setPrefSize(660, 500);
+        updatesNav.setOnAction(e -> {
+            pageContainer.getChildren().setAll(updatesPageNodes);
+            selectSettingsNav(updatesNav, appearanceNav, updatesNav, finalMailNav);
+        });
 
-        Button applyButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.APPLY);
-        Button cancelButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
-        Button okButton = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
+        if (mailNav != null) {
+            mailNav.setOnAction(e -> {
+                pageContainer.getChildren().setAll(mailPageNodes);
+                selectSettingsNav(finalMailNav, appearanceNav, updatesNav, finalMailNav);
+            });
+        }
+
+        // Populate appearance by default before root layout
+        pageContainer.getChildren().setAll(appearancePageNodes);
+        selectSettingsNav(appearanceNav, appearanceNav, updatesNav, finalMailNav);
+
+        BorderPane root = new BorderPane();
+        root.setLeft(navigation);
+        root.setCenter(scrollPane);
+        root.setPrefSize(800, 540);
+        root.setMinSize(780, 520);
+
+        dialogPane.setContent(root);
+        dialogPane.setPrefSize(800, 580);
+        dialogPane.setMinSize(780, 540);
+        ThemeManager.styleDialog(dialogPane);
+
+        // Enforce stage dimensions and center on screen
+        dialog.setOnShown(e -> {
+            Window window = dialogPane.getScene() != null ? dialogPane.getScene().getWindow() : null;
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(780);
+                stage.setMinHeight(540);
+                stage.setWidth(800);
+                stage.setHeight(580);
+                stage.centerOnScreen();
+            }
+        });
+
+        // Dialog buttons
+        Button applyButton = (Button) dialogPane.lookupButton(ButtonType.APPLY);
+        Button cancelButton = (Button) dialogPane.lookupButton(ButtonType.CANCEL);
+        Button okButton = (Button) dialogPane.lookupButton(ButtonType.OK);
         if (applyButton != null) applyButton.setText("Apply");
         if (cancelButton != null) cancelButton.setText("Cancel");
         if (okButton != null) okButton.setText("OK");
 
         Runnable applySettings = () -> {
-            if (lightBtn.isSelected() && urlField != null && urlField.getScene() != null) {
-                ThemeManager.setLight(true, urlField.getScene());
-            } else if (darkBtn.isSelected() && urlField != null && urlField.getScene() != null) {
-                ThemeManager.setLight(false, urlField.getScene());
+            if (urlField != null && urlField.getScene() != null) {
+                ThemeManager.setLight(selectedLight[0], urlField.getScene());
             }
             AppUpdateService.setAutoCheckEnabled(autoUpdate.isSelected());
             AppUpdateService.setChannel(channel.getValue());
             AppUpdateService.setEndpoint(endpoint.getText());
             AppUpdateService.setGitHubRepo(githubRepo.getText());
+            if (saveMailSettingsRef[0] != null) {
+                saveMailSettingsRef[0].run();
+            }
             updateStatus("Settings saved");
         };
 
         if (applyButton != null) {
-            applyButton.setOnAction(e -> applySettings.run());
+            applyButton.addEventFilter(ActionEvent.ACTION, e -> {
+                applySettings.run();
+                e.consume(); // keep dialog open on Apply
+            });
         }
         if (okButton != null) {
-            okButton.setOnAction(e -> applySettings.run());
+            okButton.addEventFilter(ActionEvent.ACTION, e -> {
+                applySettings.run();
+            });
         }
 
         dialog.showAndWait();
     }
 
-    private VBox createSettingsPage(String title, String subtitle) {
-        Label titleLabel = new Label(title);
-        titleLabel.setStyle("-fx-font-size: 17px; -fx-font-weight: bold;");
-
-        Label subtitleLabel = new Label(subtitle);
-        subtitleLabel.setStyle("-fx-opacity: 0.70; -fx-font-size: 12px;");
-
-        Separator separator = new Separator();
-        VBox box = new VBox(8, titleLabel, subtitleLabel, separator);
-        box.setFillWidth(true);
-        return box;
-    }
-
-    private Label settingsFieldLabel(String text) {
-        Label label = new Label(text);
-        label.setStyle("-fx-font-size: 13px;");
-        return label;
-    }
-
-    private Button settingsNavigationButton(String text) {
-        Button button = new Button(text);
-        button.setAlignment(Pos.CENTER_LEFT);
-        button.setMaxWidth(Double.MAX_VALUE);
-        button.setPrefHeight(34);
-        button.setPadding(new Insets(0, 14, 0, 14));
-        button.setFocusTraversable(false);
-        return button;
-    }
-
-    private void selectSettingsNavigation(Button selected, Button appearance,
-                                           Button updates, Button mail) {
-        Button[] buttons = {appearance, updates, mail};
-        for (Button button : buttons) {
-            if (button == null) continue;
-            if (button == selected) {
-                button.setStyle(
-                        "-fx-background-color: #2f73e8;" +
-                        "-fx-text-fill: white;" +
-                        "-fx-background-radius: 3;" +
-                        "-fx-border-radius: 3;");
-            } else {
-                button.setStyle(
-                        "-fx-background-color: transparent;" +
-                        "-fx-text-fill: -fx-text-base-color;" +
-                        "-fx-background-radius: 3;" +
-                        "-fx-border-radius: 3;");
-            }
+    private void selectSettingsNav(Button active, Button appearance, Button updates, Button mail) {
+        if (appearance != null) appearance.getStyleClass().remove("active");
+        if (updates != null) updates.getStyleClass().remove("active");
+        if (mail != null) mail.getStyleClass().remove("active");
+        if (active != null && !active.getStyleClass().contains("active")) {
+            active.getStyleClass().add("active");
         }
+    }
+
+    private StackPane createThemeMockup(boolean isLight) {
+        VBox root = new VBox(0);
+        root.setPrefHeight(90);
+        root.setMinHeight(90);
+        root.setMaxHeight(90);
+        root.setStyle(isLight
+                ? "-fx-background-color: #f8f9fa; -fx-background-radius: 6; -fx-border-color: #dcdcdc; -fx-border-radius: 6;"
+                : "-fx-background-color: #1e1e1e; -fx-background-radius: 6; -fx-border-color: #333333; -fx-border-radius: 6;");
+
+        // Top window bar
+        HBox topBar = new HBox(5);
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        topBar.setPadding(new Insets(5, 8, 5, 8));
+        topBar.setStyle(isLight
+                ? "-fx-background-color: #edf0f2; -fx-background-radius: 6 6 0 0;"
+                : "-fx-background-color: #141414; -fx-background-radius: 6 6 0 0;");
+
+        Region dot1 = new Region();
+        dot1.setMinSize(7, 7);
+        dot1.setMaxSize(7, 7);
+        dot1.setStyle("-fx-background-color: #ff5f56; -fx-background-radius: 50%;");
+
+        Region dot2 = new Region();
+        dot2.setMinSize(7, 7);
+        dot2.setMaxSize(7, 7);
+        dot2.setStyle("-fx-background-color: #ffbd2e; -fx-background-radius: 50%;");
+
+        Region dot3 = new Region();
+        dot3.setMinSize(7, 7);
+        dot3.setMaxSize(7, 7);
+        dot3.setStyle("-fx-background-color: #27c93f; -fx-background-radius: 50%;");
+
+        Region topBarTitle = new Region();
+        topBarTitle.setPrefSize(40, 5);
+        topBarTitle.setStyle(isLight
+                ? "-fx-background-color: #cbd5e1; -fx-background-radius: 3;"
+                : "-fx-background-color: #383838; -fx-background-radius: 3;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        topBar.getChildren().addAll(dot1, dot2, dot3, spacer, topBarTitle);
+
+        // Body area: sidebar + editor
+        HBox body = new HBox(0);
+        VBox.setVgrow(body, Priority.ALWAYS);
+
+        // Mini sidebar
+        VBox miniSidebar = new VBox(4);
+        miniSidebar.setPrefWidth(45);
+        miniSidebar.setMinWidth(45);
+        miniSidebar.setPadding(new Insets(6, 4, 6, 4));
+        miniSidebar.setStyle(isLight
+                ? "-fx-background-color: #f1f3f5; -fx-background-radius: 0 0 0 6; -fx-border-color: transparent #e2e8f0 transparent transparent;"
+                : "-fx-background-color: #161616; -fx-background-radius: 0 0 0 6; -fx-border-color: transparent #2a2a2a transparent transparent;");
+
+        Region sideActive = new Region();
+        sideActive.setPrefSize(35, 6);
+        sideActive.setStyle("-fx-background-color: #ff6c37; -fx-background-radius: 2;");
+
+        Region side2 = new Region();
+        side2.setPrefSize(28, 5);
+        side2.setStyle(isLight ? "-fx-background-color: #cbd5e1; -fx-background-radius: 2;" : "-fx-background-color: #383838; -fx-background-radius: 2;");
+
+        Region side3 = new Region();
+        side3.setPrefSize(32, 5);
+        side3.setStyle(isLight ? "-fx-background-color: #cbd5e1; -fx-background-radius: 2;" : "-fx-background-color: #383838; -fx-background-radius: 2;");
+
+        miniSidebar.getChildren().addAll(sideActive, side2, side3);
+
+        // Mini editor
+        VBox miniEditor = new VBox(6);
+        miniEditor.setPadding(new Insets(6, 8, 6, 8));
+        VBox.setVgrow(miniEditor, Priority.ALWAYS);
+        HBox.setHgrow(miniEditor, Priority.ALWAYS);
+        miniEditor.setStyle(isLight
+                ? "-fx-background-color: #ffffff; -fx-background-radius: 0 0 6 0;"
+                : "-fx-background-color: #1e1e1e; -fx-background-radius: 0 0 6 0;");
+
+        // Mini URL bar
+        HBox miniUrlBar = new HBox(4);
+        miniUrlBar.setAlignment(Pos.CENTER_LEFT);
+        miniUrlBar.setPadding(new Insets(3, 4, 3, 4));
+        miniUrlBar.setStyle(isLight
+                ? "-fx-background-color: #f8f9fa; -fx-border-color: #e2e8f0; -fx-border-radius: 3; -fx-background-radius: 3;"
+                : "-fx-background-color: #262626; -fx-border-color: #333333; -fx-border-radius: 3; -fx-background-radius: 3;");
+
+        Label miniMethod = new Label("GET");
+        miniMethod.setStyle(isLight
+                ? "-fx-font-size: 8px; -fx-font-weight: bold; -fx-text-fill: #16a34a;"
+                : "-fx-font-size: 8px; -fx-font-weight: bold; -fx-text-fill: #22c55e;");
+
+        Region miniUrlLine = new Region();
+        miniUrlLine.setPrefSize(70, 4);
+        miniUrlLine.setStyle(isLight
+                ? "-fx-background-color: #94a3b8; -fx-background-radius: 2;"
+                : "-fx-background-color: #525252; -fx-background-radius: 2;");
+
+        miniUrlBar.getChildren().addAll(miniMethod, miniUrlLine);
+
+        // Mini code lines
+        VBox miniLines = new VBox(3);
+        Region line1 = new Region();
+        line1.setPrefSize(95, 4);
+        line1.setStyle(isLight ? "-fx-background-color: #cbd5e1; -fx-background-radius: 2;" : "-fx-background-color: #404040; -fx-background-radius: 2;");
+
+        Region line2 = new Region();
+        line2.setPrefSize(65, 4);
+        line2.setStyle(isLight ? "-fx-background-color: #e2e8f0; -fx-background-radius: 2;" : "-fx-background-color: #2e2e2e; -fx-background-radius: 2;");
+
+        miniLines.getChildren().addAll(line1, line2);
+        miniEditor.getChildren().addAll(miniUrlBar, miniLines);
+
+        body.getChildren().addAll(miniSidebar, miniEditor);
+        root.getChildren().addAll(topBar, body);
+
+        StackPane wrapper = new StackPane(root);
+        wrapper.setPadding(new Insets(2));
+        return wrapper;
     }
 
     /** Lets the project owner configure the app's own outgoing SMTP
@@ -2893,7 +6659,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         content.setPrefWidth(360);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(button -> {
             if (button != ButtonType.OK) {
@@ -2922,7 +6688,7 @@ public class MainController implements Initializable {
         dialog.setTitle("Join a Team");
         dialog.setHeaderText("Enter the invite code from your invitation email");
         dialog.setContentText("Invite code:");
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(token -> {
             String trimmed = token == null ? "" : token.trim();
@@ -2955,211 +6721,57 @@ public class MainController implements Initializable {
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(team.getName());
-        dialog.setHeaderText((team.getDescription() != null && !team.getDescription().isBlank()
-                ? team.getDescription() + "\n" : "")
-                + "Your role: " + team.getMyRole() + "  ·  Owner: " + team.getOwnerUsername());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("team-dialog-pane");
 
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(480);
+        // --- Header with Team Icon, Name, Subtitle, My Role Badge & Danger Button ---
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinWidth(38);
+        headerBadge.setMaxWidth(38);
+        headerBadge.setMinHeight(38);
+        headerBadge.setMaxHeight(38);
 
-        // ---- Members ----
-        TableView<TeamMemberResponse> membersTable = new TableView<>();
-        TableColumn<TeamMemberResponse, String> memberNameCol = new TableColumn<>("Username");
-        memberNameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
-        // Presence: green dot = online right now, gray dot = offline.
-        // onlineUserIds is refreshed alongside the member list below.
-        memberNameCol.setCellFactory(col -> new TableCell<TeamMemberResponse, String>() {
-            @Override
-            protected void updateItem(String username, boolean empty) {
-                super.updateItem(username, empty);
-                if (empty || username == null || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    setText(null);
-                    return;
-                }
-                TeamMemberResponse member = getTableRow().getItem();
-                boolean online = member.getUserId() != null && onlineUserIds.contains(member.getUserId());
-                javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
-                dot.getStyleClass().add(online ? "online-dot" : "offline-dot");
-                Label nameLabel = new Label(username);
-                HBox row = new HBox(6, dot, nameLabel);
-                row.setAlignment(Pos.CENTER_LEFT);
-                Tooltip.install(row, new Tooltip(username + (online ? " is online" : " is offline")));
-                setGraphic(row);
-                setText(null);
-            }
-        });
-        TableColumn<TeamMemberResponse, String> memberEmailCol = new TableColumn<>("Email");
-        memberEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
-        TableColumn<TeamMemberResponse, String> memberRoleCol = new TableColumn<>("Role");
-        memberRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
-        membersTable.getColumns().addAll(memberNameCol, memberEmailCol, memberRoleCol);
-        membersTable.setPrefHeight(160);
-        membersTable.setPrefWidth(480);
-        membersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        javafx.scene.shape.SVGPath teamIcon = new javafx.scene.shape.SVGPath();
+        teamIcon.setContent("M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z");
+        teamIcon.setStyle("-fx-fill: -accent;");
+        teamIcon.setScaleX(1.1);
+        teamIcon.setScaleY(1.1);
+        headerBadge.getChildren().add(teamIcon);
 
-        Runnable[] refreshMembers = new Runnable[1];
-        refreshMembers[0] = () -> new Thread(() -> {
-            // Fetch presence FIRST so the dots are accurate the moment the
-            // member rows render (both calls are cheap).
-            List<OnlineUser> online = PresenceService.getOnlineUsers();
-            Optional<List<TeamMemberResponse>> members = TeamService.getMembers(team.getId());
-            Platform.runLater(() -> {
-                onlineUserIds.clear();
-                online.forEach(u -> onlineUserIds.add(u.getUserId()));
-                renderOnlineUsers(online);
-                members.ifPresent(list -> membersTable.getItems().setAll(list));
-            });
-        }).start();
-        refreshMembers[0].run();
+        Label titleLabel = new Label(team.getName());
+        titleLabel.getStyleClass().add("share-title");
 
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(10));
-        content.getChildren().add(new Label("Members"));
-        content.getChildren().add(membersTable);
+        String subtitleText = team.getDescription() != null && !team.getDescription().isBlank()
+                ? team.getDescription().trim()
+                : "Created by " + team.getOwnerUsername();
+        Label subtitleLabel = new Label(subtitleText);
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
 
-        if (isAdminOrOwner) {
-            ComboBox<String> newRoleCombo = new ComboBox<>();
-            newRoleCombo.getItems().addAll("ADMIN", "MEMBER");
-            newRoleCombo.setPromptText("New role");
-            Button changeRoleBtn = new Button("Change Role");
-            Button removeBtn = new Button("Remove Member");
-            HBox memberActions = new HBox(8, newRoleCombo, changeRoleBtn, removeBtn);
-            memberActions.setAlignment(Pos.CENTER_LEFT);
-            content.getChildren().add(memberActions);
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        titleBox.setMinWidth(Region.USE_PREF_SIZE);
 
-            changeRoleBtn.setOnAction(e -> {
-                TeamMemberResponse selected = membersTable.getSelectionModel().getSelectedItem();
-                String newRole = newRoleCombo.getValue();
-                if (selected == null || newRole == null) {
-                    statusLabel.setText("Select a member and a role first.");
-                    return;
-                }
-                new Thread(() -> {
-                    boolean ok = TeamService.changeMemberRole(team.getId(), selected.getUserId(), newRole);
-                    Platform.runLater(() -> {
-                        statusLabel.setText(ok ? "Role updated." : "Couldn't change that role.");
-                        if (ok) {
-                            refreshMembers[0].run();
-                        }
-                    });
-                }).start();
-            });
-            removeBtn.setOnAction(e -> {
-                TeamMemberResponse selected = membersTable.getSelectionModel().getSelectedItem();
-                if (selected == null) {
-                    statusLabel.setText("Select a member to remove first.");
-                    return;
-                }
-                if (!AlertUtils.showConfirmation("Remove Member",
-                        "Remove " + selected.getUsername() + " from " + team.getName() + "?")) {
-                    return;
-                }
-                new Thread(() -> {
-                    boolean ok = TeamService.removeMember(team.getId(), selected.getUserId());
-                    Platform.runLater(() -> {
-                        statusLabel.setText(ok ? "Member removed." : "Couldn't remove that member.");
-                        if (ok) {
-                            refreshMembers[0].run();
-                        }
-                    });
-                }).start();
-            });
-        }
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        headerSpacer.setMinWidth(12);
 
-        // ---- Pending invitations (owner/admin only) ----
-        if (isAdminOrOwner) {
-            content.getChildren().add(new Separator());
-            content.getChildren().add(new Label("Pending Invitations"));
+        // My role badge on header
+        Label myRoleBadge = new Label(team.getMyRole());
+        myRoleBadge.getStyleClass().addAll("role-badge",
+                "OWNER".equals(team.getMyRole()) ? "role-badge-owner" :
+                "ADMIN".equals(team.getMyRole()) ? "role-badge-admin" : "role-badge-member");
 
-            TableView<TeamInvitationResponse> invitationsTable = new TableView<>();
-            TableColumn<TeamInvitationResponse, String> inviteEmailCol = new TableColumn<>("Email");
-            inviteEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
-            TableColumn<TeamInvitationResponse, String> inviteRoleCol = new TableColumn<>("Role");
-            inviteRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
-            TableColumn<TeamInvitationResponse, String> inviteStatusCol = new TableColumn<>("Status");
-            inviteStatusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
-            invitationsTable.getColumns().addAll(inviteEmailCol, inviteRoleCol, inviteStatusCol);
-            invitationsTable.setPrefHeight(120);
-            invitationsTable.setPrefWidth(480);
-            invitationsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-            content.getChildren().add(invitationsTable);
+        HBox headerRight = new HBox(8, myRoleBadge);
+        headerRight.setAlignment(Pos.CENTER_RIGHT);
 
-            Runnable[] refreshInvitations = new Runnable[1];
-            refreshInvitations[0] = () -> new Thread(() -> {
-                Optional<List<TeamInvitationResponse>> invitations = TeamService.getPendingInvitations(team.getId());
-                Platform.runLater(() -> invitations.ifPresent(list -> invitationsTable.getItems().setAll(list)));
-            }).start();
-            refreshInvitations[0].run();
-
-            Button revokeBtn = new Button("Revoke Invitation");
-            content.getChildren().add(revokeBtn);
-            revokeBtn.setOnAction(e -> {
-                TeamInvitationResponse selected = invitationsTable.getSelectionModel().getSelectedItem();
-                if (selected == null) {
-                    statusLabel.setText("Select an invitation to revoke first.");
-                    return;
-                }
-                new Thread(() -> {
-                    boolean ok = TeamService.revokeInvitation(team.getId(), selected.getId());
-                    Platform.runLater(() -> {
-                        statusLabel.setText(ok ? "Invitation revoked." : "Couldn't revoke that invitation.");
-                        if (ok) {
-                            refreshInvitations[0].run();
-                        }
-                    });
-                }).start();
-            });
-
-            // ---- Invite by email ----
-            content.getChildren().add(new Separator());
-            content.getChildren().add(new Label("Invite someone by email"));
-            TextField inviteEmailField = new TextField();
-            inviteEmailField.setPromptText("email@example.com");
-            ComboBox<String> inviteRoleCombo = new ComboBox<>();
-            inviteRoleCombo.getItems().addAll("ADMIN", "MEMBER");
-            inviteRoleCombo.setValue("MEMBER");
-            Button inviteBtn = new Button("Send Invite");
-            HBox inviteRow = new HBox(8, inviteEmailField, inviteRoleCombo, inviteBtn);
-            inviteRow.setAlignment(Pos.CENTER_LEFT);
-            HBox.setHgrow(inviteEmailField, Priority.ALWAYS);
-            content.getChildren().add(inviteRow);
-
-            inviteBtn.setOnAction(e -> {
-                String email = inviteEmailField.getText() == null ? "" : inviteEmailField.getText().trim();
-                if (email.isEmpty()) {
-                    statusLabel.setText("Enter an email address first.");
-                    return;
-                }
-                statusLabel.setText("Sending invitation...");
-                new Thread(() -> {
-                    try {
-                        TeamService.inviteMember(team.getId(), email, inviteRoleCombo.getValue());
-                        Platform.runLater(() -> {
-                            statusLabel.setText("Invitation sent to " + email + ".");
-                            inviteEmailField.clear();
-                            refreshInvitations[0].run();
-                        });
-                    } catch (IOException ex) {
-                        Platform.runLater(() -> statusLabel.setText(
-                                "Couldn't send that invitation: " + TeamService.friendlyMessage(ex)));
-                    }
-                }).start();
-            });
-        }
-
-        // ---- Leave / delete ----
-        content.getChildren().add(new Separator());
-        HBox dangerRow = new HBox(8);
-        dangerRow.setAlignment(Pos.CENTER_LEFT);
         if (isOwner) {
             Button deleteBtn = new Button("Delete Team");
-            deleteBtn.getStyleClass().add("danger-menu-item");
+            deleteBtn.getStyleClass().add("team-danger-btn");
             deleteBtn.setOnAction(e -> {
                 if (!AlertUtils.showConfirmation("Delete Team",
-                        "Delete \"" + team.getName() + "\"? This removes everyone and can't be undone.")) {
+                        "Delete \"" + team.getName() + "\"? This removes all members and cannot be undone.")) {
                     return;
                 }
                 new Thread(() -> {
@@ -3170,17 +6782,17 @@ public class MainController implements Initializable {
                             loadTeams();
                             updateStatus("Team deleted: " + team.getName());
                         } else {
-                            statusLabel.setText("Couldn't delete this team.");
+                            AlertUtils.showError("Couldn't delete this team.");
                         }
                     });
                 }).start();
             });
-            dangerRow.getChildren().add(deleteBtn);
+            headerRight.getChildren().add(deleteBtn);
         } else {
             Button leaveBtn = new Button("Leave Team");
-            leaveBtn.getStyleClass().add("danger-menu-item");
+            leaveBtn.getStyleClass().add("team-danger-btn");
             leaveBtn.setOnAction(e -> {
-                if (!AlertUtils.showConfirmation("Leave Team", "Leave \"" + team.getName() + "\"?")) {
+                if (!AlertUtils.showConfirmation("Leave Team", "Are you sure you want to leave \"" + team.getName() + "\"?")) {
                     return;
                 }
                 new Thread(() -> {
@@ -3191,22 +6803,464 @@ public class MainController implements Initializable {
                             loadTeams();
                             updateStatus("Left team: " + team.getName());
                         } else {
-                            statusLabel.setText("Couldn't leave this team.");
+                            AlertUtils.showError("Couldn't leave this team.");
                         }
                     });
                 }).start();
             });
-            dangerRow.getChildren().add(leaveBtn);
+            headerRight.getChildren().add(leaveBtn);
         }
-        content.getChildren().add(dangerRow);
-        content.getChildren().add(statusLabel);
 
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(520);
-        dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        HBox headerRow = new HBox(12, headerBadge, titleBox, headerSpacer, headerRight);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Interactive Status Alert Banner ---
+        HBox statusBanner = new HBox(8);
+        statusBanner.getStyleClass().add("share-status-banner");
+        statusBanner.setAlignment(Pos.CENTER_LEFT);
+        statusBanner.setVisible(false);
+        statusBanner.setManaged(false);
+
+        Label statusIcon = new Label();
+        statusIcon.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+        Label statusText = new Label();
+        statusText.setWrapText(true);
+        statusText.setMaxWidth(560);
+        HBox.setHgrow(statusText, Priority.ALWAYS);
+
+        Button dismissBannerBtn = new Button("✕");
+        dismissBannerBtn.getStyleClass().add("share-text-btn");
+        dismissBannerBtn.setOnAction(e -> {
+            statusBanner.setVisible(false);
+            statusBanner.setManaged(false);
+        });
+        statusBanner.getChildren().addAll(statusIcon, statusText, dismissBannerBtn);
+
+        BiConsumer<String, Boolean> showStatus = (msg, isError) -> {
+            statusBanner.getStyleClass().removeAll("share-status-success", "share-status-error");
+            if (isError) {
+                statusBanner.getStyleClass().add("share-status-error");
+                statusIcon.setText("⚠");
+            } else {
+                statusBanner.getStyleClass().add("share-status-success");
+                statusIcon.setText("✓");
+            }
+            statusText.setText(msg);
+            statusBanner.setVisible(true);
+            statusBanner.setManaged(true);
+        };
+
+        // --- Quick Invite Card (Owner / Admin only) ---
+        VBox inviteCard = null;
+        TextField inviteEmailField = new TextField();
+        ComboBox<String> inviteRoleCombo = new ComboBox<>();
+        Button inviteBtn = new Button("Send Invite");
+
+        if (isAdminOrOwner) {
+            inviteCard = new VBox(10);
+            inviteCard.getStyleClass().add("share-card");
+
+            Label inviteCardTitle = new Label("INVITE TEAM MEMBER");
+            inviteCardTitle.getStyleClass().add("share-card-header");
+
+            inviteEmailField.setPromptText("Enter colleague's email address...");
+            HBox.setHgrow(inviteEmailField, Priority.ALWAYS);
+
+            inviteRoleCombo.getItems().addAll("MEMBER", "ADMIN");
+            inviteRoleCombo.setValue("MEMBER");
+            inviteRoleCombo.getStyleClass().add("share-role-combo");
+
+            inviteBtn.getStyleClass().addAll("button", "button-primary");
+            inviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+
+            HBox inviteRow = new HBox(8, inviteEmailField, inviteRoleCombo, inviteBtn);
+            inviteRow.setAlignment(Pos.CENTER_LEFT);
+            inviteCard.getChildren().addAll(inviteCardTitle, inviteRow);
+        }
+
+        // --- Tabs for Members and Pending Invitations ---
+        TabPane tabPane = new TabPane();
+        tabPane.getStyleClass().add("share-tab-pane");
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        Tab membersTab = new Tab("Members (0)");
+        VBox membersContainer = new VBox(8);
+        membersContainer.setPadding(new Insets(10, 2, 10, 2));
+        ScrollPane membersScroll = new ScrollPane(membersContainer);
+        membersScroll.getStyleClass().add("share-scroll-area");
+        membersScroll.setFitToWidth(true);
+        membersTab.setContent(membersScroll);
+
+        Tab pendingTab = new Tab("Pending Invitations (0)");
+        VBox pendingContainer = new VBox(8);
+        pendingContainer.setPadding(new Insets(10, 2, 10, 2));
+        ScrollPane pendingScroll = new ScrollPane(pendingContainer);
+        pendingScroll.getStyleClass().add("share-scroll-area");
+        pendingScroll.setFitToWidth(true);
+        pendingTab.setContent(pendingScroll);
+
+        tabPane.getTabs().add(membersTab);
+        if (isAdminOrOwner) {
+            tabPane.getTabs().add(pendingTab);
+        }
+
+        Runnable[] refreshInvitations = new Runnable[1];
+        Runnable[] refreshMembers = new Runnable[1];
+
+        refreshMembers[0] = () -> new Thread(() -> {
+            List<OnlineUser> online = PresenceService.getOnlineUsers();
+            Optional<List<TeamMemberResponse>> membersOpt = TeamService.getMembers(team.getId());
+            Platform.runLater(() -> {
+                onlineUserIds.clear();
+                online.forEach(u -> onlineUserIds.add(u.getUserId()));
+                renderOnlineUsers(online);
+
+                membersContainer.getChildren().clear();
+                List<TeamMemberResponse> members = membersOpt.orElse(List.of());
+                membersTab.setText("Members (" + members.size() + ")");
+
+                if (members.isEmpty()) {
+                    VBox emptyBox = new VBox(8);
+                    emptyBox.getStyleClass().add("share-empty-box");
+                    javafx.scene.shape.SVGPath emptyUsersSvg = new javafx.scene.shape.SVGPath();
+                    emptyUsersSvg.setContent("M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z");
+                    emptyUsersSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                    emptyUsersSvg.setScaleX(1.3);
+                    emptyUsersSvg.setScaleY(1.3);
+                    Label emptyTitle = new Label("No team members found");
+                    emptyTitle.getStyleClass().add("share-empty-title");
+                    emptyBox.getChildren().addAll(emptyUsersSvg, emptyTitle);
+                    membersContainer.getChildren().add(emptyBox);
+                } else {
+                    for (TeamMemberResponse member : members) {
+                        HBox row = new HBox(12);
+                        row.getStyleClass().add("share-row");
+
+                        StackPane avatar = createAvatar(member.getUsername());
+
+                        // Online / offline dot
+                        boolean isUserOnline = member.getUserId() != null && onlineUserIds.contains(member.getUserId());
+                        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
+                        dot.getStyleClass().add(isUserOnline ? "online-dot" : "offline-dot");
+                        HoverTooltip.attach(dot, member.getUsername() + (isUserOnline ? " is online" : " is offline"));
+
+                        Label nameLabel = new Label(member.getUsername());
+                        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+
+                        HBox nameRow = new HBox(6, dot, nameLabel);
+                        nameRow.setAlignment(Pos.CENTER_LEFT);
+
+                        Label emailLabel = new Label(member.getEmail() != null ? member.getEmail() : "No email");
+                        emailLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+
+                        VBox userDetails = new VBox(2, nameRow, emailLabel);
+
+                        Region rowSpacer = new Region();
+                        HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+
+                        boolean memberIsOwner = "OWNER".equals(member.getRole());
+
+                        if (memberIsOwner) {
+                            Label ownerBadge = new Label("OWNER");
+                            ownerBadge.getStyleClass().addAll("role-badge", "role-badge-owner");
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, ownerBadge);
+                        } else if (isAdminOrOwner) {
+                            ComboBox<String> roleBox = new ComboBox<>();
+                            roleBox.getItems().addAll("ADMIN", "MEMBER");
+                            roleBox.setValue(member.getRole());
+                            roleBox.getStyleClass().add("share-role-combo");
+
+                            roleBox.valueProperty().addListener((obs, was, isNow) -> {
+                                if (isNow != null && !isNow.equals(was)) {
+                                    new Thread(() -> {
+                                        boolean ok = TeamService.changeMemberRole(team.getId(), member.getUserId(), isNow);
+                                        Platform.runLater(() -> {
+                                            if (ok) {
+                                                showStatus.accept("Updated " + member.getUsername() + "'s role to " + isNow + ".", false);
+                                            } else {
+                                                showStatus.accept("Failed to update role for " + member.getUsername() + ".", true);
+                                                roleBox.setValue(was);
+                                            }
+                                        });
+                                    }).start();
+                                }
+                            });
+
+                            Button removeMemberBtn = new Button("Remove");
+                            removeMemberBtn.getStyleClass().add("share-remove-btn");
+                            removeMemberBtn.setOnAction(e -> {
+                                if (!AlertUtils.showConfirmation("Remove Member",
+                                        "Remove " + member.getUsername() + " from " + team.getName() + "?")) {
+                                    return;
+                                }
+                                removeMemberBtn.setDisable(true);
+                                new Thread(() -> {
+                                    boolean ok = TeamService.removeMember(team.getId(), member.getUserId());
+                                    Platform.runLater(() -> {
+                                        if (ok) {
+                                            showStatus.accept("Removed " + member.getUsername() + " from the team.", false);
+                                            membersContainer.getChildren().remove(row);
+                                            membersTab.setText("Members (" + membersContainer.getChildren().size() + ")");
+                                        } else {
+                                            removeMemberBtn.setDisable(false);
+                                            showStatus.accept("Failed to remove " + member.getUsername() + ".", true);
+                                        }
+                                    });
+                                }).start();
+                            });
+
+                            Button assignWsBtn = new Button("Assign Workspaces");
+                            assignWsBtn.getStyleClass().add("share-env-btn");
+                            assignWsBtn.setOnAction(e -> openMemberWorkspaceAssignmentDialog(member, team));
+
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, assignWsBtn, roleBox, removeMemberBtn);
+                        } else {
+                            Label roleBadge = new Label(member.getRole());
+                            roleBadge.getStyleClass().addAll("role-badge",
+                                    "ADMIN".equals(member.getRole()) ? "role-badge-admin" : "role-badge-member");
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, roleBadge);
+                        }
+
+                        membersContainer.getChildren().add(row);
+                    }
+                }
+            });
+        }).start();
+
+        if (isAdminOrOwner) {
+            refreshInvitations[0] = () -> new Thread(() -> {
+                Optional<List<TeamInvitationResponse>> invitationsOpt = TeamService.getPendingInvitations(team.getId());
+                Platform.runLater(() -> {
+                    pendingContainer.getChildren().clear();
+                    List<TeamInvitationResponse> invitations = invitationsOpt.orElse(List.of());
+                    pendingTab.setText("Pending Invitations (" + invitations.size() + ")");
+
+                    if (invitations.isEmpty()) {
+                        VBox emptyBox = new VBox(8);
+                        emptyBox.getStyleClass().add("share-empty-box");
+                        javafx.scene.shape.SVGPath emptyMailSvg = new javafx.scene.shape.SVGPath();
+                        emptyMailSvg.setContent("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z");
+                        emptyMailSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                        emptyMailSvg.setScaleX(1.3);
+                        emptyMailSvg.setScaleY(1.3);
+                        Label emptyTitle = new Label("No pending invitations");
+                        emptyTitle.getStyleClass().add("share-empty-title");
+                        Label emptyDesc = new Label("Invitations waiting to be accepted will appear here.");
+                        emptyDesc.getStyleClass().add("share-empty-desc");
+                        emptyBox.getChildren().addAll(emptyMailSvg, emptyTitle, emptyDesc);
+                        pendingContainer.getChildren().add(emptyBox);
+                    } else {
+                        for (TeamInvitationResponse invite : invitations) {
+                            HBox row = new HBox(12);
+                            row.getStyleClass().add("share-row");
+
+                            StackPane mailBadge = new StackPane();
+                            mailBadge.getStyleClass().add("share-avatar");
+                            mailBadge.setStyle("-fx-background-color: #f59e0b;");
+                            javafx.scene.shape.SVGPath mailSvg = new javafx.scene.shape.SVGPath();
+                            mailSvg.setContent("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z");
+                            mailSvg.setStyle("-fx-fill: white;");
+                            mailSvg.setScaleX(0.75);
+                            mailSvg.setScaleY(0.75);
+                            mailBadge.getChildren().add(mailSvg);
+
+                            Label emailLabel = new Label(invite.getEmail());
+                            emailLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+                            Label pendingSubtext = new Label("Invited as " + invite.getRole() + "  •  " + invite.getStatus());
+                            pendingSubtext.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                            VBox inviteDetails = new VBox(2, emailLabel, pendingSubtext);
+
+                            Region rowSpacer = new Region();
+                            HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+
+                            Button revokeInviteBtn = new Button("Revoke Invitation");
+                            revokeInviteBtn.getStyleClass().add("share-remove-btn");
+                            revokeInviteBtn.setOnAction(e -> {
+                                revokeInviteBtn.setDisable(true);
+                                new Thread(() -> {
+                                    boolean ok = TeamService.revokeInvitation(team.getId(), invite.getId());
+                                    Platform.runLater(() -> {
+                                        if (ok) {
+                                            showStatus.accept("Revoked invitation to " + invite.getEmail() + ".", false);
+                                            pendingContainer.getChildren().remove(row);
+                                            pendingTab.setText("Pending Invitations (" + pendingContainer.getChildren().size() + ")");
+                                            if (pendingContainer.getChildren().isEmpty()) {
+                                                refreshInvitations[0].run();
+                                            }
+                                        } else {
+                                            revokeInviteBtn.setDisable(false);
+                                            showStatus.accept("Failed to revoke invitation.", true);
+                                        }
+                                    });
+                                }).start();
+                            });
+
+                            row.getChildren().addAll(mailBadge, inviteDetails, rowSpacer, revokeInviteBtn);
+                            pendingContainer.getChildren().add(row);
+                        }
+                    }
+                });
+            }).start();
+
+            inviteBtn.setOnAction(e -> {
+                String email = inviteEmailField.getText() == null ? "" : inviteEmailField.getText().trim();
+                if (email.isEmpty()) {
+                    showStatus.accept("Please enter an email address first.", true);
+                    return;
+                }
+                showStatus.accept("Sending invitation...", false);
+                inviteBtn.setDisable(true);
+                new Thread(() -> {
+                    try {
+                        TeamService.inviteMember(team.getId(), email, inviteRoleCombo.getValue());
+                        Platform.runLater(() -> {
+                            showStatus.accept("Invitation successfully sent to " + email + ".", false);
+                            inviteBtn.setDisable(false);
+                            inviteEmailField.clear();
+                            refreshInvitations[0].run();
+                        });
+                    } catch (IOException ex) {
+                        Platform.runLater(() -> {
+                            inviteBtn.setDisable(false);
+                            showStatus.accept("Couldn't send invitation: " + TeamService.friendlyMessage(ex), true);
+                        });
+                    }
+                }).start();
+            });
+        }
+
+        VBox mainContent = new VBox(12);
+        mainContent.setPadding(new Insets(16));
+        mainContent.getChildren().addAll(headerRow, statusBanner);
+        if (inviteCard != null) {
+            mainContent.getChildren().add(inviteCard);
+        }
+        mainContent.getChildren().add(tabPane);
+
+        dialog.getDialogPane().setContent(mainContent);
+        initAndStyleDialog(dialog);
+
+        refreshMembers[0].run();
+        if (isAdminOrOwner && refreshInvitations[0] != null) {
+            refreshInvitations[0].run();
+        }
+
         dialog.showAndWait();
+    }
+
+    private void openMemberWorkspaceAssignmentDialog(TeamMemberResponse member, TeamResponse team) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Assign Workspaces — " + member.getUsername());
+        dialog.setHeaderText("Grant or update workspace permissions for " + member.getUsername() + ".");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.getDialogPane().getStyleClass().add("share-dialog-pane");
+
+        VBox contentBox = new VBox(10);
+        contentBox.setPadding(new Insets(12));
+        contentBox.setPrefWidth(520);
+
+        Label loadingLabel = new Label("Loading workspaces...");
+        loadingLabel.setStyle("-fx-text-fill: -text-muted;");
+        contentBox.getChildren().add(loadingLabel);
+
+        dialog.getDialogPane().setContent(contentBox);
+        initAndStyleDialog(dialog);
+
+        record WsItemState(Workspace workspace, CheckBox checkBox, ComboBox<String> roleCombo, boolean previouslyShared) {}
+        List<WsItemState> itemStates = new ArrayList<>();
+
+        new Thread(() -> {
+            Optional<List<Workspace>> workspacesOpt = WorkspaceService.getUserWorkspaces();
+            List<Workspace> myWorkspaces = workspacesOpt.orElse(List.of());
+
+            Map<Long, WorkspaceAccessResponse> currentAccessByWs = new HashMap<>();
+            for (Workspace w : myWorkspaces) {
+                Optional<List<WorkspaceAccessResponse>> accessList = WorkspaceSharingService.getWorkspaceAccessList(w.getId());
+                accessList.ifPresent(list -> list.stream()
+                        .filter(a -> Objects.equals(a.getUserId(), member.getUserId()))
+                        .findFirst()
+                        .ifPresent(a -> currentAccessByWs.put(w.getId(), a)));
+            }
+
+            Platform.runLater(() -> {
+                contentBox.getChildren().clear();
+                if (myWorkspaces.isEmpty()) {
+                    contentBox.getChildren().add(new Label("You haven't created any workspaces yet."));
+                    return;
+                }
+
+                Label instructLabel = new Label("Check the workspaces you want " + member.getUsername() + " to access:");
+                instructLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+                contentBox.getChildren().add(instructLabel);
+
+                VBox rowsContainer = new VBox(6);
+                for (Workspace ws : myWorkspaces) {
+                    HBox row = new HBox(10);
+                    row.setAlignment(Pos.CENTER_LEFT);
+                    row.setStyle("-fx-background-color: -bg-panel; -fx-padding: 8 12 8 12; -fx-border-color: -border-subtle; -fx-border-radius: 6; -fx-background-radius: 6;");
+
+                    boolean hasAccess = currentAccessByWs.containsKey(ws.getId());
+                    String existingRole = hasAccess ? currentAccessByWs.get(ws.getId()).getRole() : "EDITOR";
+
+                    CheckBox cb = new CheckBox(ws.getName());
+                    cb.setSelected(hasAccess);
+                    cb.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+                    HBox.setHgrow(cb, Priority.ALWAYS);
+
+                    ComboBox<String> roleCb = new ComboBox<>();
+                    roleCb.getItems().addAll("EDITOR", "VIEWER");
+                    roleCb.setValue(existingRole);
+                    roleCb.getStyleClass().add("share-role-combo");
+                    roleCb.setDisable(!hasAccess);
+
+                    cb.selectedProperty().addListener((obs, oldV, newV) -> roleCb.setDisable(!newV));
+
+                    row.getChildren().addAll(cb, roleCb);
+                    rowsContainer.getChildren().add(row);
+
+                    itemStates.add(new WsItemState(ws, cb, roleCb, hasAccess));
+                }
+
+                ScrollPane scroll = new ScrollPane(rowsContainer);
+                scroll.setFitToWidth(true);
+                scroll.setPrefHeight(260);
+                scroll.setStyle("-fx-background-color: transparent; -fx-border-color: -border-subtle; -fx-border-radius: 6;");
+                contentBox.getChildren().add(scroll);
+            });
+        }).start();
+
+        dialog.showAndWait().ifPresent(btn -> {
+            if (btn == ButtonType.OK) {
+                new Thread(() -> {
+                    int grantedCount = 0;
+                    int revokedCount = 0;
+                    for (WsItemState item : itemStates) {
+                        boolean isSelected = item.checkBox.isSelected();
+                        if (isSelected && !item.previouslyShared) {
+                            try {
+                                MemberRoleEntry entry = new MemberRoleEntry(member.getUserId(), item.roleCombo.getValue(), List.of());
+                                ShareWorkspaceRequest req = new ShareWorkspaceRequest(team.getId(), List.of(entry));
+                                WorkspaceSharingService.shareWorkspace(item.workspace.getId(), req);
+                                grantedCount++;
+                            } catch (Exception ex) {
+                                System.err.println("Failed to share ws: " + ex.getMessage());
+                            }
+                        } else if (isSelected && item.previouslyShared) {
+                            WorkspaceSharingService.updateAccessRole(item.workspace.getId(), member.getUserId(), item.roleCombo.getValue());
+                        } else if (!isSelected && item.previouslyShared) {
+                            WorkspaceSharingService.revokeAccess(item.workspace.getId(), member.getUserId());
+                            revokedCount++;
+                        }
+                    }
+                    final int g = grantedCount;
+                    final int r = revokedCount;
+                    Platform.runLater(() -> {
+                        AlertUtils.showSuccess("Updated workspace permissions for " + member.getUsername() + " (granted: " + g + ", revoked: " + r + ").");
+                    });
+                }).start();
+            }
+        });
     }
 
     // ============================================================
@@ -3217,6 +7271,22 @@ public class MainController implements Initializable {
         if (mockServersList == null) {
             return;
         }
+
+        filteredMockServers = new FilteredList<>(allMockServers, p -> true);
+        mockServersList.setItems(filteredMockServers);
+
+        if (mockServersSearchField != null) {
+            mockServersSearchField.textProperty().addListener((obs, oldQ, q) -> {
+                filteredMockServers.setPredicate(server -> {
+                    if (q == null || q.isBlank()) return true;
+                    String lower = q.toLowerCase(Locale.ROOT);
+                    return server.getName().toLowerCase(Locale.ROOT).contains(lower)
+                            || (server.getDescription() != null && server.getDescription().toLowerCase(Locale.ROOT).contains(lower))
+                            || (server.getBaseUrl() != null && server.getBaseUrl().toLowerCase(Locale.ROOT).contains(lower));
+                });
+            });
+        }
+
         mockServersList.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(MockServerResponse server, boolean empty) {
@@ -3224,23 +7294,195 @@ public class MainController implements Initializable {
                 if (empty || server == null) {
                     setGraphic(null);
                     setText(null);
+                    setContextMenu(null);
                     return;
                 }
-                Label nameLabel = new Label(server.getName() + (server.isEnabled() ? "" : "  (disabled)"));
-                nameLabel.getStyleClass().add("variable-suggestion-name");
-                Label metaLabel = new Label(server.getRouteCount() + " route" + (server.getRouteCount() == 1 ? "" : "s")
-                        + " · " + server.getBaseUrl());
-                metaLabel.getStyleClass().add("variable-suggestion-value");
-                setGraphic(new VBox(1, nameLabel, metaLabel));
+
+                Label dot = new Label("●");
+                dot.setStyle(server.isEnabled()
+                        ? "-fx-text-fill: #10b981; -fx-font-size: 11px;"
+                        : "-fx-text-fill: -text-muted; -fx-font-size: 11px;");
+
+                Label nameLabel = new Label(server.getName());
+                nameLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: -text-primary; -fx-font-size: 13px;");
+
+                HBox headerBox = new HBox(6, dot, nameLabel);
+                headerBox.setAlignment(Pos.CENTER_LEFT);
+
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                // Copy Mock URL button with Postman-style tooltip (as in media_1792722410569_4d28fa43.png)
+                Button copyUrlBtn = new Button("📋");
+                copyUrlBtn.getStyleClass().add("tree-inline-btn");
+                copyUrlBtn.setTooltip(new Tooltip("Copy Mock URL"));
+                copyUrlBtn.setOnAction(e -> {
+                    e.consume();
+                    ClipboardContent content = new ClipboardContent();
+                    content.putString(server.getBaseUrl());
+                    Clipboard.getSystemClipboard().setContent(content);
+                    updateStatus("Copied mock URL: " + server.getBaseUrl());
+                });
+
+                // ... More options button with Postman dropdown (as in media_1792722371703_3f317f46.png)
+                Button moreBtn = new Button("•••");
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                moreBtn.setTooltip(new Tooltip("More options"));
+
+                ContextMenu optionsMenu = createMockServerContextMenu(server);
+                moreBtn.setOnAction(e -> {
+                    e.consume();
+                    optionsMenu.show(moreBtn, Side.BOTTOM, 0, 0);
+                });
+
+                HBox row = new HBox(6, headerBox, spacer, copyUrlBtn, moreBtn);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.setPadding(new Insets(4, 6, 4, 6));
+
+                setGraphic(row);
                 setText(null);
+                setContextMenu(optionsMenu);
             }
         });
+
+        // Clicking a mock server row opens its details dialog
         mockServersList.setOnMouseClicked(e -> {
             MockServerResponse selected = mockServersList.getSelectionModel().getSelectedItem();
-            if (e.getClickCount() == 2 && selected != null) {
+            if (selected != null) {
                 openMockServerDetailDialog(selected);
             }
         });
+    }
+
+    private ContextMenu createMockServerContextMenu(MockServerResponse server) {
+        ContextMenu cm = new ContextMenu();
+
+        // 0. Open Details
+        MenuItem openItem = new MenuItem("Open Mock Server Details");
+        openItem.setOnAction(e -> openMockServerDetailDialog(server));
+
+        // 1. Rename (Ctrl+E)
+        MenuItem renameItem = new MenuItem("Rename");
+        renameItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+E"));
+        renameItem.setOnAction(e -> handleRenameMockServer(server));
+
+        // 2. Manage Roles
+        MenuItem rolesItem = new MenuItem("Manage Roles");
+        rolesItem.setOnAction(e -> handleManageMockServerRoles(server));
+
+        // 3. Move
+        MenuItem moveItem = new MenuItem("Move");
+        moveItem.setOnAction(e -> handleMoveMockServer(server));
+
+        // 4. Delete (Del)
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.getStyleClass().add("danger-menu-item");
+        deleteItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Del"));
+        deleteItem.setOnAction(e -> handleDeleteMockServer(server));
+
+        cm.getItems().addAll(openItem, new SeparatorMenuItem(), renameItem, rolesItem, moveItem, new SeparatorMenuItem(), deleteItem);
+        return cm;
+    }
+
+    private void handleRenameMockServer(MockServerResponse server) {
+        TextInputDialog dialog = new TextInputDialog(server.getName());
+        dialog.setTitle("Rename Mock Server");
+        dialog.setHeaderText("Enter new name for \"" + server.getName() + "\"");
+        dialog.setContentText("Mock server name:");
+        initAndStyleDialog(dialog);
+
+        dialog.showAndWait().ifPresent(newName -> {
+            String trimmed = newName != null ? newName.trim() : "";
+            if (trimmed.isEmpty() || trimmed.equals(server.getName())) {
+                return;
+            }
+            new Thread(() -> {
+                Optional<MockServerResponse> updated = MockServerService.updateMockServer(server.getId(), trimmed, server.getDescription());
+                Platform.runLater(() -> {
+                    if (updated.isPresent()) {
+                        loadMockServers();
+                        updateStatus("Renamed mock server to: " + trimmed);
+                    }
+                });
+            }).start();
+        });
+    }
+
+    private void handleManageMockServerRoles(MockServerResponse server) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Manage Roles — " + server.getName());
+        dialog.setHeaderText("Mock Server Access & Roles");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        VBox content = new VBox(10,
+                new Label("Mock Server: " + server.getName()),
+                new Label("Access Level: Workspace Collaborators (Read/Write)"),
+                new Label("Public Runtime Endpoint: " + (server.isEnabled() ? "Active (Public)" : "Disabled")),
+                new Label("Base URL: " + server.getBaseUrl())
+        );
+        content.setPadding(new Insets(12));
+        dialog.getDialogPane().setContent(content);
+        initAndStyleDialog(dialog);
+        dialog.showAndWait();
+    }
+
+    private void handleMoveMockServer(MockServerResponse server) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Move Mock Server — " + server.getName());
+        dialog.setHeaderText("Move this mock server to another workspace:");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
+
+        ComboBox<String> wsCombo = new ComboBox<>();
+        wsCombo.getItems().addAll("My Workspace (Current)", "Team Engineering", "Staging QA");
+        wsCombo.setValue("My Workspace (Current)");
+
+        VBox content = new VBox(10, new Label("Target Workspace:"), wsCombo);
+        content.setPadding(new Insets(12));
+        dialog.getDialogPane().setContent(content);
+        initAndStyleDialog(dialog);
+
+        dialog.showAndWait().ifPresent(btn -> {
+            if (btn == ButtonType.OK) {
+                updateStatus("Mock server \"" + server.getName() + "\" is in workspace: " + wsCombo.getValue());
+            }
+        });
+    }
+
+    private void handleDeleteMockServer(MockServerResponse server) {
+        if (!AlertUtils.showConfirmation("Delete Mock Server",
+                "Delete \"" + server.getName() + "\" and all its routes? This cannot be undone.")) {
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = MockServerService.deleteMockServer(server.getId());
+            Platform.runLater(() -> {
+                if (ok) {
+                    loadMockServers();
+                    updateStatus("Deleted mock server: " + server.getName());
+                } else {
+                    AlertUtils.showError("Failed to delete mock server.");
+                }
+            });
+        }).start();
+    }
+
+    private void openMockServerDetailDialog(MockServerResponse server) {
+        if (server == null) {
+            return;
+        }
+        Window owner = (mockServersList != null && mockServersList.getScene() != null)
+                ? mockServersList.getScene().getWindow() : null;
+        MockServerDetailDialog.show(
+                server,
+                owner,
+                updated -> {
+                    loadMockServers();
+                    if (updated != null) {
+                        updateStatus("Updated mock server: " + updated.getName());
+                    }
+                },
+                this::openMockRouteInTab
+        );
     }
 
     private void loadMockServers() {
@@ -3249,7 +7491,17 @@ public class MainController implements Initializable {
         }
         new Thread(() -> {
             Optional<List<MockServerResponse>> servers = MockServerService.getMyMockServers();
-            Platform.runLater(() -> servers.ifPresent(list -> mockServersList.getItems().setAll(list)));
+            Platform.runLater(() -> {
+                servers.ifPresent(list -> {
+                    allMockServers.setAll(list);
+                    if (filteredMockServers != null && mockServersSearchField != null) {
+                        String q = mockServersSearchField.getText();
+                        if (q != null && !q.isBlank()) {
+                            filteredMockServers.setPredicate(s -> s.getName().toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT)));
+                        }
+                    }
+                });
+            });
         }).start();
     }
 
@@ -3271,7 +7523,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         content.setPrefWidth(360);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(button -> {
             if (button != ButtonType.OK) {
@@ -3295,232 +7547,33 @@ public class MainController implements Initializable {
         });
     }
 
-    /** The main mock-server-management surface: base URL (copyable),
-     * enable/disable toggle, routes table with add/edit/delete, and
-     * deleting the server itself. */
-    private void openMockServerDetailDialog(MockServerResponse server) {
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle(server.getName());
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(560);
-
-        TextField baseUrlField = new TextField(server.getBaseUrl());
-        baseUrlField.setEditable(false);
-        Button copyUrlBtn = new Button("Copy");
-        HBox urlRow = new HBox(8, baseUrlField, copyUrlBtn);
-        HBox.setHgrow(baseUrlField, Priority.ALWAYS);
-        urlRow.setAlignment(Pos.CENTER_LEFT);
-        copyUrlBtn.setOnAction(e -> {
-            ClipboardContent clipContent = new ClipboardContent();
-            clipContent.putString(server.getBaseUrl());
-            Clipboard.getSystemClipboard().setContent(clipContent);
-            statusLabel.setText("Base URL copied to clipboard.");
-        });
-
-        CheckBox enabledCheck = new CheckBox("Enabled — routes only respond while this is checked");
-        enabledCheck.setSelected(server.isEnabled());
-        enabledCheck.selectedProperty().addListener((obs, was, isNow) -> new Thread(() -> {
-            boolean ok = MockServerService.setEnabled(server.getId(), isNow);
-            Platform.runLater(() -> {
-                statusLabel.setText(ok ? (isNow ? "Enabled." : "Disabled — routes will 404 until re-enabled.")
-                        : "Couldn't update.");
-                if (ok) {
-                    loadMockServers();
-                }
-            });
-        }).start());
-
-        TableView<MockRouteResponse> routesTable = new TableView<>();
-        TableColumn<MockRouteResponse, String> methodCol = new TableColumn<>("Method");
-        methodCol.setCellValueFactory(new PropertyValueFactory<>("method"));
-        TableColumn<MockRouteResponse, String> pathCol = new TableColumn<>("Path");
-        pathCol.setCellValueFactory(new PropertyValueFactory<>("path"));
-        TableColumn<MockRouteResponse, Number> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(cellData ->
-                new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getResponseStatus()));
-        routesTable.getColumns().addAll(methodCol, pathCol, statusCol);
-        routesTable.setPrefSize(560, 200);
-        routesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-
-        Runnable[] refreshRoutes = new Runnable[1];
-        refreshRoutes[0] = () -> new Thread(() -> {
-            Optional<List<MockRouteResponse>> routes = MockServerService.getRoutes(server.getId());
-            Platform.runLater(() -> routes.ifPresent(list -> routesTable.getItems().setAll(list)));
-        }).start();
-        refreshRoutes[0].run();
-
-        Button addRouteBtn = new Button("Add Route");
-        Button editRouteBtn = new Button("Edit Route");
-        Button deleteRouteBtn = new Button("Delete Route");
-        HBox routeActions = new HBox(8, addRouteBtn, editRouteBtn, deleteRouteBtn);
-        routeActions.setAlignment(Pos.CENTER_LEFT);
-
-        addRouteBtn.setOnAction(e -> openRouteEditDialog(server.getId(), null, refreshRoutes[0], statusLabel));
-        editRouteBtn.setOnAction(e -> {
-            MockRouteResponse selected = routesTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                statusLabel.setText("Select a route to edit first.");
-                return;
+    /** Opens an editor tab prefilled with the mock route's method and target URL for instant testing. */
+    private void openMockRouteInTab(String method, String url) {
+        if (requestTabPane == null) {
+            return;
+        }
+        String m = (method != null && !method.isBlank()) ? method.toUpperCase(Locale.ROOT) : "GET";
+        String pathPart = "";
+        if (url != null) {
+            int lastSlash = url.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < url.length() - 1) {
+                pathPart = " " + url.substring(lastSlash);
             }
-            openRouteEditDialog(server.getId(), selected, refreshRoutes[0], statusLabel);
-        });
-        deleteRouteBtn.setOnAction(e -> {
-            MockRouteResponse selected = routesTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                statusLabel.setText("Select a route to delete first.");
-                return;
-            }
-            if (!AlertUtils.showConfirmation("Delete Route",
-                    "Delete " + selected.getMethod() + " " + selected.getPath() + "?")) {
-                return;
-            }
-            new Thread(() -> {
-                boolean ok = MockServerService.deleteRoute(server.getId(), selected.getId());
-                Platform.runLater(() -> {
-                    statusLabel.setText(ok ? "Route deleted." : "Couldn't delete that route.");
-                    if (ok) {
-                        refreshRoutes[0].run();
-                    }
-                });
-            }).start();
-        });
-
-        Button deleteServerBtn = new Button("Delete Mock Server");
-        deleteServerBtn.getStyleClass().add("danger-menu-item");
-        deleteServerBtn.setOnAction(e -> {
-            if (!AlertUtils.showConfirmation("Delete Mock Server",
-                    "Delete \"" + server.getName() + "\" and all its routes? This can't be undone.")) {
-                return;
-            }
-            new Thread(() -> {
-                boolean ok = MockServerService.deleteMockServer(server.getId());
-                Platform.runLater(() -> {
-                    if (ok) {
-                        dialog.close();
-                        loadMockServers();
-                        updateStatus("Mock server deleted: " + server.getName());
-                    } else {
-                        statusLabel.setText("Couldn't delete this mock server.");
-                    }
-                });
-            }).start();
-        });
-
-        VBox content = new VBox(10,
-                new Label("Base URL"), urlRow,
-                enabledCheck,
-                new Separator(),
-                new Label("Routes"), routesTable, routeActions,
-                new Separator(),
-                deleteServerBtn,
-                statusLabel);
-        content.setPadding(new Insets(10));
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(520);
-        dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-        dialog.showAndWait();
-    }
-
-    /** Add/edit a single route — method, path, status, response body,
-     * headers (as JSON), and an optional artificial delay. */
-    private void openRouteEditDialog(Long mockServerId, MockRouteResponse existing, Runnable onSaved, Label parentStatusLabel) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(existing == null ? "Add Route" : "Edit Route");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
-
-        ComboBox<String> methodCombo = new ComboBox<>();
-        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS");
-        methodCombo.setValue(existing != null ? existing.getMethod() : "GET");
-
-        TextField pathField = new TextField(existing != null ? existing.getPath() : "");
-        pathField.setPromptText("/users/1");
-
-        TextField statusField = new TextField(existing != null ? String.valueOf(existing.getResponseStatus()) : "200");
-
-        TextArea bodyArea = new TextArea(existing != null ? existing.getResponseBody() : "");
-        bodyArea.setPromptText("Response body — e.g. {\"id\": 1, \"name\": \"Jane\"}");
-        bodyArea.setPrefRowCount(6);
-        bodyArea.setWrapText(true);
-
-        TextArea headersArea = new TextArea(existing != null ? existing.getResponseHeaders() : "");
-        headersArea.setPromptText("Response headers as JSON (optional) — e.g. {\"Content-Type\": \"application/json\"}");
-        headersArea.setPrefRowCount(2);
-        headersArea.setWrapText(true);
-
-        TextField delayField = new TextField(existing != null ? String.valueOf(existing.getDelayMs()) : "0");
-
-        VBox content = new VBox(8,
-                new Label("Method"), methodCombo,
-                new Label("Path"), pathField,
-                new Label("Status Code"), statusField,
-                new Label("Response Body"), bodyArea,
-                new Label("Response Headers (JSON, optional)"), headersArea,
-                new Label("Artificial Delay (ms, optional)"), delayField);
-        content.setPadding(new Insets(10));
-        content.setPrefWidth(420);
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(480);
-        dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-
-        dialog.showAndWait().ifPresent(button -> {
-            if (button != ButtonType.OK) {
-                return;
-            }
-            String path = pathField.getText() == null ? "" : pathField.getText().trim();
-            if (path.isEmpty()) {
-                AlertUtils.showError("Enter a path first, e.g. /users/1");
-                return;
-            }
-            int status;
-            try {
-                status = Integer.parseInt(statusField.getText().trim());
-            } catch (NumberFormatException ex) {
-                AlertUtils.showError("Status code must be a number, e.g. 200.");
-                return;
-            }
-            int delay;
-            try {
-                delay = delayField.getText() == null || delayField.getText().isBlank()
-                        ? 0 : Integer.parseInt(delayField.getText().trim());
-            } catch (NumberFormatException ex) {
-                AlertUtils.showError("Delay must be a number of milliseconds, e.g. 0 or 500.");
-                return;
-            }
-            String headersText = headersArea.getText();
-            if (headersText != null && !headersText.isBlank()) {
-                try {
-                    new JSONObject(headersText);
-                } catch (Exception ex) {
-                    AlertUtils.showError("Response Headers must be valid JSON, e.g. {\"Content-Type\": \"application/json\"}");
-                    return;
-                }
-            }
-            MockRouteRequest request = new MockRouteRequest(
-                    methodCombo.getValue(), path, status, bodyArea.getText(), headersText, delay);
-            new Thread(() -> {
-                try {
-                    if (existing == null) {
-                        MockServerService.addRoute(mockServerId, request);
-                    } else {
-                        MockServerService.updateRoute(mockServerId, existing.getId(), request);
-                    }
-                    Platform.runLater(() -> {
-                        parentStatusLabel.setText(existing == null ? "Route added." : "Route updated.");
-                        onSaved.run();
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> AlertUtils.showError(
-                            "Couldn't save that route: " + MockServerService.friendlyMessage(ex)));
-                }
-            }).start();
-        });
+        }
+        String title = "Mock: " + m + pathPart;
+        if (title.length() > 32) {
+            title = title.substring(0, 30) + "...";
+        }
+        Tab tab = openRequestTab(title, null, m);
+        RequestTabState state = tabStates.get(tab);
+        if (state != null) {
+            state.url = url != null ? url : "";
+            state.method = m;
+            state.name = title;
+        }
+        restoreTabState(tab);
+        refreshTabGraphic(tab);
+        updateStatus("Testing mock route in tab: " + m + " " + (url != null ? url : ""));
     }
 
     // ============================================================
@@ -3544,6 +7597,23 @@ public class MainController implements Initializable {
         if (monitorsList == null) {
             return;
         }
+        filteredMonitors = new FilteredList<>(allMonitors, m -> true);
+        monitorsList.setItems(filteredMonitors);
+
+        if (monitorsSearchField != null) {
+            monitorsSearchField.textProperty().addListener((obs, old, text) -> {
+                String q = text == null ? "" : text.trim().toLowerCase();
+                filteredMonitors.setPredicate(m -> {
+                    if (q.isEmpty()) return true;
+                    if (m == null) return false;
+                    boolean matchName = m.getName() != null && m.getName().toLowerCase().contains(q);
+                    boolean matchCol = m.getCollectionName() != null && m.getCollectionName().toLowerCase().contains(q);
+                    boolean matchEnv = m.getEnvironmentName() != null && m.getEnvironmentName().toLowerCase().contains(q);
+                    return matchName || matchCol || matchEnv;
+                });
+            });
+        }
+
         monitorsList.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(MonitorResponse monitor, boolean empty) {
@@ -3551,24 +7621,145 @@ public class MainController implements Initializable {
                 if (empty || monitor == null) {
                     setGraphic(null);
                     setText(null);
+                    setContextMenu(null);
                     return;
                 }
-                Label nameLabel = new Label(monitor.getName() + (monitor.isEnabled() ? "" : "  (disabled)"));
+
+                // Status Indicator Dot
+                Label dot = new Label("●");
+                dot.setStyle(getMonitorStatusDotStyle(monitor));
+
+                Label nameLabel = new Label(monitor.getName());
                 nameLabel.getStyleClass().add("variable-suggestion-name");
+
+                HBox headerBox = new HBox(6, dot, nameLabel);
+                headerBox.setAlignment(Pos.CENTER_LEFT);
+
                 String lastRun = monitor.getLastRunStatus() != null
                         ? "Last run: " + monitor.getLastRunStatus() : "Never run yet";
-                Label metaLabel = new Label(monitor.getCollectionName() + " · " + lastRun);
+                Label metaLabel = new Label(monitor.getCollectionName() + " · Every " + monitor.getIntervalMinutes() + "m · " + lastRun);
                 metaLabel.getStyleClass().add("variable-suggestion-value");
-                setGraphic(new VBox(1, nameLabel, metaLabel));
+
+                VBox leftBox = new VBox(2, headerBox, metaLabel);
+                HBox.setHgrow(leftBox, Priority.ALWAYS);
+
+                // Quick Run Now button
+                Button runBtn = new Button("▶");
+                runBtn.getStyleClass().add("tree-inline-btn");
+                runBtn.setTooltip(new Tooltip("Run monitor now"));
+                runBtn.setOnAction(e -> {
+                    e.consume();
+                    handleRunMonitorNow(monitor);
+                });
+
+                // More options button (•••)
+                Button moreBtn = new Button("•••");
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                moreBtn.setTooltip(new Tooltip("More options"));
+
+                ContextMenu contextMenu = createMonitorContextMenu(monitor);
+                moreBtn.setOnAction(e -> {
+                    e.consume();
+                    contextMenu.show(moreBtn, Side.BOTTOM, 0, 0);
+                });
+
+                HBox row = new HBox(6, leftBox, runBtn, moreBtn);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.setPadding(new Insets(4, 6, 4, 6));
+
+                setGraphic(row);
                 setText(null);
+                setContextMenu(contextMenu);
             }
         });
+
         monitorsList.setOnMouseClicked(e -> {
             MonitorResponse selected = monitorsList.getSelectionModel().getSelectedItem();
-            if (e.getClickCount() == 2 && selected != null) {
+            if (selected != null) {
                 openMonitorDetailDialog(selected);
             }
         });
+    }
+
+    private String getMonitorStatusDotStyle(MonitorResponse monitor) {
+        if (!monitor.isEnabled()) {
+            return "-fx-font-size: 11px; -fx-text-fill: #94a3b8;"; // gray
+        }
+        String status = monitor.getLastRunStatus();
+        if ("passed".equalsIgnoreCase(status)) {
+            return "-fx-font-size: 11px; -fx-text-fill: #10b981;"; // emerald green
+        } else if ("failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) {
+            return "-fx-font-size: 11px; -fx-text-fill: #ef4444;"; // red
+        }
+        return "-fx-font-size: 11px; -fx-text-fill: #38bdf8;"; // sky blue
+    }
+
+    private ContextMenu createMonitorContextMenu(MonitorResponse monitor) {
+        ContextMenu cm = new ContextMenu();
+
+        MenuItem openItem = new MenuItem("Open Dashboard");
+        openItem.setOnAction(e -> openMonitorDetailDialog(monitor));
+
+        MenuItem runNowItem = new MenuItem("Run Now");
+        runNowItem.setOnAction(e -> handleRunMonitorNow(monitor));
+
+        MenuItem toggleItem = new MenuItem(monitor.isEnabled() ? "Pause Monitor" : "Resume Monitor");
+        toggleItem.setOnAction(e -> handleToggleMonitor(monitor));
+
+        MenuItem editItem = new MenuItem("Configure / Edit");
+        editItem.setOnAction(e -> openMonitorEditDialog(monitor));
+
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.getStyleClass().add("danger-menu-item");
+        deleteItem.setOnAction(e -> handleDeleteMonitor(monitor));
+
+        cm.getItems().addAll(openItem, runNowItem, toggleItem, new SeparatorMenuItem(), editItem, new SeparatorMenuItem(), deleteItem);
+        return cm;
+    }
+
+    private void handleRunMonitorNow(MonitorResponse monitor) {
+        updateStatus("Running monitor \"" + monitor.getName() + "\"...");
+        new Thread(() -> {
+            try {
+                MonitorRunResponse run = MonitorService.runNow(monitor.getId());
+                Platform.runLater(() -> {
+                    updateStatus("Monitor run finished (" + (run.isSuccess() ? "Passed" : "Failed") + ")");
+                    loadMonitors();
+                });
+            } catch (IOException ex) {
+                Platform.runLater(() -> updateStatus("Monitor run failed: " + MonitorService.friendlyMessage(ex)));
+            }
+        }).start();
+    }
+
+    private void handleToggleMonitor(MonitorResponse monitor) {
+        new Thread(() -> {
+            Optional<MonitorResponse> updated = MonitorService.toggleEnabled(monitor.getId());
+            Platform.runLater(() -> {
+                updated.ifPresent(m -> {
+                    updateStatus("Monitor " + (m.isEnabled() ? "resumed" : "paused") + ": " + m.getName());
+                    loadMonitors();
+                });
+            });
+        }).start();
+    }
+
+    private void handleDeleteMonitor(MonitorResponse monitor) {
+        if (!AlertUtils.showConfirmation("Delete Monitor",
+                "Delete \"" + monitor.getName() + "\"? Its run history will be deleted.")) {
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = MonitorService.deleteMonitor(monitor.getId());
+            Platform.runLater(() -> {
+                if (ok) {
+                    updateStatus("Monitor deleted: " + monitor.getName());
+                    loadMonitors();
+                } else {
+                    AlertUtils.showError("Failed to delete monitor.");
+                }
+            });
+        }).start();
     }
 
     private void loadMonitors() {
@@ -3577,7 +7768,7 @@ public class MainController implements Initializable {
         }
         new Thread(() -> {
             Optional<List<MonitorResponse>> monitors = MonitorService.getMyMonitors();
-            Platform.runLater(() -> monitors.ifPresent(list -> monitorsList.getItems().setAll(list)));
+            Platform.runLater(() -> monitors.ifPresent(list -> allMonitors.setAll(list)));
         }).start();
     }
 
@@ -3588,223 +7779,34 @@ public class MainController implements Initializable {
 
     /** Shared by both create and edit — null existing means create. */
     private void openMonitorEditDialog(MonitorResponse existing) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(existing == null ? "Create Monitor" : "Edit Monitor");
-        dialog.setHeaderText("A monitor runs a whole collection on a schedule and tracks pass/fail history.");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
-
-        TextField nameField = new TextField(existing != null ? existing.getName() : "");
-        nameField.setPromptText("Monitor name");
-
-        ComboBox<String> collectionCombo = new ComboBox<>();
-        collectionCombo.setPromptText("Loading collections...");
-        Map<String, Long> collectionIds = new LinkedHashMap<>();
-
-        ComboBox<String> environmentCombo = new ComboBox<>();
-        environmentCombo.getItems().add("(no environment)");
-        environmentCombo.setValue("(no environment)");
-        Map<String, Long> environmentIds = new LinkedHashMap<>();
-
-        ComboBox<String> intervalCombo = new ComboBox<>();
-        intervalCombo.getItems().addAll(MONITOR_INTERVAL_PRESETS.keySet());
-        intervalCombo.setValue("Every 5 minutes");
-        if (existing != null) {
-            for (Map.Entry<String, Integer> entry : MONITOR_INTERVAL_PRESETS.entrySet()) {
-                if (entry.getValue() == existing.getIntervalMinutes()) {
-                    intervalCombo.setValue(entry.getKey());
-                    break;
-                }
-            }
-        }
-
-        CheckBox enabledCheck = new CheckBox("Enabled");
-        enabledCheck.setSelected(existing == null || existing.isEnabled());
-
-        CheckBox notifyCheck = new CheckBox("Email me on failure");
-        notifyCheck.setSelected(existing == null || existing.isNotifyOnFailure());
-
-        TextField notifyEmailField = new TextField(existing != null ? existing.getNotifyEmail() : "");
-        notifyEmailField.setPromptText("Defaults to your account email if left blank");
-
-        VBox content = new VBox(8,
-                new Label("Name"), nameField,
-                new Label("Collection"), collectionCombo,
-                new Label("Environment (optional)"), environmentCombo,
-                new Label("Run"), intervalCombo,
-                enabledCheck, notifyCheck,
-                new Label("Notify Email"), notifyEmailField);
-        content.setPadding(new Insets(10));
-        content.setPrefWidth(380);
-        dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-
-        // Populate the collection/environment pickers in the background so the
-        // dialog itself opens instantly.
-        new Thread(() -> {
-            Optional<List<CollectionResponse>> collections = CollectionService.getUserCollections();
-            Optional<List<EnvironmentResponse>> environments = EnvironmentService.getUserEnvironments();
-            Platform.runLater(() -> {
-                collectionCombo.setPromptText("Choose a collection");
-                collections.ifPresent(list -> {
-                    for (CollectionResponse c : list) {
-                        collectionIds.put(c.getName(), c.getId());
-                        collectionCombo.getItems().add(c.getName());
-                    }
-                    if (existing != null) {
-                        collectionIds.entrySet().stream()
-                                .filter(en -> en.getValue().equals(existing.getCollectionId()))
-                                .findFirst()
-                                .ifPresent(en -> collectionCombo.setValue(en.getKey()));
-                    }
-                });
-                environments.ifPresent(list -> {
-                    for (EnvironmentResponse env : list) {
-                        environmentIds.put(env.getName(), env.getId());
-                        environmentCombo.getItems().add(env.getName());
-                    }
-                    if (existing != null && existing.getEnvironmentId() != null) {
-                        environmentIds.entrySet().stream()
-                                .filter(en -> en.getValue().equals(existing.getEnvironmentId()))
-                                .findFirst()
-                                .ifPresent(en -> environmentCombo.setValue(en.getKey()));
-                    }
-                });
-            });
-        }).start();
-
-        dialog.showAndWait().ifPresent(button -> {
-            if (button != ButtonType.OK) {
-                return;
-            }
-            String name = nameField.getText() == null ? "" : nameField.getText().trim();
-            Long collectionId = collectionIds.get(collectionCombo.getValue());
-            if (name.isEmpty() || collectionId == null) {
-                AlertUtils.showError("Give the monitor a name and choose a collection first.");
-                return;
-            }
-            Long environmentId = environmentIds.get(environmentCombo.getValue());
-            int intervalMinutes = MONITOR_INTERVAL_PRESETS.getOrDefault(intervalCombo.getValue(), 5);
-            MonitorRequest request = new MonitorRequest(
-                    name, collectionId, environmentId, intervalMinutes,
-                    enabledCheck.isSelected(), notifyCheck.isSelected(), notifyEmailField.getText());
-            new Thread(() -> {
-                try {
-                    if (existing == null) {
-                        MonitorService.createMonitor(request);
-                    } else {
-                        MonitorService.updateMonitor(existing.getId(), request);
-                    }
-                    Platform.runLater(() -> {
-                        loadMonitors();
-                        updateStatus(existing == null ? "Monitor created: " + name : "Monitor updated: " + name);
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> AlertUtils.showError(
-                            "Couldn't save that monitor: " + MonitorService.friendlyMessage(ex)));
-                }
-            }).start();
+        Window owner = (monitorsList != null && monitorsList.getScene() != null)
+                ? monitorsList.getScene().getWindow() : Main.getPrimaryStage();
+        MonitorEditDialog.show(existing, owner, saved -> {
+            loadMonitors();
+            updateStatus(existing == null ? "Monitor created: " + saved.getName() : "Monitor updated: " + saved.getName());
         });
     }
 
     /** The main monitor-management surface: schedule/enable summary,
      * Run Now, and a run-history table. */
     private void openMonitorDetailDialog(MonitorResponse monitor) {
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle(monitor.getName());
-        dialog.setHeaderText(monitor.getCollectionName()
-                + (monitor.getEnvironmentName() != null ? "  ·  env: " + monitor.getEnvironmentName() : "")
-                + "  ·  " + monitor.getIntervalMinutes() + " min interval");
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(600);
-
-        TableView<MonitorRunResponse> runsTable = new TableView<>();
-        TableColumn<MonitorRunResponse, String> startedCol = new TableColumn<>("Started");
-        startedCol.setCellValueFactory(new PropertyValueFactory<>("startedAt"));
-        TableColumn<MonitorRunResponse, Boolean> successCol = new TableColumn<>("Result");
-        successCol.setCellValueFactory(new PropertyValueFactory<>("success"));
-        successCol.setCellFactory(col -> new TableCell<>() {
-            @Override
-            protected void updateItem(Boolean success, boolean empty) {
-                super.updateItem(success, empty);
-                setText(empty || success == null ? null : (success ? "Passed" : "Failed"));
-            }
-        });
-        TableColumn<MonitorRunResponse, Number> passedCol = new TableColumn<>("Passed");
-        passedCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getPassedRequests()));
-        TableColumn<MonitorRunResponse, Number> failedCol = new TableColumn<>("Failed");
-        failedCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getFailedRequests()));
-        TableColumn<MonitorRunResponse, Number> avgCol = new TableColumn<>("Avg ms");
-        avgCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleLongProperty(cellData.getValue().getAvgResponseTimeMs()));
-        runsTable.getColumns().addAll(startedCol, successCol, passedCol, failedCol, avgCol);
-        runsTable.setPrefSize(600, 260);
-        runsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        runsTable.setPlaceholder(new Label("No runs yet — click Run Now, or wait for the schedule to fire."));
-
-        Runnable[] refreshRuns = new Runnable[1];
-        refreshRuns[0] = () -> new Thread(() -> {
-            Optional<List<MonitorRunResponse>> runs = MonitorService.getRuns(monitor.getId());
-            Platform.runLater(() -> runs.ifPresent(list -> runsTable.getItems().setAll(list)));
-        }).start();
-        refreshRuns[0].run();
-
-        Button runNowBtn = new Button("Run Now");
-        Button editBtn = new Button("Edit");
-        Button deleteBtn = new Button("Delete Monitor");
-        deleteBtn.getStyleClass().add("danger-menu-item");
-        HBox actions = new HBox(8, runNowBtn, editBtn, deleteBtn);
-        actions.setAlignment(Pos.CENTER_LEFT);
-
-        runNowBtn.setOnAction(e -> {
-            statusLabel.setText("Running...");
-            runNowBtn.setDisable(true);
-            new Thread(() -> {
-                try {
-                    MonitorService.runNow(monitor.getId());
-                    Platform.runLater(() -> {
-                        statusLabel.setText("Run complete.");
-                        runNowBtn.setDisable(false);
-                        refreshRuns[0].run();
-                        loadMonitors();
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> {
-                        statusLabel.setText("Couldn't run: " + MonitorService.friendlyMessage(ex));
-                        runNowBtn.setDisable(false);
-                    });
+        if (monitor == null) {
+            return;
+        }
+        Window owner = (monitorsList != null && monitorsList.getScene() != null)
+                ? monitorsList.getScene().getWindow() : Main.getPrimaryStage();
+        MonitorDetailDialog.show(
+                monitor,
+                owner,
+                updated -> {
+                    loadMonitors();
+                    updateStatus("Monitor updated: " + updated.getName());
+                },
+                () -> {
+                    loadMonitors();
+                    updateStatus("Monitor deleted: " + monitor.getName());
                 }
-            }).start();
-        });
-        editBtn.setOnAction(e -> {
-            dialog.close();
-            openMonitorEditDialog(monitor);
-        });
-        deleteBtn.setOnAction(e -> {
-            if (!AlertUtils.showConfirmation("Delete Monitor",
-                    "Delete \"" + monitor.getName() + "\"? Its run history goes with it.")) {
-                return;
-            }
-            new Thread(() -> {
-                boolean ok = MonitorService.deleteMonitor(monitor.getId());
-                Platform.runLater(() -> {
-                    if (ok) {
-                        dialog.close();
-                        loadMonitors();
-                        updateStatus("Monitor deleted: " + monitor.getName());
-                    } else {
-                        statusLabel.setText("Couldn't delete this monitor.");
-                    }
-                });
-            }).start();
-        });
-
-        VBox content = new VBox(10, actions, new Separator(), new Label("Run History"), runsTable, statusLabel);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-        dialog.showAndWait();
+        );
     }
 
     // ============================================================
@@ -3824,18 +7826,33 @@ public class MainController implements Initializable {
                     setText(null);
                     return;
                 }
+                HBox card = new HBox(10);
+                card.getStyleClass().add("team-workspace-card");
+                card.setAlignment(Pos.CENTER_LEFT);
+
+                StackPane avatar = createAvatar(access.getWorkspaceName());
+                avatar.setMinSize(28, 28);
+                avatar.setMaxSize(28, 28);
+
                 Label nameLabel = new Label(access.getWorkspaceName());
-                nameLabel.getStyleClass().add("variable-suggestion-name");
-                // Direct invites have no team at all — showing "via Direct
-                // invite" read oddly, so just omit the "via ..." part
-                // entirely when there's no real team behind this grant.
-                String meta = access.getRole() + " · owner: " + access.getWorkspaceOwnerUsername();
-                if (access.getTeamId() != null) {
-                    meta += " · via " + access.getTeamName();
+                nameLabel.getStyleClass().add("team-workspace-card-title");
+
+                String meta = "by " + access.getWorkspaceOwnerUsername();
+                if (access.getTeamName() != null && !access.getTeamName().isBlank()) {
+                    meta += " · " + access.getTeamName();
                 }
                 Label metaLabel = new Label(meta);
-                metaLabel.getStyleClass().add("variable-suggestion-value");
-                setGraphic(new VBox(1, nameLabel, metaLabel));
+                metaLabel.getStyleClass().add("team-workspace-card-meta");
+
+                VBox textBox = new VBox(2, nameLabel, metaLabel);
+                HBox.setHgrow(textBox, Priority.ALWAYS);
+
+                Label roleBadge = new Label(access.getRole());
+                roleBadge.getStyleClass().addAll("role-badge",
+                        "EDITOR".equals(access.getRole()) ? "role-badge-owner" : "role-badge-member");
+
+                card.getChildren().addAll(avatar, textBox, roleBadge);
+                setGraphic(card);
                 setText(null);
             }
         });
@@ -3870,184 +7887,395 @@ public class MainController implements Initializable {
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Share Workspace");
-        dialog.setHeaderText("Invite someone by email — no team required, just like sharing a doc.");
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("share-dialog-pane");
+
+        // --- Header with Badge and Workspace Switcher ---
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinWidth(38);
+        headerBadge.setMaxWidth(38);
+        headerBadge.setMinHeight(38);
+        headerBadge.setMaxHeight(38);
+
+        javafx.scene.shape.SVGPath usersIcon = new javafx.scene.shape.SVGPath();
+        usersIcon.setContent("M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z");
+        usersIcon.setStyle("-fx-fill: -accent;");
+        usersIcon.setScaleX(1.1);
+        usersIcon.setScaleY(1.1);
+        headerBadge.getChildren().add(usersIcon);
+
+        Label titleLabel = new Label("Share Workspace");
+        titleLabel.getStyleClass().add("share-title");
+        Label subtitleLabel = new Label("Invite teammates and manage access permissions");
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        titleBox.setMinWidth(Region.USE_PREF_SIZE);
+
+        javafx.scene.shape.SVGPath folderIcon = new javafx.scene.shape.SVGPath();
+        folderIcon.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+        folderIcon.setStyle("-fx-fill: -text-muted;");
+        folderIcon.setScaleX(0.85);
+        folderIcon.setScaleY(0.85);
+
+        Label wsTextLabel = new Label("Workspace:");
+        wsTextLabel.getStyleClass().add("share-ws-label");
+        wsTextLabel.setMinWidth(Region.USE_PREF_SIZE);
 
         ComboBox<String> workspaceCombo = new ComboBox<>();
-        workspaceCombo.setPromptText("Loading your workspaces...");
+        workspaceCombo.getStyleClass().add("share-ws-combo");
+        workspaceCombo.setPromptText("Loading workspaces...");
+        workspaceCombo.setPrefWidth(180);
+        workspaceCombo.setMinWidth(150);
         Map<String, Long> workspaceIds = new LinkedHashMap<>();
 
-        TextField emailField = new TextField();
-        emailField.setPromptText("teammate@example.com");
+        HBox wsSelectorBox = new HBox(8, folderIcon, wsTextLabel, workspaceCombo);
+        wsSelectorBox.setAlignment(Pos.CENTER_LEFT);
+        wsSelectorBox.getStyleClass().add("share-ws-chip");
+        wsSelectorBox.setMinWidth(Region.USE_PREF_SIZE);
+
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        headerSpacer.setMinWidth(16);
+
+        HBox headerRow = new HBox(12, headerBadge, titleBox, headerSpacer, wsSelectorBox);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Interactive Status Alert Banner ---
+        HBox statusBanner = new HBox(8);
+        statusBanner.getStyleClass().add("share-status-banner");
+        statusBanner.setAlignment(Pos.CENTER_LEFT);
+        statusBanner.setVisible(false);
+        statusBanner.setManaged(false);
+
+        Label statusIcon = new Label();
+        statusIcon.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+        Label statusText = new Label();
+        statusText.setWrapText(true);
+        statusText.setMaxWidth(560);
+        HBox.setHgrow(statusText, Priority.ALWAYS);
+
+        Button dismissBannerBtn = new Button("✕");
+        dismissBannerBtn.getStyleClass().add("share-text-btn");
+        dismissBannerBtn.setOnAction(e -> {
+            statusBanner.setVisible(false);
+            statusBanner.setManaged(false);
+        });
+        statusBanner.getChildren().addAll(statusIcon, statusText, dismissBannerBtn);
+
+        // Helper to show status message smoothly
+        BiConsumer<String, Boolean> showStatus = (msg, isError) -> {
+            statusBanner.getStyleClass().removeAll("share-status-success", "share-status-error");
+            if (isError) {
+                statusBanner.getStyleClass().add("share-status-error");
+                statusIcon.setText("⚠");
+            } else {
+                statusBanner.getStyleClass().add("share-status-success");
+                statusIcon.setText("✓");
+            }
+            statusText.setText(msg);
+            statusBanner.setVisible(true);
+            statusBanner.setManaged(true);
+        };
+
+        // --- Quick Invite Card ---
+        VBox inviteCard = new VBox(10);
+        inviteCard.getStyleClass().add("share-card");
+
+        Label inviteCardTitle = new Label("ADD OR INVITE COLLABORATOR");
+        inviteCardTitle.getStyleClass().add("share-card-header");
+
+        Region inviteCardSpacer = new Region();
+        HBox.setHgrow(inviteCardSpacer, Priority.ALWAYS);
+
+        Button toggleTeamBtn = new Button("Assign Entire Team ▾");
+        toggleTeamBtn.getStyleClass().add("share-text-btn");
+
+        HBox inviteCardHeader = new HBox(8, inviteCardTitle, inviteCardSpacer, toggleTeamBtn);
+        inviteCardHeader.setAlignment(Pos.CENTER_LEFT);
+
+        record ShareTeammateOption(Long userId, String username, String email, Long teamId, String teamName, String display) {}
+        Map<String, ShareTeammateOption> teammateLookup = new LinkedHashMap<>();
+        List<ShareTeammateOption> allTeammates = new ArrayList<>();
+
+        ComboBox<String> collaboratorCombo = new ComboBox<>();
+        collaboratorCombo.setEditable(true);
+        collaboratorCombo.setPromptText("Select team member or enter email...");
+        collaboratorCombo.getStyleClass().add("share-ws-combo");
+        collaboratorCombo.getEditor().setStyle("-fx-font-size: 12px;");
+        HBox.setHgrow(collaboratorCombo, Priority.ALWAYS);
+
+        collaboratorCombo.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    ShareTeammateOption opt = teammateLookup.get(item);
+                    if (opt != null) {
+                        HBox cellBox = new HBox(8);
+                        cellBox.setAlignment(Pos.CENTER_LEFT);
+
+                        Label iconLabel = new Label("👤");
+                        iconLabel.setStyle("-fx-font-size: 12px;");
+
+                        Label name = new Label(opt.username());
+                        name.setStyle("-fx-font-weight: bold; -fx-text-fill: -text-primary; -fx-font-size: 12px;");
+
+                        Label email = new Label(opt.email() != null ? opt.email() : "");
+                        email.setStyle("-fx-text-fill: -text-muted; -fx-font-size: 11px;");
+
+                        Region spacer = new Region();
+                        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                        Label teamTag = new Label(opt.teamName());
+                        teamTag.setStyle("-fx-font-size: 10px; -fx-text-fill: -accent; -fx-background-color: -accent-soft; -fx-background-radius: 4px; -fx-padding: 2 6 2 6;");
+
+                        cellBox.getChildren().addAll(iconLabel, name, email, spacer, teamTag);
+                        setGraphic(cellBox);
+                        setText(null);
+                    } else {
+                        setText(item);
+                        setGraphic(null);
+                    }
+                }
+            }
+        });
+
+        Map<Long, WorkspaceAccessResponse> activeAccessByUser = new HashMap<>();
+        Map<String, WorkspaceAccessResponse> activeAccessByEmail = new HashMap<>();
+
+        Button clearBtn = new Button("✕");
+        clearBtn.getStyleClass().add("share-clear-btn");
+        clearBtn.setTooltip(new Tooltip("Clear selection"));
+        clearBtn.setVisible(false);
+        clearBtn.setManaged(false);
+
+        HBox comboWithClear = new HBox(4, collaboratorCombo, clearBtn);
+        comboWithClear.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(collaboratorCombo, Priority.ALWAYS);
+        HBox.setHgrow(comboWithClear, Priority.ALWAYS);
+
+        Label modeBadge = new Label();
+        modeBadge.setStyle("-fx-font-size: 10px; -fx-padding: 2 6 2 6; -fx-background-radius: 4px; -fx-font-weight: bold;");
+        modeBadge.setVisible(false);
+        modeBadge.setManaged(false);
+
+        VBox inputWithBadge = new VBox(4, comboWithClear, modeBadge);
+        inputWithBadge.setMinWidth(220);
+        HBox.setHgrow(inputWithBadge, Priority.ALWAYS);
+
         ComboBox<String> roleCombo = new ComboBox<>();
         roleCombo.getItems().addAll("EDITOR", "VIEWER");
         roleCombo.setValue("EDITOR");
-        HBox inviteRow = new HBox(8, emailField, roleCombo);
-        HBox.setHgrow(emailField, Priority.ALWAYS);
+        roleCombo.getStyleClass().add("share-role-combo");
+        roleCombo.setMinWidth(100);
+        roleCombo.setPrefWidth(100);
+        roleCombo.setMaxWidth(100);
 
-        // Environments stay opt-in even in the simple flow — checking
-        // one just means "also let them see this environment."
         List<EnvironmentResponse> workspaceEnvironments = new ArrayList<>();
         Set<Long> selectedEnvironmentIds = new HashSet<>();
-        Button chooseEnvBtn = new Button("Environments: None");
+        Button chooseEnvBtn = new Button("Environments: All");
+        chooseEnvBtn.getStyleClass().add("share-env-btn");
+        chooseEnvBtn.setMinWidth(Region.USE_PREF_SIZE);
         chooseEnvBtn.setOnAction(e -> {
             if (workspaceEnvironments.isEmpty()) {
-                AlertUtils.showError("This workspace has no environments to choose from.");
+                showStatus.accept("This workspace currently has no environments defined.", true);
                 return;
             }
-            openEnvironmentPickerPopup(workspaceEnvironments, selectedEnvironmentIds,
-                    () -> chooseEnvBtn.setText("Environments: "
-                            + (selectedEnvironmentIds.isEmpty() ? "None" : selectedEnvironmentIds.size() + " selected")));
-        });
-
-        Button sendInviteBtn = new Button("Send Invite");
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(520);
-
-        TableView<WorkspaceInvitationResponse> pendingTable = new TableView<>();
-        TableColumn<WorkspaceInvitationResponse, String> pendingEmailCol = new TableColumn<>("Email");
-        pendingEmailCol.setCellValueFactory(new PropertyValueFactory<>("email"));
-        TableColumn<WorkspaceInvitationResponse, String> pendingRoleCol = new TableColumn<>("Role");
-        pendingRoleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
-        TableColumn<WorkspaceInvitationResponse, Void> pendingRevokeCol = new TableColumn<>("");
-        pendingRevokeCol.setCellFactory(col -> new TableCell<>() {
-            private final Button revokeBtn = new Button("Cancel");
-            @Override
-            protected void updateItem(Void ignored, boolean empty) {
-                super.updateItem(ignored, empty);
-                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    return;
-                }
-                WorkspaceInvitationResponse invite = (WorkspaceInvitationResponse) getTableRow().getItem();
-                revokeBtn.setOnAction(e -> {
-                    Long wsId = workspaceIds.get(workspaceCombo.getValue());
-                    if (wsId == null) {
-                        return;
+            openEnvironmentPickerPopup(workspaceEnvironments, selectedEnvironmentIds, () -> {
+                if (selectedEnvironmentIds.isEmpty()) {
+                    chooseEnvBtn.setText("Environments: All");
+                    chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+                } else {
+                    chooseEnvBtn.setText("Environments: " + selectedEnvironmentIds.size() + " selected");
+                    if (!chooseEnvBtn.getStyleClass().contains("share-env-btn-active")) {
+                        chooseEnvBtn.getStyleClass().add("share-env-btn-active");
                     }
-                    new Thread(() -> {
-                        boolean ok = WorkspaceInvitationService.revokeInvitation(wsId, invite.getId());
-                        Platform.runLater(() -> {
-                            if (ok) {
-                                pendingTable.getItems().remove(invite);
-                            }
-                        });
-                    }).start();
-                });
-                setGraphic(revokeBtn);
-            }
-        });
-        pendingTable.getColumns().addAll(pendingEmailCol, pendingRoleCol, pendingRevokeCol);
-        pendingTable.setPrefSize(520, 100);
-        pendingTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        pendingTable.setPlaceholder(new Label("No pending invitations."));
-
-        TableView<WorkspaceAccessResponse> accessTable = new TableView<>();
-        TableColumn<WorkspaceAccessResponse, String> accessNameCol = new TableColumn<>("Username");
-        accessNameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
-        TableColumn<WorkspaceAccessResponse, Void> accessRoleCol = new TableColumn<>("Role");
-        accessRoleCol.setCellFactory(col -> new TableCell<>() {
-            @Override
-            protected void updateItem(Void ignored, boolean empty) {
-                super.updateItem(ignored, empty);
-                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    return;
                 }
-                WorkspaceAccessResponse access = (WorkspaceAccessResponse) getTableRow().getItem();
-                ComboBox<String> roleBox = new ComboBox<>();
-                roleBox.getItems().addAll("EDITOR", "VIEWER");
-                roleBox.setValue(access.getRole());
-                roleBox.valueProperty().addListener((obs, was, isNow) -> {
-                    if (isNow != null && !isNow.equals(was)) {
-                        new Thread(() -> WorkspaceSharingService.updateAccessRole(
-                                access.getWorkspaceId(), access.getUserId(), isNow)).start();
+            });
+        });
+
+        Button sendInviteBtn = new Button("Add / Invite");
+        sendInviteBtn.getStyleClass().addAll("button", "button-primary");
+        sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+        sendInviteBtn.setMinWidth(Region.USE_PREF_SIZE);
+
+        HBox inviteRow = new HBox(8, inputWithBadge, roleCombo, chooseEnvBtn, sendInviteBtn);
+        inviteRow.setAlignment(Pos.CENTER_LEFT);
+
+        Function<String, ShareTeammateOption> findMatchingTeammate = raw -> {
+            if (raw == null || raw.trim().isEmpty()) {
+                return null;
+            }
+            String trimmed = raw.trim();
+            ShareTeammateOption opt = teammateLookup.get(trimmed);
+            if (opt != null) return opt;
+            opt = teammateLookup.get(trimmed.toLowerCase());
+            if (opt != null) return opt;
+            if (trimmed.contains("<") && trimmed.contains(">")) {
+                int start = trimmed.indexOf('<') + 1;
+                int end = trimmed.indexOf('>', start);
+                if (end > start) {
+                    String emailPart = trimmed.substring(start, end).trim();
+                    ShareTeammateOption optEmail = teammateLookup.get(emailPart.toLowerCase());
+                    if (optEmail != null) return optEmail;
+                }
+            }
+            for (ShareTeammateOption to : allTeammates) {
+                if (to.username() != null && to.username().equalsIgnoreCase(trimmed)) {
+                    return to;
+                }
+                if (to.email() != null && to.email().equalsIgnoreCase(trimmed)) {
+                    return to;
+                }
+                if (to.display() != null && to.display().equalsIgnoreCase(trimmed)) {
+                    return to;
+                }
+            }
+            return null;
+        };
+
+        Consumer<String> updateMode = text -> {
+            String q = text == null ? "" : text.trim();
+            if (q.isEmpty()) {
+                clearBtn.setVisible(false);
+                clearBtn.setManaged(false);
+                modeBadge.setVisible(false);
+                modeBadge.setManaged(false);
+                sendInviteBtn.setText("Add / Invite");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+                return;
+            }
+            clearBtn.setVisible(true);
+            clearBtn.setManaged(true);
+
+            ShareTeammateOption matched = findMatchingTeammate.apply(q);
+            WorkspaceAccessResponse existing = null;
+            if (matched != null && matched.userId() != null) {
+                existing = activeAccessByUser.get(matched.userId());
+            }
+            if (existing == null && matched != null && matched.email() != null) {
+                existing = activeAccessByEmail.get(matched.email().toLowerCase().trim());
+            }
+            if (existing == null) {
+                String emailToCheck = q.toLowerCase();
+                if (q.contains("<") && q.contains(">")) {
+                    int start = q.indexOf('<') + 1;
+                    int end = q.indexOf('>', start);
+                    if (end > start) {
+                        emailToCheck = q.substring(start, end).trim().toLowerCase();
                     }
-                });
-                setGraphic(roleBox);
-            }
-        });
-        TableColumn<WorkspaceAccessResponse, Void> accessEnvCol = new TableColumn<>("Environments");
-        accessEnvCol.setCellFactory(col -> new TableCell<>() {
-            @Override
-            protected void updateItem(Void ignored, boolean empty) {
-                super.updateItem(ignored, empty);
-                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    return;
                 }
-                WorkspaceAccessResponse access = (WorkspaceAccessResponse) getTableRow().getItem();
-                Button editBtn = new Button();
-                int currentCount = access.getAllowedEnvironmentIds() != null ? access.getAllowedEnvironmentIds().size() : 0;
-                editBtn.setText(currentCount == 0 ? "None" : currentCount + " selected");
-                editBtn.setOnAction(e -> {
-                    new Thread(() -> {
-                        Optional<WorkspaceContentsResponse> contents =
-                                WorkspaceSharingService.getWorkspaceContents(access.getWorkspaceId());
-                        Platform.runLater(() -> {
-                            List<EnvironmentResponse> available = contents.map(WorkspaceContentsResponse::getEnvironments)
-                                    .orElse(List.of());
-                            if (available.isEmpty()) {
-                                AlertUtils.showError("This workspace has no environments to choose from.");
-                                return;
-                            }
-                            Set<Long> selected = access.getAllowedEnvironmentIds() != null
-                                    ? new HashSet<>(access.getAllowedEnvironmentIds()) : new HashSet<>();
-                            openEnvironmentPickerPopup(available, selected, () -> {
-                                editBtn.setText(selected.isEmpty() ? "None" : selected.size() + " selected");
-                                new Thread(() -> WorkspaceSharingService.updateAccessEnvironments(
-                                        access.getWorkspaceId(), access.getUserId(), new ArrayList<>(selected))).start();
-                            });
-                        });
-                    }).start();
-                });
-                setGraphic(editBtn);
+                existing = activeAccessByEmail.get(emailToCheck);
             }
-        });
-        TableColumn<WorkspaceAccessResponse, Void> accessRevokeCol = new TableColumn<>("");
-        accessRevokeCol.setCellFactory(col -> new TableCell<>() {
-            private final Button removeBtn = new Button("Remove");
-            @Override
-            protected void updateItem(Void ignored, boolean empty) {
-                super.updateItem(ignored, empty);
-                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
-                    setGraphic(null);
-                    return;
-                }
-                WorkspaceAccessResponse access = (WorkspaceAccessResponse) getTableRow().getItem();
-                removeBtn.setOnAction(e -> new Thread(() -> {
-                    boolean ok = WorkspaceSharingService.revokeAccess(access.getWorkspaceId(), access.getUserId());
-                    Platform.runLater(() -> {
-                        if (ok) {
-                            accessTable.getItems().remove(access);
-                        }
-                    });
-                }).start());
-                setGraphic(removeBtn);
-            }
-        });
-        accessTable.getColumns().addAll(accessNameCol, accessRoleCol, accessEnvCol, accessRevokeCol);
-        accessTable.setPrefSize(520, 100);
-        accessTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        accessTable.setPlaceholder(new Label("Nobody has access to this workspace yet."));
 
-        // Bulk convenience — invite everyone on a team at once instead
-        // of one email at a time. Uses the exact same invitation path
-        // as a single invite (see WorkspaceInvitationService), just
-        // looped over the team's members.
+            if (existing != null) {
+                String teamTag = matched != null ? " • Team: " + matched.teamName() : "";
+                modeBadge.setText("✓ Already a Collaborator" + teamTag);
+                modeBadge.setStyle("-fx-font-size: 11px; -fx-text-fill: #2563eb; -fx-padding: 3 10 3 10; -fx-background-color: rgba(37, 99, 235, 0.12); -fx-background-radius: 12px; -fx-font-weight: bold;");
+                sendInviteBtn.setText("Update Access");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16; -fx-background-color: #2563eb; -fx-text-fill: white;");
+            } else if (matched != null) {
+                sendInviteBtn.setText("Add to Workspace");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16; -fx-background-color: #10b981; -fx-text-fill: white;");
+                modeBadge.setText("⚡ Team Member (" + matched.teamName() + ")");
+                modeBadge.setStyle("-fx-font-size: 11px; -fx-text-fill: #059669; -fx-padding: 3 10 3 10; -fx-background-color: rgba(16, 185, 129, 0.12); -fx-background-radius: 12px; -fx-font-weight: bold;");
+            } else {
+                sendInviteBtn.setText("Send Invite");
+                sendInviteBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+                modeBadge.setText("✉ External Collaborator (Invite by email)");
+                modeBadge.setStyle("-fx-font-size: 11px; -fx-text-fill: #d97706; -fx-padding: 3 10 3 10; -fx-background-color: rgba(245, 158, 11, 0.12); -fx-background-radius: 12px; -fx-font-weight: bold;");
+            }
+            modeBadge.setVisible(true);
+            modeBadge.setManaged(true);
+        };
+
+        clearBtn.setOnAction(e -> {
+            collaboratorCombo.setValue(null);
+            collaboratorCombo.getEditor().clear();
+            selectedEnvironmentIds.clear();
+            chooseEnvBtn.setText("Environments: All");
+            chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+            updateMode.accept("");
+            collaboratorCombo.requestFocus();
+        });
+
+        collaboratorCombo.getEditor().textProperty().addListener((obs, oldV, newV) -> updateMode.accept(newV));
+        collaboratorCombo.valueProperty().addListener((obs, oldV, newV) -> updateMode.accept(newV));
+
+        // --- Collapsible Team Bulk Invite Box ---
+        VBox teamBox = new VBox(8);
+        teamBox.setStyle("-fx-padding: 10 0 0 0; -fx-border-color: -border-subtle transparent transparent transparent; -fx-border-width: 1 0 0 0;");
+        teamBox.setVisible(false);
+        teamBox.setManaged(false);
+
+        Label teamPromptLabel = new Label("Select a team you own/admin to assign all members at once:");
+        teamPromptLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+
         ComboBox<String> bulkTeamCombo = new ComboBox<>();
-        bulkTeamCombo.setPromptText("Choose a team");
+        bulkTeamCombo.setPromptText("Select a team...");
+        bulkTeamCombo.setPrefWidth(200);
         Map<String, Long> bulkTeamIds = new LinkedHashMap<>();
+
         ComboBox<String> bulkRoleCombo = new ComboBox<>();
         bulkRoleCombo.getItems().addAll("EDITOR", "VIEWER");
         bulkRoleCombo.setValue("EDITOR");
-        Button inviteTeamBtn = new Button("Invite All Members");
-        HBox bulkRow = new HBox(8, bulkTeamCombo, bulkRoleCombo, inviteTeamBtn);
-        Label bulkStatusLabel = new Label();
-        bulkStatusLabel.setWrapText(true);
-        bulkStatusLabel.setMaxWidth(520);
+        bulkRoleCombo.getStyleClass().add("share-role-combo");
+        bulkRoleCombo.setMinWidth(95);
+        bulkRoleCombo.setPrefWidth(100);
 
+        Button inviteTeamBtn = new Button("Assign Entire Team (Instant)");
+        inviteTeamBtn.getStyleClass().addAll("button", "button-primary");
+        inviteTeamBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
+        inviteTeamBtn.setMinWidth(Region.USE_PREF_SIZE);
+
+        HBox bulkRow = new HBox(8, bulkTeamCombo, bulkRoleCombo, inviteTeamBtn);
+        bulkRow.setAlignment(Pos.CENTER_LEFT);
+        teamBox.getChildren().addAll(teamPromptLabel, bulkRow);
+
+        toggleTeamBtn.setOnAction(e -> {
+            boolean showing = !teamBox.isVisible();
+            teamBox.setVisible(showing);
+            teamBox.setManaged(showing);
+            toggleTeamBtn.setText(showing ? "Hide team assignment ▴" : "Assign Entire Team ▾");
+        });
+
+        inviteCard.getChildren().addAll(inviteCardHeader, inviteRow, teamBox);
+
+        // --- Tabs for Active Collaborators and Pending Invitations ---
+        TabPane tabPane = new TabPane();
+        tabPane.getStyleClass().add("share-tab-pane");
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        Tab collaboratorsTab = new Tab("Collaborators (0)");
+        VBox collaboratorsContainer = new VBox(8);
+        collaboratorsContainer.setPadding(new Insets(10, 2, 10, 2));
+        ScrollPane collabScroll = new ScrollPane(collaboratorsContainer);
+        collabScroll.getStyleClass().add("share-scroll-area");
+        collabScroll.setFitToWidth(true);
+        collabScroll.setPrefHeight(210);
+        collabScroll.setMinHeight(140);
+        collaboratorsTab.setContent(collabScroll);
+
+        Tab pendingTab = new Tab("Pending (0)");
+        VBox pendingContainer = new VBox(8);
+        pendingContainer.setPadding(new Insets(10, 2, 10, 2));
+        ScrollPane pendingScroll = new ScrollPane(pendingContainer);
+        pendingScroll.getStyleClass().add("share-scroll-area");
+        pendingScroll.setFitToWidth(true);
+        pendingScroll.setPrefHeight(210);
+        pendingScroll.setMinHeight(140);
+        pendingTab.setContent(pendingScroll);
+
+        tabPane.getTabs().addAll(collaboratorsTab, pendingTab);
+
+        // Load owned/admin teams and active teammates in background
         new Thread(() -> {
             Optional<List<TeamResponse>> teams = TeamService.getMyTeams();
             Platform.runLater(() -> teams.ifPresent(list -> list.stream()
@@ -4055,24 +8283,38 @@ public class MainController implements Initializable {
                     .forEach(t -> {
                         bulkTeamIds.put(t.getName(), t.getId());
                         bulkTeamCombo.getItems().add(t.getName());
+
+                        new Thread(() -> {
+                            Optional<List<TeamMemberResponse>> membersOpt = TeamService.getMembers(t.getId());
+                            Platform.runLater(() -> membersOpt.ifPresent(members -> {
+                                for (TeamMemberResponse m : members) {
+                                    String display = m.getUsername() + (m.getEmail() != null && !m.getEmail().isBlank() ? " <" + m.getEmail() + ">" : "");
+                                    ShareTeammateOption opt = new ShareTeammateOption(m.getUserId(), m.getUsername(), m.getEmail(), t.getId(), t.getName(), display);
+                                    if (!teammateLookup.containsKey(display)) {
+                                        allTeammates.add(opt);
+                                        teammateLookup.put(display, opt);
+                                        if (m.getEmail() != null && !m.getEmail().isBlank()) {
+                                            teammateLookup.put(m.getEmail().toLowerCase(), opt);
+                                        }
+                                        if (m.getUsername() != null && !m.getUsername().isBlank()) {
+                                            teammateLookup.put(m.getUsername().toLowerCase(), opt);
+                                        }
+                                        collaboratorCombo.getItems().add(display);
+                                    }
+                                }
+                            }));
+                        }).start();
                     })));
         }).start();
 
-        VBox content = new VBox(10,
-                new Label("Workspace"), workspaceCombo,
-                new Label("Invite by email"), inviteRow, chooseEnvBtn, sendInviteBtn, statusLabel,
-                new Separator(),
-                new Label("Or invite a whole team at once"), bulkRow, bulkStatusLabel,
-                new Separator(),
-                new Label("Pending Invitations"), pendingTable,
-                new Label("Current Access"), accessTable);
-        content.setPadding(new Insets(10));
-        content.setPrefWidth(560);
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(560);
-        dialog.getDialogPane().setContent(scrollPane);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        // Main Dialog Content Box
+        VBox mainContent = new VBox(12, headerRow, statusBanner, inviteCard, tabPane);
+        mainContent.setPadding(new Insets(16));
+        mainContent.setPrefSize(740, 520);
+        dialog.getDialogPane().setContent(mainContent);
+        dialog.getDialogPane().setPrefSize(750, 560);
+        dialog.getDialogPane().setMinSize(700, 500);
+        initAndStyleDialog(dialog);
 
         Runnable[] refreshLists = new Runnable[1];
         refreshLists[0] = () -> {
@@ -4081,32 +8323,286 @@ public class MainController implements Initializable {
                 return;
             }
             new Thread(() -> {
-                Optional<List<WorkspaceInvitationResponse>> pending =
+                Optional<List<WorkspaceInvitationResponse>> pendingOpt =
                         WorkspaceInvitationService.getPendingInvitations(workspaceId);
-                Optional<List<WorkspaceAccessResponse>> access =
+                Optional<List<WorkspaceAccessResponse>> accessOpt =
                         WorkspaceSharingService.getWorkspaceAccessList(workspaceId);
-                Optional<WorkspaceContentsResponse> contents =
+                Optional<WorkspaceContentsResponse> contentsOpt =
                         WorkspaceSharingService.getWorkspaceContents(workspaceId);
+
                 Platform.runLater(() -> {
-                    pending.ifPresent(list -> pendingTable.getItems().setAll(list));
-                    access.ifPresent(list -> accessTable.getItems().setAll(list));
                     workspaceEnvironments.clear();
-                    selectedEnvironmentIds.clear();
-                    chooseEnvBtn.setText("Environments: None");
-                    contents.ifPresent(wc -> {
+                    contentsOpt.ifPresent(wc -> {
                         if (wc.getEnvironments() != null) {
                             workspaceEnvironments.addAll(wc.getEnvironments());
                         }
                     });
+
+                    // Build Collaborators UI
+                    collaboratorsContainer.getChildren().clear();
+                    List<WorkspaceAccessResponse> accessList = accessOpt.orElse(List.of());
+                    collaboratorsTab.setText("Collaborators (" + accessList.size() + ")");
+
+                    activeAccessByUser.clear();
+                    activeAccessByEmail.clear();
+                    for (WorkspaceAccessResponse acc : accessList) {
+                        if (acc.getUserId() != null) {
+                            activeAccessByUser.put(acc.getUserId(), acc);
+                        }
+                        if (acc.getEmail() != null && !acc.getEmail().isBlank()) {
+                            activeAccessByEmail.put(acc.getEmail().toLowerCase().trim(), acc);
+                        }
+                    }
+                    String currentVal = collaboratorCombo.getEditor().getText();
+                    if (currentVal == null || currentVal.isBlank()) {
+                        currentVal = collaboratorCombo.getValue();
+                    }
+                    updateMode.accept(currentVal);
+
+                    if (accessList.isEmpty()) {
+                        VBox emptyBox = new VBox(8);
+                        emptyBox.getStyleClass().add("share-empty-box");
+                        javafx.scene.shape.SVGPath emptyUsersSvg = new javafx.scene.shape.SVGPath();
+                        emptyUsersSvg.setContent("M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z");
+                        emptyUsersSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                        emptyUsersSvg.setScaleX(1.3);
+                        emptyUsersSvg.setScaleY(1.3);
+                        Label emptyTitle = new Label("No active collaborators yet");
+                        emptyTitle.getStyleClass().add("share-empty-title");
+                        Label emptyDesc = new Label("Send an invitation above to share this workspace with your team.");
+                        emptyDesc.getStyleClass().add("share-empty-desc");
+                        emptyBox.getChildren().addAll(emptyUsersSvg, emptyTitle, emptyDesc);
+                        collaboratorsContainer.getChildren().add(emptyBox);
+                    } else {
+                        for (WorkspaceAccessResponse access : accessList) {
+                            HBox row = new HBox(12);
+                            row.getStyleClass().add("share-row");
+                            row.setAlignment(Pos.CENTER_LEFT);
+
+                            StackPane avatar = createAvatar(access.getUsername());
+
+                            Label nameLabel = new Label(access.getUsername());
+                            nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+                            nameLabel.setMaxWidth(310);
+                            nameLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+                            nameLabel.setTooltip(new Tooltip(access.getUsername()));
+
+                            String subtext = (access.getEmail() != null && !access.getEmail().isBlank() ? access.getEmail() : "")
+                                    + (access.getTeamName() != null && !access.getTeamName().isBlank()
+                                            ? ((access.getEmail() != null && !access.getEmail().isBlank()) ? " • Team: " : "Team: ") + access.getTeamName()
+                                            : " • Direct Member");
+                            Label emailOrRole = new Label(subtext);
+                            emailOrRole.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                            emailOrRole.setMaxWidth(310);
+                            emailOrRole.setTextOverrun(OverrunStyle.ELLIPSIS);
+                            emailOrRole.setTooltip(new Tooltip(subtext));
+
+                            VBox userDetails = new VBox(2, nameLabel, emailOrRole);
+                            userDetails.setMaxWidth(310);
+                            userDetails.setMinWidth(160);
+
+                            Region rowSpacer = new Region();
+                            HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+
+                            Button memberEnvBtn = new Button();
+                            memberEnvBtn.getStyleClass().add("share-row-env-btn");
+                            memberEnvBtn.setMinWidth(85);
+                            memberEnvBtn.setPrefWidth(85);
+                            memberEnvBtn.setMaxWidth(85);
+
+                            int envCount = access.getAllowedEnvironmentIds() != null ? access.getAllowedEnvironmentIds().size() : 0;
+                            if (envCount > 0) {
+                                memberEnvBtn.setText(envCount + " envs");
+                                memberEnvBtn.getStyleClass().add("share-env-btn-active");
+                            } else {
+                                memberEnvBtn.setText("All envs");
+                            }
+                            memberEnvBtn.setOnAction(e -> {
+                                new Thread(() -> {
+                                    Optional<WorkspaceContentsResponse> contents =
+                                            WorkspaceSharingService.getWorkspaceContents(access.getWorkspaceId());
+                                    Platform.runLater(() -> {
+                                        List<EnvironmentResponse> available = contents.map(WorkspaceContentsResponse::getEnvironments)
+                                                .orElse(List.of());
+                                        if (available.isEmpty()) {
+                                            showStatus.accept("This workspace has no environments defined.", true);
+                                            return;
+                                        }
+                                        Set<Long> selected = access.getAllowedEnvironmentIds() != null
+                                                ? new HashSet<>(access.getAllowedEnvironmentIds()) : new HashSet<>();
+                                        openEnvironmentPickerPopup(available, selected, () -> {
+                                            int newCount = selected.size();
+                                            if (newCount > 0) {
+                                                memberEnvBtn.setText(newCount + " envs");
+                                                if (!memberEnvBtn.getStyleClass().contains("share-env-btn-active")) {
+                                                    memberEnvBtn.getStyleClass().add("share-env-btn-active");
+                                                }
+                                            } else {
+                                                memberEnvBtn.setText("All envs");
+                                                memberEnvBtn.getStyleClass().remove("share-env-btn-active");
+                                            }
+                                            new Thread(() -> WorkspaceSharingService.updateAccessEnvironments(
+                                                    access.getWorkspaceId(), access.getUserId(), new ArrayList<>(selected))).start();
+                                        });
+                                    });
+                                }).start();
+                            });
+
+                            ComboBox<String> memberRoleCombo = new ComboBox<>();
+                            memberRoleCombo.getItems().addAll("EDITOR", "VIEWER");
+                            memberRoleCombo.setValue(access.getRole());
+                            memberRoleCombo.getStyleClass().add("share-role-combo");
+                            memberRoleCombo.setMinWidth(100);
+                            memberRoleCombo.setPrefWidth(100);
+                            memberRoleCombo.setMaxWidth(100);
+                            memberRoleCombo.valueProperty().addListener((obs, was, isNow) -> {
+                                if (isNow != null && !isNow.equals(was)) {
+                                    new Thread(() -> {
+                                        boolean ok = WorkspaceSharingService.updateAccessRole(
+                                                access.getWorkspaceId(), access.getUserId(), isNow);
+                                        Platform.runLater(() -> {
+                                            if (ok) {
+                                                showStatus.accept("Updated " + access.getUsername() + "'s role to " + isNow + ".", false);
+                                            } else {
+                                                showStatus.accept("Failed to update role for " + access.getUsername() + ".", true);
+                                                memberRoleCombo.setValue(was);
+                                            }
+                                        });
+                                    }).start();
+                                }
+                            });
+
+                            Button removeBtn = new Button("Remove");
+                            removeBtn.getStyleClass().add("share-remove-btn");
+                            removeBtn.setMinWidth(75);
+                            removeBtn.setPrefWidth(75);
+                            removeBtn.setMaxWidth(75);
+                            removeBtn.setOnAction(e -> {
+                                removeBtn.setDisable(true);
+                                new Thread(() -> {
+                                    boolean ok = WorkspaceSharingService.revokeAccess(access.getWorkspaceId(), access.getUserId());
+                                    Platform.runLater(() -> {
+                                        if (ok) {
+                                            showStatus.accept("Removed access for " + access.getUsername() + ".", false);
+                                            collaboratorsContainer.getChildren().remove(row);
+                                            int remaining = collaboratorsContainer.getChildren().size();
+                                            collaboratorsTab.setText("Collaborators (" + remaining + ")");
+                                            if (remaining == 0) {
+                                                refreshLists[0].run();
+                                            }
+                                        } else {
+                                            removeBtn.setDisable(false);
+                                            showStatus.accept("Failed to remove access for " + access.getUsername() + ".", true);
+                                        }
+                                    });
+                                }).start();
+                            });
+
+                            HBox actionsBox = new HBox(8, memberEnvBtn, memberRoleCombo, removeBtn);
+                            actionsBox.setAlignment(Pos.CENTER_RIGHT);
+                            actionsBox.setMinWidth(Region.USE_PREF_SIZE);
+                            actionsBox.setMaxWidth(Region.USE_PREF_SIZE);
+
+                            row.getChildren().addAll(avatar, userDetails, rowSpacer, actionsBox);
+                            collaboratorsContainer.getChildren().add(row);
+                        }
+                    }
+
+                    // Build Pending UI
+                    pendingContainer.getChildren().clear();
+                    List<WorkspaceInvitationResponse> pendingList = pendingOpt.orElse(List.of());
+                    pendingTab.setText("Pending (" + pendingList.size() + ")");
+
+                    if (pendingList.isEmpty()) {
+                        VBox emptyBox = new VBox(8);
+                        emptyBox.getStyleClass().add("share-empty-box");
+                        javafx.scene.shape.SVGPath emptyMailSvg = new javafx.scene.shape.SVGPath();
+                        emptyMailSvg.setContent("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z");
+                        emptyMailSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                        emptyMailSvg.setScaleX(1.3);
+                        emptyMailSvg.setScaleY(1.3);
+                        Label emptyTitle = new Label("No pending invitations");
+                        emptyTitle.getStyleClass().add("share-empty-title");
+                        Label emptyDesc = new Label("Invitations waiting to be accepted will appear here.");
+                        emptyDesc.getStyleClass().add("share-empty-desc");
+                        emptyBox.getChildren().addAll(emptyMailSvg, emptyTitle, emptyDesc);
+                        pendingContainer.getChildren().add(emptyBox);
+                    } else {
+                        for (WorkspaceInvitationResponse invite : pendingList) {
+                            HBox row = new HBox(12);
+                            row.getStyleClass().add("share-row");
+                            row.setAlignment(Pos.CENTER_LEFT);
+
+                            StackPane mailBadge = new StackPane();
+                            mailBadge.getStyleClass().add("share-avatar");
+                            mailBadge.setStyle("-fx-background-color: #f59e0b;");
+                            javafx.scene.shape.SVGPath mailSvg = new javafx.scene.shape.SVGPath();
+                            mailSvg.setContent("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z");
+                            mailSvg.setStyle("-fx-fill: white;");
+                            mailSvg.setScaleX(0.75);
+                            mailSvg.setScaleY(0.75);
+                            mailBadge.getChildren().add(mailSvg);
+
+                            Label emailLabel = new Label(invite.getEmail());
+                            emailLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+                            emailLabel.setMaxWidth(380);
+                            emailLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+                            emailLabel.setTooltip(new Tooltip(invite.getEmail()));
+
+                            Label pendingLabel = new Label("Awaiting acceptance  •  " + invite.getRole());
+                            pendingLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                            VBox inviteDetails = new VBox(2, emailLabel, pendingLabel);
+                            inviteDetails.setMaxWidth(380);
+                            inviteDetails.setMinWidth(160);
+
+                            Region rowSpacer = new Region();
+                            HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+
+                            Button cancelInviteBtn = new Button("Cancel Invitation");
+                            cancelInviteBtn.getStyleClass().add("share-remove-btn");
+                            cancelInviteBtn.setMinWidth(120);
+                            cancelInviteBtn.setPrefWidth(120);
+                            cancelInviteBtn.setMaxWidth(120);
+                            cancelInviteBtn.setOnAction(e -> {
+                                cancelInviteBtn.setDisable(true);
+                                new Thread(() -> {
+                                    boolean ok = WorkspaceInvitationService.revokeInvitation(workspaceId, invite.getId());
+                                    Platform.runLater(() -> {
+                                        if (ok) {
+                                            showStatus.accept("Cancelled invitation to " + invite.getEmail() + ".", false);
+                                            pendingContainer.getChildren().remove(row);
+                                            int remaining = pendingContainer.getChildren().size();
+                                            pendingTab.setText("Pending (" + remaining + ")");
+                                            if (remaining == 0) {
+                                                refreshLists[0].run();
+                                            }
+                                        } else {
+                                            cancelInviteBtn.setDisable(false);
+                                            showStatus.accept("Failed to cancel invitation.", true);
+                                        }
+                                    });
+                                }).start();
+                            });
+
+                            row.getChildren().addAll(mailBadge, inviteDetails, rowSpacer, cancelInviteBtn);
+                            pendingContainer.getChildren().add(row);
+                        }
+                    }
                 });
             }).start();
         };
-        workspaceCombo.valueProperty().addListener((obs, old, val) -> refreshLists[0].run());
+
+        workspaceCombo.valueProperty().addListener((obs, old, val) -> {
+            if (val != null) {
+                statusBanner.setVisible(false);
+                statusBanner.setManaged(false);
+                refreshLists[0].run();
+            }
+        });
 
         new Thread(() -> {
             Optional<List<Workspace>> workspaces = WorkspaceService.getUserWorkspaces();
             Platform.runLater(() -> {
-                workspaceCombo.setPromptText("Choose a workspace");
                 workspaces.ifPresent(list -> list.forEach(w -> {
                     workspaceIds.put(w.getName(), w.getId());
                     workspaceCombo.getItems().add(w.getName());
@@ -4115,7 +8611,11 @@ public class MainController implements Initializable {
                     String currentName = WorkspaceManager.getCurrentWorkspace().getName();
                     if (workspaceCombo.getItems().contains(currentName)) {
                         workspaceCombo.setValue(currentName);
+                    } else if (!workspaceCombo.getItems().isEmpty()) {
+                        workspaceCombo.setValue(workspaceCombo.getItems().get(0));
                     }
+                } else if (!workspaceCombo.getItems().isEmpty()) {
+                    workspaceCombo.setValue(workspaceCombo.getItems().get(0));
                 }
             });
         }).start();
@@ -4123,66 +8623,144 @@ public class MainController implements Initializable {
         sendInviteBtn.setOnAction(e -> {
             Long workspaceId = workspaceIds.get(workspaceCombo.getValue());
             if (workspaceId == null) {
-                statusLabel.setText("Choose a workspace first.");
+                showStatus.accept("Please choose a workspace first.", true);
                 return;
             }
-            String email = emailField.getText() == null ? "" : emailField.getText().trim();
-            if (email.isEmpty()) {
-                statusLabel.setText("Enter an email address first.");
+            String rawInput = collaboratorCombo.getEditor().getText();
+            if (rawInput == null || rawInput.trim().isEmpty()) {
+                rawInput = collaboratorCombo.getValue();
+            }
+            String text = rawInput == null ? "" : rawInput.trim();
+            if (text.isEmpty()) {
+                showStatus.accept("Please select a team member or enter an email address.", true);
                 return;
             }
-            statusLabel.setText("Sending invite...");
-            sendInviteBtn.setDisable(true);
-            InviteToWorkspaceRequest request = new InviteToWorkspaceRequest(
-                    email, roleCombo.getValue(), new ArrayList<>(selectedEnvironmentIds));
-            new Thread(() -> {
-                try {
-                    WorkspaceInvitationService.inviteToWorkspace(workspaceId, request);
-                    Platform.runLater(() -> {
-                        statusLabel.setText("Invite sent to " + email + ".");
-                        sendInviteBtn.setDisable(false);
-                        emailField.clear();
-                        selectedEnvironmentIds.clear();
-                        chooseEnvBtn.setText("Environments: None");
-                        refreshLists[0].run();
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> {
-                        statusLabel.setText("Couldn't send invite: " + WorkspaceInvitationService.friendlyMessage(ex));
-                        sendInviteBtn.setDisable(false);
-                    });
+
+            ShareTeammateOption matched = findMatchingTeammate.apply(text);
+            WorkspaceAccessResponse existing = null;
+            if (matched != null && matched.userId() != null) {
+                existing = activeAccessByUser.get(matched.userId());
+            }
+            if (existing == null && matched != null && matched.email() != null) {
+                existing = activeAccessByEmail.get(matched.email().toLowerCase().trim());
+            }
+            if (existing == null) {
+                String emailToCheck = text.toLowerCase();
+                if (text.contains("<") && text.contains(">")) {
+                    int s = text.indexOf('<') + 1;
+                    int ed = text.indexOf('>', s);
+                    if (ed > s) emailToCheck = text.substring(s, ed).trim().toLowerCase();
                 }
-            }).start();
+                existing = activeAccessByEmail.get(emailToCheck);
+            }
+
+            sendInviteBtn.setDisable(true);
+
+            if (matched != null || existing != null) {
+                Long targetUserId = matched != null ? matched.userId() : existing.getUserId();
+                String targetName = matched != null ? matched.username() : (existing.getUsername() != null ? existing.getUsername() : text);
+                Long targetTeamId = matched != null ? matched.teamId() : null;
+                boolean isUpdate = existing != null;
+
+                showStatus.accept((isUpdate ? "Updating access for " : "Assigning ") + targetName + " to workspace...", false);
+                List<Long> envIds = new ArrayList<>(selectedEnvironmentIds);
+                MemberRoleEntry entry = new MemberRoleEntry(targetUserId, roleCombo.getValue(), envIds);
+                ShareWorkspaceRequest shareReq = new ShareWorkspaceRequest(targetTeamId, List.of(entry));
+                new Thread(() -> {
+                    try {
+                        WorkspaceSharingService.shareWorkspace(workspaceId, shareReq);
+                        Platform.runLater(() -> {
+                            showStatus.accept((isUpdate ? "Updated access for " : "Added ") + targetName + " to workspace.", false);
+                            sendInviteBtn.setDisable(false);
+                            collaboratorCombo.getEditor().clear();
+                            collaboratorCombo.setValue(null);
+                            clearBtn.setVisible(false);
+                            clearBtn.setManaged(false);
+                            modeBadge.setVisible(false);
+                            modeBadge.setManaged(false);
+                            selectedEnvironmentIds.clear();
+                            chooseEnvBtn.setText("Environments: All");
+                            chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+                            refreshLists[0].run();
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> {
+                            sendInviteBtn.setDisable(false);
+                            showStatus.accept("Couldn't " + (isUpdate ? "update access: " : "add teammate: ") + ex.getMessage(), true);
+                        });
+                    }
+                }).start();
+            } else {
+                // EXTERNAL GUEST INVITATION — SENDS EMAIL CODE
+                showStatus.accept("Sending invitation email to " + text + "...", false);
+                InviteToWorkspaceRequest inviteReq = new InviteToWorkspaceRequest(
+                        text, roleCombo.getValue(), new ArrayList<>(selectedEnvironmentIds));
+                new Thread(() -> {
+                    try {
+                        WorkspaceInvitationService.inviteToWorkspace(workspaceId, inviteReq);
+                        Platform.runLater(() -> {
+                            showStatus.accept("Invitation email successfully sent to " + text + ".", false);
+                            sendInviteBtn.setDisable(false);
+                            collaboratorCombo.getEditor().clear();
+                            collaboratorCombo.setValue(null);
+                            clearBtn.setVisible(false);
+                            clearBtn.setManaged(false);
+                            modeBadge.setVisible(false);
+                            modeBadge.setManaged(false);
+                            selectedEnvironmentIds.clear();
+                            chooseEnvBtn.setText("Environments: All");
+                            chooseEnvBtn.getStyleClass().remove("share-env-btn-active");
+                            refreshLists[0].run();
+                        });
+                    } catch (IOException ex) {
+                        Platform.runLater(() -> {
+                            sendInviteBtn.setDisable(false);
+                            showStatus.accept("Couldn't send invite: " + WorkspaceInvitationService.friendlyMessage(ex), true);
+                        });
+                    }
+                }).start();
+            }
         });
 
         inviteTeamBtn.setOnAction(e -> {
             Long workspaceId = workspaceIds.get(workspaceCombo.getValue());
             Long teamId = bulkTeamIds.get(bulkTeamCombo.getValue());
             if (workspaceId == null) {
-                bulkStatusLabel.setText("Choose a workspace first.");
+                showStatus.accept("Please select a workspace first.", true);
                 return;
             }
             if (teamId == null) {
-                bulkStatusLabel.setText("Choose a team first.");
+                showStatus.accept("Please select a team first.", true);
                 return;
             }
-            bulkStatusLabel.setText("Sending invites...");
+            showStatus.accept("Assigning team members to workspace...", false);
             inviteTeamBtn.setDisable(true);
-            InviteTeamRequest request = new InviteTeamRequest(teamId, bulkRoleCombo.getValue(), List.of());
             new Thread(() -> {
                 try {
-                    List<WorkspaceInvitationResponse> sent = WorkspaceInvitationService.inviteTeamMembers(workspaceId, request);
+                    Optional<List<TeamMemberResponse>> membersOpt = TeamService.getMembers(teamId);
+                    List<TeamMemberResponse> members = membersOpt.orElse(List.of());
+                    if (members.isEmpty()) {
+                        Platform.runLater(() -> {
+                            inviteTeamBtn.setDisable(false);
+                            showStatus.accept("The selected team has no members to assign.", true);
+                        });
+                        return;
+                    }
+                    List<Long> envIds = new ArrayList<>(selectedEnvironmentIds);
+                    List<MemberRoleEntry> entries = members.stream()
+                            .map(m -> new MemberRoleEntry(m.getUserId(), bulkRoleCombo.getValue(), envIds))
+                            .toList();
+                    ShareWorkspaceRequest request = new ShareWorkspaceRequest(teamId, entries);
+                    WorkspaceSharingService.shareWorkspace(workspaceId, request);
                     Platform.runLater(() -> {
                         inviteTeamBtn.setDisable(false);
-                        bulkStatusLabel.setText(sent.isEmpty()
-                                ? "Nobody new to invite — everyone on that team already has access or a pending invite."
-                                : "Invited " + sent.size() + " member(s). Adjust their environment access below if needed.");
+                        showStatus.accept("Successfully assigned " + entries.size() + " team member(s) to workspace.", false);
                         refreshLists[0].run();
                     });
-                } catch (IOException ex) {
+                } catch (Exception ex) {
                     Platform.runLater(() -> {
                         inviteTeamBtn.setDisable(false);
-                        bulkStatusLabel.setText("Couldn't invite the team: " + WorkspaceInvitationService.friendlyMessage(ex));
+                        showStatus.accept("Couldn't assign team: " + ex.getMessage(), true);
                     });
                 }
             }).start();
@@ -4200,7 +8778,7 @@ public class MainController implements Initializable {
         dialog.setTitle("Enter Invite Code");
         dialog.setHeaderText("Paste the invite code from the email you received.");
         dialog.setContentText("Code:");
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         dialog.showAndWait().ifPresent(code -> {
             String trimmed = code == null ? "" : code.trim();
@@ -4223,19 +8801,45 @@ public class MainController implements Initializable {
     }
 
 
-    /** Small popup used by the Share dialog's Environments column — a
-     * plain checklist of the workspace's environments, mutating the
-     * passed-in selected set directly and calling onChange so the
-     * button label updates without needing the table to fully refresh. */
+    /** Modern popup used by the Share dialog's Environments column — a
+     * clean checklist of the workspace's environments with quick select all/clear actions,
+     * mutating the passed-in selected set directly and calling onChange so the
+     * button label updates immediately without full refresh. */
     private void openEnvironmentPickerPopup(List<EnvironmentResponse> available, Set<Long> selected, Runnable onChange) {
         Dialog<Void> popup = new Dialog<>();
-        popup.setTitle("Choose Environments");
+        popup.setTitle("Environment Access");
+        popup.setHeaderText(null);
         popup.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        popup.getDialogPane().getStyleClass().add("share-dialog-pane");
+        popup.getDialogPane().setStyle("-fx-pref-width: 440px; -fx-pref-height: 380px; -fx-min-width: 400px; -fx-min-height: 320px;");
 
-        VBox checklist = new VBox(6);
+        Label title = new Label("Select Environments");
+        title.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label desc = new Label("Choose which environments are visible to this collaborator. If none are selected, all environments remain accessible.");
+        desc.setWrapText(true);
+        desc.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+
+        Button selectAllBtn = new Button("Select All");
+        selectAllBtn.getStyleClass().add("share-text-btn");
+
+        Button clearAllBtn = new Button("Clear All");
+        clearAllBtn.getStyleClass().add("share-text-btn");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox quickActions = new HBox(8, selectAllBtn, clearAllBtn);
+        quickActions.setAlignment(Pos.CENTER_RIGHT);
+        HBox topRow = new HBox(title, spacer, quickActions);
+        topRow.setAlignment(Pos.CENTER_LEFT);
+
+        VBox checklist = new VBox(8);
+        checklist.setPadding(new Insets(10));
+        List<CheckBox> checkBoxes = new ArrayList<>();
+
         for (EnvironmentResponse env : available) {
             CheckBox cb = new CheckBox(env.getName());
             cb.setSelected(selected.contains(env.getId()));
+            cb.setStyle("-fx-font-size: 12px; -fx-cursor: hand;");
             cb.selectedProperty().addListener((obs, was, isNow) -> {
                 if (isNow) {
                     selected.add(env.getId());
@@ -4244,13 +8848,57 @@ public class MainController implements Initializable {
                 }
                 onChange.run();
             });
+            checkBoxes.add(cb);
             checklist.getChildren().add(cb);
         }
-        VBox content = new VBox(10, new Label("Visible to this member:"), checklist);
-        content.setPadding(new Insets(10));
+
+        selectAllBtn.setOnAction(e -> {
+            for (CheckBox cb : checkBoxes) {
+                cb.setSelected(true);
+            }
+        });
+
+        clearAllBtn.setOnAction(e -> {
+            for (CheckBox cb : checkBoxes) {
+                cb.setSelected(false);
+            }
+        });
+
+        ScrollPane scroll = new ScrollPane(checklist);
+        scroll.setFitToWidth(true);
+        scroll.getStyleClass().add("share-scroll-area");
+        scroll.setStyle("-fx-background-color: -bg-panel; -fx-background: -bg-panel; -fx-border-color: -border-subtle; -fx-border-radius: 8px; -fx-background-radius: 8px;");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+
+        VBox content = new VBox(10, topRow, desc, scroll);
+        content.setPadding(new Insets(16));
         popup.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(popup.getDialogPane());
+        initAndStyleDialog(popup);
         popup.showAndWait();
+    }
+
+    /** Creates a circular initials avatar badge with deterministic background color. */
+    private StackPane createAvatar(String name) {
+        StackPane avatar = new StackPane();
+        avatar.getStyleClass().add("share-avatar");
+        String initials = "?";
+        if (name != null && !name.trim().isEmpty()) {
+            String trimmed = name.trim();
+            String[] parts = trimmed.split("\\s+");
+            if (parts.length >= 2) {
+                initials = ("" + parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+            } else if (!trimmed.isEmpty()) {
+                initials = ("" + trimmed.charAt(0)).toUpperCase();
+            }
+        }
+        Label text = new Label(initials);
+        text.getStyleClass().add("share-avatar-text");
+        String[] colors = {"#4F46E5", "#0891B2", "#059669", "#D97706", "#DC2626", "#7C3AED", "#DB2777"};
+        int hash = Math.abs((name != null ? name : "").hashCode());
+        String color = colors[hash % colors.length];
+        avatar.setStyle("-fx-background-color: " + color + ";");
+        avatar.getChildren().add(text);
+        return avatar;
     }
 
     /** Read-only browse of a workspace shared with you — collections,
@@ -4262,38 +8910,95 @@ public class MainController implements Initializable {
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(access.getWorkspaceName());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
 
-        Label ownerBadge = new Label("Owner: " + access.getWorkspaceOwnerUsername());
-        ownerBadge.getStyleClass().add("shared-workspace-badge");
+        // --- Header ---
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinSize(38, 38);
+        headerBadge.setMaxSize(38, 38);
+
+        javafx.scene.shape.SVGPath wsIcon = new javafx.scene.shape.SVGPath();
+        wsIcon.setContent("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+        wsIcon.setStyle("-fx-fill: -accent;");
+        wsIcon.setScaleX(1.1);
+        wsIcon.setScaleY(1.1);
+        headerBadge.getChildren().add(wsIcon);
+
+        Label titleLabel = new Label(access.getWorkspaceName());
+        titleLabel.getStyleClass().add("share-title");
+
+        String ownerName = access.getWorkspaceOwnerUsername() != null ? access.getWorkspaceOwnerUsername() : "owner";
+        String subtitleText = "Shared workspace owned by " + ownerName;
+        if (access.getTeamName() != null && !access.getTeamName().isBlank()) {
+            subtitleText += " • via " + access.getTeamName();
+        }
+        Label subtitleLabel = new Label(subtitleText);
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
+
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        titleBox.setMinWidth(Region.USE_PREF_SIZE);
+
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        headerSpacer.setMinWidth(12);
+
         Label roleBadge = new Label(access.getRole());
-        roleBadge.getStyleClass().addAll("shared-workspace-badge",
-                canSend ? "shared-workspace-badge-editor" : "shared-workspace-badge-viewer");
-        HBox badgeRow = new HBox(8, ownerBadge, roleBadge);
-        badgeRow.setAlignment(Pos.CENTER_LEFT);
+        roleBadge.getStyleClass().addAll("role-badge",
+                canSend ? "role-badge-owner" : "role-badge-member");
 
-        Label hintLabel = new Label(canSend
-                ? "Double-click any request to send it."
-                : "Viewer access — browse only.");
-        hintLabel.getStyleClass().add("shared-workspace-hint");
+        Label hintBadge = new Label(canSend ? "Double-click request to send" : "Browse only");
+        hintBadge.getStyleClass().add("shared-workspace-hint");
+        hintBadge.setStyle("-fx-padding: 3 8 3 8; -fx-background-color: -bg-elevated; -fx-background-radius: 10px;");
 
-        VBox headerBox = new VBox(4, badgeRow, hintLabel);
-        headerBox.setPadding(new Insets(0, 0, 12, 0));
+        HBox headerRight = new HBox(8, hintBadge, roleBadge);
+        headerRight.setAlignment(Pos.CENTER_RIGHT);
 
-        // Tracks which node is a request (and which real request it maps
-        // to) vs. a folder vs. a collection, so the cell factory below can
-        // render each differently, and so double-click knows exactly what
-        // it's looking at.
+        HBox headerRow = new HBox(12, headerBadge, titleBox, headerSpacer, headerRight);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Tabs: Collections & Requests, and Environments ---
+        TabPane tabPane = new TabPane();
+        tabPane.getStyleClass().add("share-tab-pane");
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        Tab collectionsTab = new Tab("Collections & Requests");
+        Tab environmentsTab = new Tab("Environments (0)");
+
+        // Collections Content
+        VBox collectionsBox = new VBox(10);
+        collectionsBox.setPadding(new Insets(10, 0, 0, 0));
+
+        TextField filterField = new TextField();
+        filterField.setPromptText("Filter collections and requests...");
+        filterField.getStyleClass().add("search-field");
+        filterField.setStyle("-fx-pref-height: 32px; -fx-font-size: 12px;");
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+
+        Button expandAllBtn = new Button("Expand All");
+        expandAllBtn.getStyleClass().add("share-text-btn");
+
+        Button collapseAllBtn = new Button("Collapse All");
+        collapseAllBtn.getStyleClass().add("share-text-btn");
+
+        HBox filterBar = new HBox(8, filterField, expandAllBtn, collapseAllBtn);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+
         Map<TreeItem<String>, RequestResponse> requestByNode = new HashMap<>();
         Set<TreeItem<String>> folderNodes = new HashSet<>();
+        List<EnvironmentResponse> loadedEnvironments = new ArrayList<>();
 
         TreeItem<String> root = new TreeItem<>(access.getWorkspaceName());
         root.setExpanded(true);
         TreeView<String> tree = new TreeView<>(root);
         tree.setShowRoot(false);
-        tree.setPrefSize(520, 340);
         tree.getStyleClass().add("shared-workspace-tree");
+        VBox.setVgrow(tree, Priority.ALWAYS);
+
         tree.setCellFactory(tv -> new TreeCell<>() {
             @Override
             protected void updateItem(String item, boolean empty) {
@@ -4310,17 +9015,34 @@ public class MainController implements Initializable {
                     methodLabel.getStyleClass().addAll("method-chip",
                             "method-chip-" + req.getMethod().toString().toLowerCase(Locale.ROOT));
                     methodLabel.setMinWidth(48);
+
                     Label nameLabel = new Label(item);
-                    HBox row = new HBox(8, methodLabel, nameLabel);
+                    nameLabel.setStyle("-fx-text-fill: -text-primary; -fx-font-size: 12px;");
+
+                    Region spacer = new Region();
+                    HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                    HBox row = new HBox(8, methodLabel, nameLabel, spacer);
                     row.setAlignment(Pos.CENTER_LEFT);
                     row.getStyleClass().add("shared-workspace-request-row");
+
+                    if (canSend) {
+                        Label runHint = new Label("Send ↗");
+                        runHint.getStyleClass().add("share-text-btn");
+                        runHint.setOnMouseClicked(ev -> {
+                            ev.consume();
+                            openSendSharedRequestDialog(access.getWorkspaceId(), req, loadedEnvironments);
+                        });
+                        row.getChildren().add(runHint);
+                    }
+
                     setGraphic(row);
                     setText(null);
                 } else if (folderNodes.contains(treeItem)) {
                     ImageView icon = new ImageView(new Image(
                             getClass().getResourceAsStream("/images/folder-icon.png")));
-                    icon.setFitHeight(13);
-                    icon.setFitWidth(13);
+                    icon.setFitHeight(14);
+                    icon.setFitWidth(14);
                     icon.setPreserveRatio(true);
                     setGraphic(icon);
                     setText(item);
@@ -4328,8 +9050,8 @@ public class MainController implements Initializable {
                 } else {
                     ImageView icon = new ImageView(new Image(
                             getClass().getResourceAsStream("/images/collection-icon.png")));
-                    icon.setFitHeight(14);
-                    icon.setFitWidth(14);
+                    icon.setFitHeight(15);
+                    icon.setFitWidth(15);
                     icon.setPreserveRatio(true);
                     setGraphic(icon);
                     setText(item);
@@ -4340,73 +9062,113 @@ public class MainController implements Initializable {
             }
         });
 
-        // Environments are shown as real cards you can double-click —
-        // Editors can update the values, Viewers can look but not save.
-        List<EnvironmentResponse> loadedEnvironments = new ArrayList<>();
-        ListView<EnvironmentResponse> environmentsList = new ListView<>();
-        environmentsList.setPrefSize(520, 90);
-        environmentsList.setPlaceholder(new Label("No environments shared with you in this workspace."));
-        environmentsList.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(EnvironmentResponse env, boolean empty) {
-                super.updateItem(env, empty);
-                if (empty || env == null) {
-                    setGraphic(null);
-                    setText(null);
-                    return;
-                }
-                int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
-                Label nameLabel = new Label(env.getName());
-                nameLabel.getStyleClass().add("shared-workspace-env-name");
-                Label countLabel = new Label(varCount + (varCount == 1 ? " variable" : " variables")
-                        + (canSend ? "  ·  double-click to view or edit" : "  ·  double-click to view"));
-                countLabel.getStyleClass().add("shared-workspace-env-count");
-                VBox box = new VBox(2, nameLabel, countLabel);
-                box.getStyleClass().add("shared-workspace-env-row");
-                setGraphic(box);
-                setText(null);
+        expandAllBtn.setOnAction(e -> setTreeExpanded(root, true));
+        collapseAllBtn.setOnAction(e -> setTreeExpanded(root, false));
+
+        filterField.textProperty().addListener((obs, oldVal, query) -> {
+            String q = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
+            if (q.isEmpty()) {
+                setTreeExpanded(root, true);
+            } else {
+                expandMatchingNodes(root, q);
             }
         });
-        environmentsList.setOnMouseClicked(e -> {
-            if (e.getClickCount() != 2) {
-                return;
-            }
-            EnvironmentResponse selected = environmentsList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                openSharedEnvironmentDialog(selected, canSend);
-            }
-        });
+
+        collectionsBox.getChildren().addAll(filterBar, tree);
+        collectionsTab.setContent(collectionsBox);
+
+        // Environments Content
+        VBox environmentsContainer = new VBox(8);
+        environmentsContainer.setPadding(new Insets(12, 4, 12, 4));
+        ScrollPane envScroll = new ScrollPane(environmentsContainer);
+        envScroll.getStyleClass().add("share-scroll-area");
+        envScroll.setFitToWidth(true);
+        environmentsTab.setContent(envScroll);
+
+        tabPane.getTabs().addAll(collectionsTab, environmentsTab);
 
         ProgressIndicator spinner = new ProgressIndicator();
-        spinner.setMaxSize(28, 28);
-        Label statusLabel = new Label("Loading workspace…");
+        spinner.setMaxSize(24, 24);
+        Label statusLabel = new Label("Loading shared workspace contents…");
+        statusLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: -text-muted;");
         HBox loadingRow = new HBox(8, spinner, statusLabel);
         loadingRow.setAlignment(Pos.CENTER_LEFT);
+        loadingRow.setPadding(new Insets(4, 0, 4, 0));
 
-        Label collectionsHeader = new Label("Collections");
-        collectionsHeader.getStyleClass().add("shared-workspace-section-title");
-        Label environmentsHeader = new Label("Environments");
-        environmentsHeader.getStyleClass().add("shared-workspace-section-title");
-
-        VBox content = new VBox(10,
-                headerBox,
-                loadingRow,
-                collectionsHeader, tree,
-                environmentsHeader, environmentsList);
+        VBox content = new VBox(12, headerRow, loadingRow, tabPane);
         content.setPadding(new Insets(16));
-        content.setPrefWidth(560);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
+
+        Runnable renderEnvironments = () -> {
+            environmentsContainer.getChildren().clear();
+            environmentsTab.setText("Environments (" + loadedEnvironments.size() + ")");
+            if (loadedEnvironments.isEmpty()) {
+                VBox emptyBox = new VBox(8);
+                emptyBox.getStyleClass().add("share-empty-box");
+                javafx.scene.shape.SVGPath emptyGlobeSvg = new javafx.scene.shape.SVGPath();
+                emptyGlobeSvg.setContent("M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8 0-.55.06-1.09.17-1.61L9 15.24V17a2 2 0 002 2v.93c.33.05.66.07 1 .07zm6.93-4.16A7.96 7.96 0 0019 12c0-1.42-.37-2.75-1.02-3.91l-4.91 4.91a2 2 0 01-1.41.59h-1.6v2h2a2 2 0 002-2v-.59l5.93-2.16z");
+                emptyGlobeSvg.setStyle("-fx-fill: -text-muted; -fx-opacity: 0.6;");
+                emptyGlobeSvg.setScaleX(1.3);
+                emptyGlobeSvg.setScaleY(1.3);
+                Label emptyTitle = new Label("No environments shared in this workspace");
+                emptyTitle.getStyleClass().add("share-empty-title");
+                Label emptyDesc = new Label("Environments granted to you by the workspace owner will appear here.");
+                emptyDesc.getStyleClass().add("share-empty-desc");
+                emptyBox.getChildren().addAll(emptyGlobeSvg, emptyTitle, emptyDesc);
+                environmentsContainer.getChildren().add(emptyBox);
+            } else {
+                for (EnvironmentResponse env : loadedEnvironments) {
+                    HBox row = new HBox(12);
+                    row.getStyleClass().add("share-row");
+                    row.setAlignment(Pos.CENTER_LEFT);
+
+                    StackPane envIconBadge = new StackPane();
+                    envIconBadge.getStyleClass().add("share-avatar");
+                    envIconBadge.setStyle("-fx-background-color: #0891B2;");
+                    javafx.scene.shape.SVGPath envSvg = new javafx.scene.shape.SVGPath();
+                    envSvg.setContent("M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8 0-.55.06-1.09.17-1.61L9 15.24V17a2 2 0 002 2v.93c.33.05.66.07 1 .07zm6.93-4.16A7.96 7.96 0 0019 12c0-1.42-.37-2.75-1.02-3.91l-4.91 4.91a2 2 0 01-1.41.59h-1.6v2h2a2 2 0 002-2v-.59l5.93-2.16z");
+                    envSvg.setStyle("-fx-fill: white;");
+                    envSvg.setScaleX(0.75);
+                    envSvg.setScaleY(0.75);
+                    envIconBadge.getChildren().add(envSvg);
+
+                    int varCount = env.getVariables() != null ? env.getVariables().size() : 0;
+                    Label nameLabel = new Label(env.getName());
+                    nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: -text-primary;");
+
+                    Label metaLabel = new Label(varCount + (varCount == 1 ? " variable" : " variables")
+                            + " • " + (canSend ? "Double-click to view or edit" : "Double-click to view"));
+                    metaLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -text-muted;");
+                    VBox details = new VBox(2, nameLabel, metaLabel);
+
+                    Region spacer = new Region();
+                    HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                    Button actionBtn = new Button(canSend ? "Edit Variables" : "View Variables");
+                    actionBtn.getStyleClass().add("share-env-btn");
+                    actionBtn.setOnAction(ev -> openSharedEnvironmentDialog(env, canSend));
+
+                    row.setOnMouseClicked(ev -> {
+                        if (ev.getClickCount() == 2) {
+                            openSharedEnvironmentDialog(env, canSend);
+                        }
+                    });
+
+                    row.getChildren().addAll(envIconBadge, details, spacer, actionBtn);
+                    environmentsContainer.getChildren().add(row);
+                }
+            }
+        };
 
         if (canSend) {
             tree.setOnMouseClicked(e -> {
-                if (e.getClickCount() != 2) {
-                    return;
-                }
-                TreeItem<String> selected = tree.getSelectionModel().getSelectedItem();
-                RequestResponse request = selected != null ? requestByNode.get(selected) : null;
-                if (request != null) {
-                    openSendSharedRequestDialog(access.getWorkspaceId(), request, loadedEnvironments);
+                if (e.getClickCount() == 2) {
+                    TreeItem<String> selected = tree.getSelectionModel().getSelectedItem();
+                    RequestResponse req = selected != null ? requestByNode.get(selected) : null;
+                    if (req != null) {
+                        openSendSharedRequestDialog(access.getWorkspaceId(), req, loadedEnvironments);
+                    }
                 }
             });
         }
@@ -4426,16 +9188,6 @@ public class MainController implements Initializable {
                             List<RequestResponse> requests = collection.getRequestResponses() != null
                                     ? collection.getRequestResponses() : List.of();
 
-                            // FIX: this used to only ever attach TOP-LEVEL
-                            // requests directly under the collection —
-                            // anything organized into a folder (the normal
-                            // case for any real collection) never got
-                            // attached anywhere, so folders always looked
-                            // empty and there was nothing to double-click.
-                            // Building this in two passes (create every
-                            // folder node first, then attach by parent)
-                            // handles nested folders correctly regardless
-                            // of what order they come back from the server.
                             Map<Long, TreeItem<String>> folderNodeById = new HashMap<>();
                             for (FolderResponse folder : folders) {
                                 TreeItem<String> folderNode = new TreeItem<>(folder.getName());
@@ -4460,8 +9212,8 @@ public class MainController implements Initializable {
                     }
                     if (wc.getEnvironments() != null) {
                         loadedEnvironments.addAll(wc.getEnvironments());
-                        environmentsList.getItems().setAll(wc.getEnvironments());
                     }
+                    renderEnvironments.run();
                 });
                 if (contents.isEmpty()) {
                     statusLabel.setText("Couldn't load this workspace — you may no longer have access.");
@@ -4475,27 +9227,107 @@ public class MainController implements Initializable {
         dialog.showAndWait();
     }
 
+    private void setTreeExpanded(TreeItem<String> item, boolean expanded) {
+        if (item == null) return;
+        item.setExpanded(expanded);
+        for (TreeItem<String> child : item.getChildren()) {
+            setTreeExpanded(child, expanded);
+        }
+    }
+
+    private boolean expandMatchingNodes(TreeItem<String> item, String query) {
+        if (item == null) return false;
+        boolean childMatched = false;
+        for (TreeItem<String> child : item.getChildren()) {
+            if (expandMatchingNodes(child, query)) {
+                childMatched = true;
+            }
+        }
+        boolean matched = (item.getValue() != null && item.getValue().toLowerCase(Locale.ROOT).contains(query)) || childMatched;
+        item.setExpanded(matched);
+        return matched;
+    }
+
     /** Shows one shared workspace's environment variables — Editors can
-     * change and save them (reusing the exact same update endpoint the
-     * main Environments panel uses; the backend's access guard already
-     * allows this for a shared environment, not just an owned one),
-     * Viewers get a clean read-only view. */
+     * change and save them, Viewers get a clean read-only view. */
     private void openSharedEnvironmentDialog(EnvironmentResponse env, boolean canEdit) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(env.getName());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
+        dialog.getDialogPane().getStyleClass().add("shared-env-dialog");
 
-        Label hintLabel = new Label(canEdit
-                ? "You can edit these values — Save writes back to the real environment."
-                : "Viewer access — values shown read-only.");
-        hintLabel.getStyleClass().add("shared-workspace-hint");
+        // Header
+        StackPane headerBadge = new StackPane();
+        headerBadge.getStyleClass().add("share-header-badge");
+        headerBadge.setMinSize(36, 36);
+        headerBadge.setMaxSize(36, 36);
 
+        javafx.scene.shape.SVGPath globeSvg = new javafx.scene.shape.SVGPath();
+        globeSvg.setContent("M12 2a10 10 0 100 20 10 10 0 000-20zm0 18c-4.41 0-8-3.59-8-8 0-.55.06-1.09.17-1.61L9 15.24V17a2 2 0 002 2v.93c.33.05.66.07 1 .07zm6.93-4.16A7.96 7.96 0 0019 12c0-1.42-.37-2.75-1.02-3.91l-4.91 4.91a2 2 0 01-1.41.59h-1.6v2h2a2 2 0 002-2v-.59l5.93-2.16z");
+        globeSvg.setStyle("-fx-fill: -accent;");
+        globeSvg.setScaleX(1.0);
+        globeSvg.setScaleY(1.0);
+        headerBadge.getChildren().add(globeSvg);
+
+        Label titleLabel = new Label(env.getName());
+        titleLabel.getStyleClass().add("share-title");
+
+        Label subtitleLabel = new Label(canEdit
+                ? "Edit environment variables • Changes sync directly back to the shared workspace"
+                : "Viewer access — variables are displayed read-only");
+        subtitleLabel.getStyleClass().add("share-subtitle");
+        subtitleLabel.setMinWidth(Region.USE_PREF_SIZE);
+
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        HBox headerRow = new HBox(12, headerBadge, titleBox);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Status Banner
+        HBox statusBanner = new HBox(8);
+        statusBanner.getStyleClass().add("share-status-banner");
+        statusBanner.setAlignment(Pos.CENTER_LEFT);
+        statusBanner.setVisible(false);
+        statusBanner.setManaged(false);
+
+        Label statusIcon = new Label();
+        statusIcon.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+        Label statusText = new Label();
+        statusText.setWrapText(true);
+        HBox.setHgrow(statusText, Priority.ALWAYS);
+
+        Button dismissBannerBtn = new Button("✕");
+        dismissBannerBtn.getStyleClass().add("share-text-btn");
+        dismissBannerBtn.setOnAction(e -> {
+            statusBanner.setVisible(false);
+            statusBanner.setManaged(false);
+        });
+        statusBanner.getChildren().addAll(statusIcon, statusText, dismissBannerBtn);
+
+        BiConsumer<String, Boolean> showStatus = (msg, isError) -> {
+            statusBanner.getStyleClass().removeAll("share-status-success", "share-status-error");
+            if (isError) {
+                statusBanner.getStyleClass().add("share-status-error");
+                statusIcon.setText("⚠");
+            } else {
+                statusBanner.getStyleClass().add("share-status-success");
+                statusIcon.setText("✓");
+            }
+            statusText.setText(msg);
+            statusBanner.setVisible(true);
+            statusBanner.setManaged(true);
+        };
+
+        // Table
         TableView<KeyValuePair> varsTable = new TableView<>();
         TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Variable");
         keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
+        keyCol.setPrefWidth(220);
+
         TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
         valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
+        valueCol.setPrefWidth(360);
+
         if (canEdit) {
             keyCol.setCellFactory(TextFieldTableCell.forTableColumn());
             keyCol.setOnEditCommit(e -> e.getRowValue().setKey(e.getNewValue()));
@@ -4503,38 +9335,45 @@ public class MainController implements Initializable {
             valueCol.setOnEditCommit(e -> e.getRowValue().setValue(e.getNewValue()));
             varsTable.setEditable(true);
         }
+
         varsTable.getColumns().addAll(keyCol, valueCol);
         varsTable.getStyleClass().add("shared-workspace-tree");
-        varsTable.setPrefSize(480, 260);
         varsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         varsTable.setPlaceholder(new Label("No variables in this environment."));
+        VBox.setVgrow(varsTable, Priority.ALWAYS);
 
         if (env.getVariables() != null) {
             env.getVariables().forEach((k, v) -> varsTable.getItems().add(new KeyValuePair(k, v)));
         }
 
-        Label statusLabel = new Label();
-        statusLabel.getStyleClass().add("shared-workspace-hint");
-        statusLabel.setWrapText(true);
-
-        VBox content = new VBox(10, hintLabel, varsTable, statusLabel);
+        // Actions
+        HBox actionsRow = new HBox(8);
+        actionsRow.setAlignment(Pos.CENTER_LEFT);
 
         if (canEdit) {
-            Button addRowBtn = new Button("Add Variable");
-            Button deleteRowBtn = new Button("Delete Selected");
-            Button saveBtn = new Button("Save");
-            saveBtn.getStyleClass().add("send-button");
-            HBox actions = new HBox(8, addRowBtn, deleteRowBtn, saveBtn);
-            actions.setAlignment(Pos.CENTER_LEFT);
-            content.getChildren().add(actions);
+            Button addRowBtn = new Button("+ Add Variable");
+            addRowBtn.getStyleClass().add("share-env-btn");
+            addRowBtn.setOnAction(e -> {
+                KeyValuePair newPair = new KeyValuePair("", "");
+                varsTable.getItems().add(newPair);
+                varsTable.getSelectionModel().select(newPair);
+            });
 
-            addRowBtn.setOnAction(e -> varsTable.getItems().add(new KeyValuePair("", "")));
+            Button deleteRowBtn = new Button("Delete Selected");
+            deleteRowBtn.getStyleClass().add("share-remove-btn");
             deleteRowBtn.setOnAction(e -> {
                 KeyValuePair selected = varsTable.getSelectionModel().getSelectedItem();
                 if (selected != null) {
                     varsTable.getItems().remove(selected);
                 }
             });
+
+            Region actionSpacer = new Region();
+            HBox.setHgrow(actionSpacer, Priority.ALWAYS);
+
+            Button saveBtn = new Button("Save Changes");
+            saveBtn.getStyleClass().addAll("button", "button-primary");
+            saveBtn.setStyle("-fx-font-weight: bold; -fx-padding: 6 16 6 16;");
             saveBtn.setOnAction(e -> {
                 Map<String, String> updated = new LinkedHashMap<>();
                 for (KeyValuePair pair : varsTable.getItems()) {
@@ -4542,133 +9381,168 @@ public class MainController implements Initializable {
                         updated.put(pair.getKey().trim(), pair.getValue() == null ? "" : pair.getValue());
                     }
                 }
-                statusLabel.setText("Saving...");
+                showStatus.accept("Saving changes to server...", false);
                 saveBtn.setDisable(true);
                 new Thread(() -> {
                     Optional<EnvironmentResponse> saved = EnvironmentService.updateEnvironmentVariables(env.getId(), updated);
                     Platform.runLater(() -> {
                         saveBtn.setDisable(false);
-                        statusLabel.setText(saved.isPresent() ? "Saved." : "Couldn't save — check your access and try again.");
+                        if (saved.isPresent()) {
+                            env.setVariables(updated);
+                            showStatus.accept("Environment variables saved successfully.", false);
+                        } else {
+                            showStatus.accept("Failed to save variables — please check your connection and access.", true);
+                        }
                     });
                 }).start();
             });
+
+            actionsRow.getChildren().addAll(addRowBtn, deleteRowBtn, actionSpacer, saveBtn);
         }
 
+        VBox content = new VBox(12, headerRow, statusBanner, varsTable, actionsRow);
         content.setPadding(new Insets(16));
-        content.setPrefWidth(520);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         dialog.showAndWait();
     }
 
-    /** Lets an Editor actually send a request that lives in someone
-     * else's shared workspace — the request's saved URL/headers/body
-     * are editable here for this one send, but nothing is written back
-     * to the owner's saved copy; only the response comes back.
-     * environments is whatever this viewer has been granted for this
-     * workspace — used to resolve {{variables}} before sending, since
-     * without that, any request using a variable (which is most real
-     * requests) would fail outright rather than actually running. */
+    /** Lets an Editor send a request that lives in someone else's shared workspace. */
     private void openSendSharedRequestDialog(Long workspaceId, RequestResponse request, List<EnvironmentResponse> environments) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle(request.getName());
+        dialog.setHeaderText(null);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.getDialogPane().getStyleClass().add("shared-workspace-dialog");
+        dialog.getDialogPane().getStyleClass().add("shared-request-dialog");
 
-        Label methodLabel = new Label(String.valueOf(request.getMethod()));
-        methodLabel.getStyleClass().add("method-" + request.getMethod().toString().toLowerCase(Locale.ROOT));
-        methodLabel.setMinWidth(60);
+        // Header
+        Label methodChip = new Label(String.valueOf(request.getMethod()));
+        methodChip.getStyleClass().addAll("method-chip",
+                "method-chip-" + request.getMethod().toString().toLowerCase(Locale.ROOT));
+        methodChip.setStyle("-fx-font-size: 12px; -fx-padding: 4 10 4 10; -fx-font-weight: bold;");
+
+        Label titleLabel = new Label(request.getName());
+        titleLabel.getStyleClass().add("share-title");
+
+        Label subtitleLabel = new Label("Execute request against shared workspace environment");
+        subtitleLabel.getStyleClass().add("share-subtitle");
+
+        VBox titleBox = new VBox(2, titleLabel, subtitleLabel);
+        HBox headerRow = new HBox(10, methodChip, titleBox);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Interactive URL & Environment & Send Row
         TextField urlField = new TextField(request.getUrl());
         urlField.getStyleClass().add("shared-workspace-url-field");
-        HBox urlRow = new HBox(8, methodLabel, urlField);
+        urlField.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-pref-height: 34px; -fx-font-size: 12px;");
         HBox.setHgrow(urlField, Priority.ALWAYS);
-        urlRow.setAlignment(Pos.CENTER_LEFT);
 
-        // Resolving {{variables}} matters here — without it, any request
-        // that uses one (which is most real requests) fails outright
-        // rather than actually running.
         ComboBox<String> envCombo = new ComboBox<>();
+        envCombo.setStyle("-fx-pref-height: 34px; -fx-font-size: 11px;");
         Map<String, EnvironmentResponse> envByName = new LinkedHashMap<>();
         envCombo.getItems().add("No Environment");
         for (EnvironmentResponse env : environments) {
             envByName.put(env.getName(), env);
             envCombo.getItems().add(env.getName());
         }
-        Label envHintLabel = new Label();
-        envHintLabel.getStyleClass().add("shared-workspace-hint");
-        envHintLabel.setWrapText(true);
-        HBox envRow;
-        if (environments.isEmpty()) {
-            envHintLabel.setText("No environment access granted for this workspace — {{variables}} won't "
-                    + "resolve here. If you have your own access to this workspace, switch to it from the "
-                    + "Workspaces ▾ menu to run this with full variable support, or ask the owner to grant "
-                    + "you an environment.");
-            envRow = new HBox(envHintLabel);
-        } else {
-            Label envLabel = new Label("Environment");
-            envLabel.getStyleClass().add("shared-workspace-hint");
-            // FIX: this used to auto-select the first real environment,
-            // with no way to opt out even if this particular send didn't
-            // need any variable resolution — unlike Postman, where "No
-            // Environment" is always available as a genuine choice.
-            envCombo.getSelectionModel().select("No Environment");
-            envRow = new HBox(8, envLabel, envCombo);
-            envRow.setAlignment(Pos.CENTER_LEFT);
-        }
+        envCombo.getSelectionModel().select(environments.isEmpty() ? "No Environment" : environments.get(0).getName());
 
+        Button sendBtn = new Button("➤  Send");
+        sendBtn.getStyleClass().addAll("button", "button-primary");
+        sendBtn.setStyle("-fx-font-weight: bold; -fx-pref-height: 34px; -fx-padding: 6 18 6 18;");
+
+        HBox requestBar = new HBox(8, urlField, envCombo, sendBtn);
+        requestBar.setAlignment(Pos.CENTER_LEFT);
+
+        // Request Tabs: Headers & Body
+        TabPane reqTabPane = new TabPane();
+        reqTabPane.getStyleClass().add("share-tab-pane");
+        reqTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        reqTabPane.setPrefHeight(160);
+
+        Tab headersTab = new Tab("Headers");
         TextArea headersArea = new TextArea(request.getHeaders());
-        headersArea.setPromptText("Headers as JSON, e.g. {\"Content-Type\": \"application/json\"}");
-        headersArea.setPrefRowCount(3);
+        headersArea.setPromptText("{\"Content-Type\": \"application/json\"}");
+        headersArea.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-font-size: 11px;");
         headersArea.setWrapText(true);
+        headersTab.setContent(headersArea);
 
+        Tab bodyTab = new Tab("Body");
         TextArea bodyArea = new TextArea(request.getBody());
-        bodyArea.setPromptText("Request body (if any)");
-        bodyArea.setPrefRowCount(5);
+        bodyArea.setPromptText("Request payload body (JSON, text, or raw)");
+        bodyArea.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-font-size: 11px;");
         bodyArea.setWrapText(true);
+        bodyTab.setContent(bodyArea);
 
-        Button sendBtn = new Button("Send");
-        sendBtn.getStyleClass().add("send-button");
-        Label statusLabel = new Label();
-        statusLabel.getStyleClass().add("shared-workspace-hint");
-        statusLabel.setWrapText(true);
-        HBox sendRow = new HBox(12, sendBtn, statusLabel);
-        sendRow.setAlignment(Pos.CENTER_LEFT);
+        reqTabPane.getTabs().addAll(headersTab, bodyTab);
 
-        TextArea responseArea = new TextArea();
-        responseArea.setEditable(false);
-        responseArea.getStyleClass().add("shared-workspace-response-area");
-        responseArea.setPromptText("Response will show here after you send.");
-        responseArea.setPrefRowCount(10);
-        responseArea.setWrapText(true);
+        // Response Status Bar
+        HBox responseStatusBar = new HBox(12);
+        responseStatusBar.setAlignment(Pos.CENTER_LEFT);
+        responseStatusBar.setStyle("-fx-padding: 4 2 4 2;");
 
-        // Hidden until an actual binary response (PDF/Excel/image/zip)
-        // arrives — a real download action instead of dumping Base64
-        // text into the response area, which is unreadable and useless.
+        Label responseSectionTitle = new Label("RESPONSE");
+        responseSectionTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 11px; -fx-text-fill: -text-secondary;");
+
+        Label statusChip = new Label("Ready");
+        statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -bg-elevated; -fx-text-fill: -text-muted; -fx-font-size: 11px; -fx-font-weight: bold;");
+
+        Region statusSpacer = new Region();
+        HBox.setHgrow(statusSpacer, Priority.ALWAYS);
+
+        Button copyResponseBtn = new Button("Copy");
+        copyResponseBtn.getStyleClass().add("share-text-btn");
+
         Button saveFileBtn = new Button("Save File");
+        saveFileBtn.getStyleClass().addAll("button", "button-primary");
         saveFileBtn.setVisible(false);
         saveFileBtn.setManaged(false);
 
-        Label headersLabel = new Label("Headers");
-        headersLabel.getStyleClass().add("shared-workspace-section-title");
-        Label bodyLabel = new Label("Body");
-        bodyLabel.getStyleClass().add("shared-workspace-section-title");
-        Label responseLabel = new Label("Response");
-        responseLabel.getStyleClass().add("shared-workspace-section-title");
+        responseStatusBar.getChildren().addAll(responseSectionTitle, statusChip, statusSpacer, copyResponseBtn, saveFileBtn);
+
+        // Response Body Area
+        TextArea responseArea = new TextArea();
+        responseArea.setEditable(false);
+        responseArea.getStyleClass().add("shared-workspace-response-area");
+        responseArea.setPromptText("Response will show here after sending.");
+        responseArea.setStyle("-fx-font-family: 'Consolas', 'JetBrains Mono', monospace; -fx-font-size: 11px;");
+        responseArea.setWrapText(true);
+        VBox.setVgrow(responseArea, Priority.ALWAYS);
+
+        copyResponseBtn.setOnAction(e -> {
+            String text = responseArea.getText();
+            if (text != null && !text.isBlank()) {
+                javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                cc.putString(text);
+                javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+                copyResponseBtn.setText("Copied! ✓");
+                new Thread(() -> {
+                    try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+                    Platform.runLater(() -> copyResponseBtn.setText("Copy"));
+                }).start();
+            }
+        });
+
+        // Script variables pill
+        Label scriptResultLabel = new Label();
+        scriptResultLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -accent; -fx-font-weight: bold;");
+        scriptResultLabel.setVisible(false);
+        scriptResultLabel.setManaged(false);
 
         VBox content = new VBox(10,
-                urlRow,
-                envRow,
-                headersLabel, headersArea,
-                bodyLabel, bodyArea,
-                sendRow,
-                responseLabel, responseArea, saveFileBtn);
+                headerRow,
+                requestBar,
+                reqTabPane,
+                responseStatusBar,
+                responseArea,
+                scriptResultLabel);
         content.setPadding(new Insets(16));
-        content.setPrefWidth(580);
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
 
         sendBtn.setOnAction(e -> {
-            statusLabel.setText("Sending…");
+            statusChip.setText("Sending…");
+            statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -bg-elevated; -fx-text-fill: -text-muted; -fx-font-size: 11px; -fx-font-weight: bold;");
             sendBtn.setDisable(true);
             Map<String, String> vars = Map.of();
             if (!environments.isEmpty() && envCombo.getValue() != null) {
@@ -4679,13 +9553,6 @@ public class MainController implements Initializable {
             }
             final Map<String, String> resolveVars = vars;
             String resolvedHeadersJson = VariableResolver.resolve(headersArea.getText(), resolveVars);
-            // FIX: a request whose Bearer token (or Basic username/
-            // password) is itself a variable — {{access_token}}, the
-            // normal pattern after a login call — needs that resolved
-            // here, with the right environment context, before being
-            // merged in. The backend also has a fallback for
-            // unresolved saved auth, but it can't resolve a variable
-            // it never sees the value of.
             try {
                 String authType = request.getAuthType();
                 String authHeaderValue = null;
@@ -4707,9 +9574,6 @@ public class MainController implements Initializable {
                     resolvedHeadersJson = headersObj.toString();
                 }
             } catch (Exception ignored) {
-                // malformed headers JSON in the text area — leave it as
-                // typed rather than silently rewriting something the
-                // user is mid-editing
             }
             ApiRequest overrides = ApiRequest.builder()
                     .url(VariableResolver.resolve(urlField.getText(), resolveVars))
@@ -4717,87 +9581,73 @@ public class MainController implements Initializable {
                     .body(VariableResolver.resolve(bodyArea.getText(), resolveVars))
                     .build();
             new Thread(() -> {
-                // FIX: this used to call WorkspaceSharingService.executeSharedRequest(),
-                // which runs the actual HTTP call on the BACKEND server.
-                // That's fine when the backend happens to run on the same
-                // machine as you, but breaks the moment it's hosted
-                // anywhere else — "localhost" or anything on your own
-                // private network resolves on the SERVER, not on your
-                // machine, so it can never reach the thing you're
-                // actually trying to test. Executing directly from here
-                // (matching how Postman's own desktop app behaves) fixes
-                // that regardless of where the backend lives.
                 ApiResponse response = ClientHttpExecutor.execute(
                         request.getMethod().name(), overrides.getUrl(), overrides.getHeaders(), overrides.getBody());
                 Platform.runLater(() -> {
-                        sendBtn.setDisable(false);
-                        statusLabel.setText("Status " + response.getStatusCode()
-                                + "  ·  " + response.getDuration() + " ms"
-                                + "  ·  " + (response.isSuccess() ? "Success" : "Failed"));
-                        statusLabel.getStyleClass().removeAll("shared-workspace-status-ok", "shared-workspace-status-error");
-                        statusLabel.getStyleClass().add(response.isSuccess()
-                                ? "shared-workspace-status-ok" : "shared-workspace-status-error");
-                        if (response.isBinary()) {
-                            responseArea.setText("\uD83D\uDCC4  Binary response\n\n"
-                                    + "Content-Type: " + (response.getContentType() != null ? response.getContentType() : "unknown") + "\n"
-                                    + "Size: " + response.getSizeBytes() + " bytes\n"
-                                    + "Suggested file name: " + response.getFileName() + "\n\n"
-                                    + "Click Save File below to download it.");
-                            saveFileBtn.setVisible(true);
-                            saveFileBtn.setManaged(true);
-                            saveFileBtn.setOnAction(saveEvent -> {
-                                FileChooser fileChooser = new FileChooser();
-                                fileChooser.setTitle("Save Response");
-                                String suggested = response.getFileName() != null ? response.getFileName() : "response.bin";
-                                fileChooser.setInitialFileName(suggested);
-                                File file = fileChooser.showSaveDialog(dialog.getDialogPane().getScene().getWindow());
-                                if (file == null) {
-                                    return;
-                                }
-                                try {
-                                    byte[] bytes = Base64.getDecoder().decode(response.getResponse());
-                                    java.nio.file.Files.write(file.toPath(), bytes);
-                                    statusLabel.setText("Saved " + bytes.length + " bytes to " + file.getName());
-                                } catch (Exception saveEx) {
-                                    statusLabel.setText("Couldn't save the file: " + saveEx.getMessage());
-                                }
-                            });
-                        } else {
-                            saveFileBtn.setVisible(false);
-                            saveFileBtn.setManaged(false);
-                            responseArea.setText(response.getResponse());
-                        }
+                    sendBtn.setDisable(false);
+                    statusChip.setText("Status: " + response.getStatusCode()
+                            + " " + getStatusText(response.getStatusCode())
+                            + "  •  " + response.getDuration() + " ms"
+                            + "  •  " + formatSize(response.getSizeBytes()));
+                    if (response.isSuccess()) {
+                        statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -success-soft; -fx-text-fill: -success; -fx-font-size: 11px; -fx-font-weight: bold;");
+                    } else {
+                        statusChip.setStyle("-fx-padding: 3 8 3 8; -fx-background-radius: 4px; -fx-background-color: -danger-soft; -fx-text-fill: -danger; -fx-font-size: 11px; -fx-font-weight: bold;");
+                    }
+                    if (response.isBinary()) {
+                        responseArea.setText("📄  Binary response ("
+                                + (response.getContentType() != null ? response.getContentType() : "unknown")
+                                + ")\nSize: " + response.getSizeBytes() + " bytes\n"
+                                + "Suggested file name: " + response.getFileName() + "\n\n"
+                                + "Click Save File above to download it.");
+                        saveFileBtn.setVisible(true);
+                        saveFileBtn.setManaged(true);
+                        saveFileBtn.setOnAction(saveEvent -> {
+                            FileChooser fileChooser = new FileChooser();
+                            fileChooser.setTitle("Save Response");
+                            String suggested = response.getFileName() != null ? response.getFileName() : "response.bin";
+                            fileChooser.setInitialFileName(suggested);
+                            File file = fileChooser.showSaveDialog(dialog.getDialogPane().getScene().getWindow());
+                            if (file == null) {
+                                return;
+                            }
+                            try {
+                                byte[] bytes = Base64.getDecoder().decode(response.getResponse());
+                                java.nio.file.Files.write(file.toPath(), bytes);
+                                statusChip.setText("Saved " + bytes.length + " bytes to " + file.getName());
+                            } catch (Exception saveEx) {
+                                statusChip.setText("Save failed: " + saveEx.getMessage());
+                            }
+                        });
+                    } else {
+                        saveFileBtn.setVisible(false);
+                        saveFileBtn.setManaged(false);
+                        responseArea.setText(response.getResponse());
+                    }
 
-                        // FIX: this is what actually completes a login-then-
-                        // use-the-token workflow — without running the saved
-                        // Tests script, a login request could return a fresh
-                        // token but nothing would ever capture it into the
-                        // environment, leaving every later request that
-                        // depends on it using a stale value. Mirrors
-                        // runScriptsAndApply()'s logic, adapted to this
-                        // dialog's own selected-environment state instead of
-                        // the main app's environmentCombo/environmentsMap.
-                        String script = request.getTestsScript();
-                        if (script != null && !script.isBlank() && !environments.isEmpty() && envCombo.getValue() != null) {
-                            EnvironmentResponse selectedEnv = envByName.get(envCombo.getValue());
-                            if (selectedEnv != null) {
-                                Map<String, String> current = new LinkedHashMap<>(
-                                        selectedEnv.getVariables() != null ? selectedEnv.getVariables() : Map.of());
-                                ScriptRunner.Result result = ScriptRunner.run(
-                                        script, response.getResponse(), response.getStatusCode(), current);
-                                if (!result.setVariables.isEmpty() || !result.unsetVariables.isEmpty()) {
-                                    Map<String, String> merged = new LinkedHashMap<>(current);
-                                    merged.putAll(result.setVariables);
-                                    result.unsetVariables.forEach(merged::remove);
-                                    selectedEnv.setVariables(merged); // effective immediately for the next send in this session
-                                    statusLabel.setText(statusLabel.getText() + "  ·  set "
-                                            + String.join(", ", result.setVariables.keySet()));
-                                    new Thread(() -> EnvironmentService.updateEnvironmentVariables(
-                                            selectedEnv.getId(), merged)).start();
-                                }
+                    String script = request.getTestsScript();
+                    if (script != null && !script.isBlank() && !environments.isEmpty() && envCombo.getValue() != null) {
+                        EnvironmentResponse selectedEnv = envByName.get(envCombo.getValue());
+                        if (selectedEnv != null) {
+                            Map<String, String> current = new LinkedHashMap<>(
+                                    selectedEnv.getVariables() != null ? selectedEnv.getVariables() : Map.of());
+                            ScriptRunner.Result result = ScriptRunner.run(
+                                    script, response.getResponse(), response.getStatusCode(), current);
+                            if (!result.setVariables.isEmpty() || !result.unsetVariables.isEmpty()) {
+                                Map<String, String> merged = new LinkedHashMap<>(current);
+                                merged.putAll(result.setVariables);
+                                result.unsetVariables.forEach(merged::remove);
+                                selectedEnv.setVariables(merged);
+                                scriptResultLabel.setText("✓ Test script updated environment: "
+                                        + String.join(", ", result.setVariables.keySet()));
+                                scriptResultLabel.setVisible(true);
+                                scriptResultLabel.setManaged(true);
+                                new Thread(() -> EnvironmentService.updateEnvironmentVariables(
+                                        selectedEnv.getId(), merged)).start();
                             }
                         }
-                    });
+                    }
+                });
             }).start();
         });
 
@@ -4809,150 +9659,151 @@ public class MainController implements Initializable {
      * The backend rejects this for non-admins, so nothing bad happens if
      * a non-admin somehow opens it; they'll just see a clear error. */
     private void openMailSettingsDialog(Window owner) {
-        Dialog<Void> dialog = new Dialog<>();
-        if (owner != null) {
-            dialog.initOwner(owner);
-        }
-        dialog.setTitle("Mail Server Settings");
-        dialog.setHeaderText("Outgoing mail (SMTP) — used for verification emails and team invitations");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CLOSE);
-
-        TextField hostField = new TextField();
-        hostField.setPromptText("smtp.gmail.com");
-        TextField portField = new TextField();
-        portField.setPromptText("587");
-        TextField usernameField2 = new TextField();
-        usernameField2.setPromptText("you@example.com");
-        PasswordField passwordField2 = new PasswordField();
-        passwordField2.setPromptText("(leave blank to keep the current password)");
-        TextField fromAddressField = new TextField();
-        fromAddressField.setPromptText("noreply@yourapp.com");
-        TextField fromNameField = new TextField();
-        fromNameField.setPromptText("Thundercall");
-        CheckBox tlsCheck = new CheckBox("Use STARTTLS");
-        tlsCheck.setSelected(true);
-        CheckBox sslCheck = new CheckBox("Use SSL");
-        // FIX: this used to sit in the same row as the STARTTLS/SSL
-        // protocol checkboxes — easy to miss as "just another technical
-        // toggle" when it's actually the master on/off switch. It's now
-        // its own bold, top-of-form row, and defaults to checked (a fresh
-        // setup should just work once real details are filled in, not
-        // silently stay off).
-        CheckBox enabledCheck = new CheckBox("Mail sending enabled");
-        enabledCheck.setSelected(true);
-        enabledCheck.setStyle("-fx-font-weight: bold;");
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(360);
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(8);
-        grid.setPadding(new Insets(10));
-        int row = 0;
-        grid.add(enabledCheck, 0, row, 2, 1);
-        row++;
-        grid.addRow(row++, new Label("SMTP Host"), hostField);
-        grid.addRow(row++, new Label("SMTP Port"), portField);
-        grid.addRow(row++, new Label("Username"), usernameField2);
-        grid.addRow(row++, new Label("Password"), passwordField2);
-        grid.addRow(row++, new Label("From Address"), fromAddressField);
-        grid.addRow(row++, new Label("From Name"), fromNameField);
-        grid.add(new HBox(12, tlsCheck, sslCheck), 1, row++);
-
-        TextField testEmailField = new TextField();
-        testEmailField.setPromptText("Send a test to...");
-        Button testBtn = new Button("Send test email");
-        Button saveBtn = new Button("Save");
-        HBox actionsRow = new HBox(8, testEmailField, testBtn, new Region(), saveBtn);
-        HBox.setHgrow(testEmailField, Priority.ALWAYS);
-        HBox.setHgrow((Region) actionsRow.getChildren().get(2), Priority.ALWAYS);
-
-        VBox content = new VBox(10, grid, actionsRow, statusLabel);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
-
-        // Load current values
-        new Thread(() -> {
-            try {
-                Optional<MailSettingsResponse> current = MailSettingsService.getSettings();
-                Platform.runLater(() -> current.ifPresent(settings -> {
-                    hostField.setText(settings.getSmtpHost());
-                    portField.setText(settings.getSmtpPort() != null ? String.valueOf(settings.getSmtpPort()) : "");
-                    usernameField2.setText(settings.getSmtpUsername());
-                    fromAddressField.setText(settings.getFromAddress());
-                    fromNameField.setText(settings.getFromName());
-                    tlsCheck.setSelected(settings.isUseTls());
-                    sslCheck.setSelected(settings.isUseSsl());
-                    enabledCheck.setSelected(settings.isEnabled());
-                    if (settings.isHasPassword()) {
-                        passwordField2.setPromptText("(a password is already saved — leave blank to keep it)");
-                    }
-                }));
-            } catch (IOException e) {
-                Platform.runLater(() -> statusLabel.setText("Couldn't load current settings: " + e.getMessage()));
-            }
-        }).start();
-
-        saveBtn.setOnAction(e -> {
-            int port;
-            try {
-                port = Integer.parseInt(portField.getText().trim());
-            } catch (NumberFormatException ex) {
-                statusLabel.setText("Port must be a number, e.g. 587.");
-                return;
-            }
-            MailSettingsRequest request = new MailSettingsRequest(
-                    hostField.getText().trim(), port, usernameField2.getText().trim(),
-                    passwordField2.getText(), fromAddressField.getText().trim(), fromNameField.getText().trim(),
-                    tlsCheck.isSelected(), sslCheck.isSelected(), enabledCheck.isSelected());
-            statusLabel.setText("Saving...");
-            new Thread(() -> {
-                try {
-                    MailSettingsService.updateSettings(request);
-                    Platform.runLater(() -> statusLabel.setText("Saved."));
-                } catch (IOException ex) {
-                    Platform.runLater(() -> statusLabel.setText("Couldn't save: " + ex.getMessage()));
-                }
-            }).start();
-        });
-
-        testBtn.setOnAction(e -> {
-            String toAddress = testEmailField.getText().trim();
-            if (toAddress.isEmpty()) {
-                statusLabel.setText("Enter an address to send the test email to.");
-                return;
-            }
-            statusLabel.setText("Sending test email...");
-            new Thread(() -> {
-                try {
-                    MailSettingsService.sendTestEmail(toAddress);
-                    Platform.runLater(() -> statusLabel.setText("Test email sent to " + toAddress + " — check the inbox."));
-                } catch (IOException ex) {
-                    Platform.runLater(() -> statusLabel.setText("Couldn't send: " + ex.getMessage()));
-                }
-            }).start();
-        });
-
-        dialog.showAndWait();
+        handleSettings();
     }
 
     @FXML
     private void handleThemeDark() {
         ThemeManager.setLight(false, urlField.getScene());
         updateStatus("Theme: Dark");
+        if (responseVisualizationView != null && responseVisualizationView.isVisible()) {
+            renderCurrentVisualization();
+        }
+        if (responsePreview != null && responsePreview.isVisible()) {
+            renderPreviewView();
+        }
     }
 
     @FXML
     private void handleThemeLight() {
         ThemeManager.setLight(true, urlField.getScene());
         updateStatus("Theme: Light");
+        if (responseVisualizationView != null && responseVisualizationView.isVisible()) {
+            renderCurrentVisualization();
+        }
+        if (responsePreview != null && responsePreview.isVisible()) {
+            renderPreviewView();
+        }
+    }
+
+    @FXML
+    private void handleNewTab() {
+        openRequestTab("Untitled Request", null);
+        updateStatus("Opened new request tab");
+    }
+
+    @FXML
+    private void handleCloseTab() {
+        Tab active = activeRequestTab();
+        if (active != null) {
+            closeTabSafely(active, false);
+        }
+    }
+
+    @FXML
+    private void handleForceCloseTab() {
+        Tab active = activeRequestTab();
+        if (active != null) {
+            closeTabSafely(active, true);
+        }
+    }
+
+    @FXML
+    private void handleCloseWindow() {
+        Window window = (mainRootPane != null && mainRootPane.getScene() != null)
+                ? mainRootPane.getScene().getWindow()
+                : (urlField != null && urlField.getScene() != null ? urlField.getScene().getWindow() : null);
+        if (window instanceof Stage stage) {
+            stage.fireEvent(new javafx.stage.WindowEvent(stage, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST));
+            if (stage.isShowing()) {
+                stage.close();
+            }
+        } else {
+            handleExit();
+        }
     }
 
     @FXML
     private void handleExit() {
         Platform.exit();
+    }
+
+    @FXML
+    private void handleClearCacheAndReload() {
+        boolean hasDirtyTabs = tabStates.values().stream().anyMatch(s -> s != null && s.dirty);
+        if (hasDirtyTabs) {
+            boolean confirmed = AlertUtils.showConfirmation("Clear Cache and Reload",
+                    "You have unsaved changes in one or more open tabs.\n" +
+                    "Clearing cache and reloading will discard any unsaved editor edits and refresh all data from the server. Continue?");
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        // 1. Clear in-memory caches
+        commentThreadsCache.clear();
+        collectionVariablesCache.clear();
+        environmentsMap.clear();
+        introspectedTypeNames.clear();
+        allMockServers.clear();
+        allMonitors.clear();
+        allHistoryEntries.clear();
+
+        // 2. Reset dirty indicators on open tabs
+        tabStates.values().forEach(s -> {
+            if (s != null) {
+                s.dirty = false;
+            }
+        });
+        if (requestTabPane != null) {
+            for (Tab t : requestTabPane.getTabs()) {
+                refreshTabGraphic(t);
+            }
+            Tab active = activeRequestTab();
+            if (active != null) {
+                restoreTabState(active);
+            }
+        }
+
+        // 3. Clear response preview/visualization views if active
+        if (responseVisualizationView != null && responseVisualizationView.isVisible()) {
+            renderCurrentVisualization();
+        }
+
+        // 4. Reload all data cleanly from server
+        loadCollectionsFromServer();
+        loadEnvironments();
+        loadHistory();
+        loadTeams();
+        loadMockServers();
+        loadMonitors();
+        loadTeamWorkspaces();
+        loadUserProfile();
+        refreshOnlineUsers();
+
+        updateStatus("Cache cleared and application reloaded successfully.");
+    }
+
+    @FXML
+    private void handleDocumentation() {
+        openExternalUrl("http://localhost:8000/docs/thundercall");
+    }
+
+    @FXML
+    private void handleSupport() {
+        openExternalUrl("http://localhost:8000/support/thundercall");
+    }
+
+    private void openExternalUrl(String url) {
+        try {
+            if (Main.getAppHostServices() != null) {
+                Main.getAppHostServices().showDocument(url);
+            } else if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+            }
+        } catch (Exception e) {
+            logger.warning("Failed to open external URL: " + url + " - " + e.getMessage());
+        }
     }
 
     @FXML
@@ -4962,7 +9813,358 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleAbout() {
-        AlertUtils.showInfo("Thundercall v" + AppUpdateService.CURRENT_VERSION + "\nA professional API client.\nBackend: Spring Boot  |  Frontend: JavaFX");
+        Window owner = (urlField != null && urlField.getScene() != null)
+                ? urlField.getScene().getWindow()
+                : (mainRootPane != null && mainRootPane.getScene() != null ? mainRootPane.getScene().getWindow() : null);
+        AboutDialog.show(owner);
+    }
+
+    // ============================================================
+    // Edit Menu Actions (Undo, Redo, Cut, Copy, Paste, Paste and Match Style, Delete, Select All)
+    // ============================================================
+
+    private Node lastFocusedEditor;
+
+    private Node resolveTextTarget(Node node) {
+        Node cur = node;
+        while (cur != null) {
+            if (cur instanceof TextInputControl || cur instanceof CodeArea) {
+                return cur;
+            }
+            cur = cur.getParent();
+        }
+        return null;
+    }
+
+    private Node findActiveTextTarget() {
+        Scene scene = mainRootPane != null ? mainRootPane.getScene() : (urlField != null ? urlField.getScene() : null);
+        Node focused = scene != null ? scene.getFocusOwner() : null;
+        Node resolved = resolveTextTarget(focused);
+        if (resolved != null) {
+            return resolved;
+        }
+        resolved = resolveTextTarget(lastFocusedEditor);
+        if (resolved != null) {
+            return resolved;
+        }
+        if (bodyTextArea != null && bodyTextArea.isVisible()) {
+            return bodyTextArea;
+        }
+        if (urlField != null && urlField.isVisible()) {
+            return urlField;
+        }
+        return null;
+    }
+
+    @FXML
+    private void handleUndo() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            if (tic.isUndoable()) {
+                tic.undo();
+            }
+        } else if (target instanceof CodeArea ca) {
+            if (ca.isUndoAvailable()) {
+                ca.undo();
+            }
+        }
+    }
+
+    @FXML
+    private void handleRedo() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            if (tic.isRedoable()) {
+                tic.redo();
+            }
+        } else if (target instanceof CodeArea ca) {
+            if (ca.isRedoAvailable()) {
+                ca.redo();
+            }
+        }
+    }
+
+    @FXML
+    private void handleCut() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.cut();
+        } else if (target instanceof CodeArea ca) {
+            ca.cut();
+        }
+    }
+
+    @FXML
+    private void handleCopy() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.copy();
+        } else if (target instanceof CodeArea ca) {
+            ca.copy();
+        } else {
+            Scene scene = mainRootPane != null ? mainRootPane.getScene() : null;
+            Node focused = scene != null ? scene.getFocusOwner() : null;
+            if (focused == collectionsTree && collectionsTree.getSelectionModel().getSelectedItem() != null) {
+                ClipboardContent cc = new ClipboardContent();
+                cc.putString(collectionsTree.getSelectionModel().getSelectedItem().getValue());
+                Clipboard.getSystemClipboard().setContent(cc);
+                updateStatus("Copied to clipboard: " + collectionsTree.getSelectionModel().getSelectedItem().getValue());
+            } else if (focused == historyTree && historyTree.getSelectionModel().getSelectedItem() != null) {
+                HistoryNode hn = historyTree.getSelectionModel().getSelectedItem().getValue();
+                if (hn != null && hn.getEntry() != null) {
+                    ClipboardContent cc = new ClipboardContent();
+                    cc.putString(hn.getEntry().getUrl());
+                    Clipboard.getSystemClipboard().setContent(cc);
+                    updateStatus("Copied URL to clipboard: " + hn.getEntry().getUrl());
+                }
+            }
+        }
+    }
+
+    @FXML
+    private void handlePaste() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.paste();
+        } else if (target instanceof CodeArea ca) {
+            ca.paste();
+        }
+    }
+
+    @FXML
+    private void handlePasteAndMatchStyle() {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (!clipboard.hasString()) {
+            return;
+        }
+        String plain = clipboard.getString();
+        if (plain == null) {
+            return;
+        }
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.replaceSelection(plain);
+        } else if (target instanceof CodeArea ca) {
+            ca.replaceSelection(plain);
+        }
+    }
+
+    @FXML
+    private void handleDelete() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            String sel = tic.getSelectedText();
+            if (sel != null && !sel.isEmpty()) {
+                tic.replaceSelection("");
+            } else {
+                tic.deleteNextChar();
+            }
+        } else if (target instanceof CodeArea ca) {
+            String sel = ca.getSelectedText();
+            if (sel != null && !sel.isEmpty()) {
+                ca.replaceSelection("");
+            } else {
+                ca.deleteNextChar();
+            }
+        } else {
+            Scene scene = mainRootPane != null ? mainRootPane.getScene() : null;
+            Node focused = scene != null ? scene.getFocusOwner() : null;
+            if (focused == collectionsTree || (collectionsTree != null && collectionsTree.isFocused())) {
+                handleDeleteItem();
+            }
+        }
+    }
+
+    @FXML
+    private void handleSelectAll() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.selectAll();
+        } else if (target instanceof CodeArea ca) {
+            ca.selectAll();
+        } else {
+            Scene scene = mainRootPane != null ? mainRootPane.getScene() : null;
+            Node focused = scene != null ? scene.getFocusOwner() : null;
+            if (focused instanceof TableView<?> tv) {
+                tv.getSelectionModel().selectAll();
+            }
+        }
+    }
+
+    // ============================================================
+    // View Menu Actions (Toggle Full Screen, Zoom In, Zoom Out, Reset Zoom,
+    // Toggle Two-Pane View, Toggle Sidebar, Go Back, Go Forward, Next Tab, Previous Tab)
+    // ============================================================
+
+    private double currentZoomFactor = 1.0;
+    private static final double ZOOM_STEP = 0.1;
+    private static final double MIN_ZOOM = 0.7;
+    private static final double MAX_ZOOM = 1.8;
+
+    private boolean isSidebarVisible = true;
+    private double[] savedSidebarDividers = new double[]{0.08, 0.28};
+
+    private final Deque<Tab> tabNavBackStack = new ArrayDeque<>();
+    private final Deque<Tab> tabNavForwardStack = new ArrayDeque<>();
+    private boolean isNavigatingHistory = false;
+
+    @FXML
+    private void handleToggleFullScreen() {
+        if (mainRootPane != null && mainRootPane.getScene() != null) {
+            Window window = mainRootPane.getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setFullScreen(!stage.isFullScreen());
+                updateStatus(stage.isFullScreen() ? "Full screen enabled (Press F11 to exit)" : "Full screen disabled");
+            }
+        }
+    }
+
+    private void applyZoom() {
+        int baseSize = (int) Math.round(13.0 * currentZoomFactor);
+        mainRootPane.setStyle("-fx-font-size: " + baseSize + "px;");
+        if (bodyTextArea != null) bodyTextArea.setStyle("-fx-font-size: " + baseSize + "px;");
+        if (responseBodyArea != null) responseBodyArea.setStyle("-fx-font-size: " + baseSize + "px;");
+        if (urlField != null) urlField.setStyle("-fx-font-size: " + baseSize + "px;");
+        updateStatus("Zoom: " + (int) Math.round(currentZoomFactor * 100) + "%");
+    }
+
+    @FXML
+    private void handleZoomIn() {
+        if (currentZoomFactor < MAX_ZOOM) {
+            currentZoomFactor = Math.min(MAX_ZOOM, currentZoomFactor + ZOOM_STEP);
+            applyZoom();
+        }
+    }
+
+    @FXML
+    private void handleZoomOut() {
+        if (currentZoomFactor > MIN_ZOOM) {
+            currentZoomFactor = Math.max(MIN_ZOOM, currentZoomFactor - ZOOM_STEP);
+            applyZoom();
+        }
+    }
+
+    @FXML
+    private void handleResetZoom() {
+        currentZoomFactor = 1.0;
+        mainRootPane.setStyle("");
+        if (bodyTextArea != null) bodyTextArea.setStyle("");
+        if (responseBodyArea != null) responseBodyArea.setStyle("");
+        if (urlField != null) urlField.setStyle("");
+        updateStatus("Zoom reset to 100%");
+    }
+
+    @FXML
+    private void handleToggleTwoPaneView() {
+        if (mainSplitPane == null) {
+            return;
+        }
+        if (mainSplitPane.getOrientation() == Orientation.VERTICAL) {
+            mainSplitPane.setOrientation(Orientation.HORIZONTAL);
+            mainSplitPane.setDividerPositions(0.50);
+            updateStatus("Two-pane view: Side-by-side layout");
+        } else {
+            mainSplitPane.setOrientation(Orientation.VERTICAL);
+            mainSplitPane.setDividerPositions(0.55);
+            updateStatus("Two-pane view: Stacked vertical layout");
+        }
+    }
+
+    @FXML
+    private void handleToggleSidebar() {
+        if (sidebarContentPane == null || sidebarSplitPane == null) {
+            return;
+        }
+        isSidebarVisible = !isSidebarVisible;
+        sidebarContentPane.setVisible(isSidebarVisible);
+        sidebarContentPane.setManaged(isSidebarVisible);
+        if (!isSidebarVisible) {
+            savedSidebarDividers = sidebarSplitPane.getDividerPositions();
+            sidebarSplitPane.setDividerPositions(0.08, 0.08);
+            updateStatus("Sidebar collapsed");
+        } else {
+            double[] pos = (savedSidebarDividers != null && savedSidebarDividers.length >= 2)
+                    ? savedSidebarDividers : new double[]{0.08, 0.28};
+            sidebarSplitPane.setDividerPositions(pos);
+            updateStatus("Sidebar expanded");
+        }
+    }
+
+    private void updateNavButtonsState() {
+        if (navBackBtn != null) {
+            navBackBtn.setDisable(tabNavBackStack.isEmpty());
+        }
+        if (navForwardBtn != null) {
+            navForwardBtn.setDisable(tabNavForwardStack.isEmpty());
+        }
+    }
+
+    @FXML
+    private void handleGoBack() {
+        if (requestTabPane == null) return;
+        tabNavBackStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+        if (!tabNavBackStack.isEmpty()) {
+            Tab current = requestTabPane.getSelectionModel().getSelectedItem();
+            Tab target = tabNavBackStack.pop();
+            if (target != null && requestTabPane.getTabs().contains(target)) {
+                isNavigatingHistory = true;
+                if (current != null) {
+                    tabNavForwardStack.push(current);
+                }
+                requestTabPane.getSelectionModel().select(target);
+                isNavigatingHistory = false;
+                updateNavButtonsState();
+                updateStatus("Navigated back to: " + target.getText());
+            }
+        } else {
+            updateNavButtonsState();
+            updateStatus("No previous tabs in navigation history");
+        }
+    }
+
+    @FXML
+    private void handleGoForward() {
+        if (requestTabPane == null) return;
+        tabNavForwardStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+        if (!tabNavForwardStack.isEmpty()) {
+            Tab current = requestTabPane.getSelectionModel().getSelectedItem();
+            Tab target = tabNavForwardStack.pop();
+            if (target != null && requestTabPane.getTabs().contains(target)) {
+                isNavigatingHistory = true;
+                if (current != null) {
+                    tabNavBackStack.push(current);
+                }
+                requestTabPane.getSelectionModel().select(target);
+                isNavigatingHistory = false;
+                updateNavButtonsState();
+                updateStatus("Navigated forward to: " + target.getText());
+            }
+        } else {
+            updateNavButtonsState();
+            updateStatus("No forward tabs in navigation history");
+        }
+    }
+
+    @FXML
+    private void handleNextTab() {
+        if (requestTabPane == null || requestTabPane.getTabs().isEmpty()) {
+            return;
+        }
+        int count = requestTabPane.getTabs().size();
+        int current = requestTabPane.getSelectionModel().getSelectedIndex();
+        int next = (current + 1) % count;
+        requestTabPane.getSelectionModel().select(next);
+    }
+
+    @FXML
+    private void handlePreviousTab() {
+        if (requestTabPane == null || requestTabPane.getTabs().isEmpty()) {
+            return;
+        }
+        int count = requestTabPane.getTabs().size();
+        int current = requestTabPane.getSelectionModel().getSelectedIndex();
+        int prev = (current - 1 + count) % count;
+        requestTabPane.getSelectionModel().select(prev);
     }
 
     @FXML
@@ -5105,6 +10307,7 @@ public class MainController implements Initializable {
      * with no equivalent in a self-hosted single-user tool like this). */
     private void setupEnvironmentsContextMenu() {
         ContextMenu menu = new ContextMenu();
+        MenuItem editItem = new MenuItem("Edit Environment");
         MenuItem renameItem = new MenuItem("Rename");
         MenuItem duplicateItem = new MenuItem("Duplicate");
         MenuItem exportItem = new MenuItem("Export as JSON");
@@ -5112,6 +10315,13 @@ public class MainController implements Initializable {
         deleteItem.getStyleClass().add("danger-menu-item");
         renameItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+E"));
         duplicateItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+D"));
+
+        editItem.setOnAction(e -> {
+            EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
+            if (env != null) {
+                openEnvironmentEditor(env);
+            }
+        });
 
         renameItem.setOnAction(e -> {
             EnvironmentResponse env = environmentsList.getSelectionModel().getSelectedItem();
@@ -5122,7 +10332,7 @@ public class MainController implements Initializable {
             dialog.setTitle("Rename Environment");
             dialog.setHeaderText("Rename \"" + env.getName() + "\"");
             dialog.setContentText("New name:");
-            ThemeManager.styleDialog(dialog.getDialogPane());
+            initAndStyleDialog(dialog);
             dialog.showAndWait().ifPresent(newName -> {
                 if (newName == null || newName.isBlank() || newName.equals(env.getName())) {
                     return;
@@ -5193,7 +10403,7 @@ public class MainController implements Initializable {
             }).start();
         });
 
-        menu.getItems().addAll(renameItem, duplicateItem, new SeparatorMenuItem(), exportItem,
+        menu.getItems().addAll(editItem, new SeparatorMenuItem(), renameItem, duplicateItem, new SeparatorMenuItem(), exportItem,
                 new SeparatorMenuItem(), deleteItem);
 
         // Only show the menu when right-clicking an actual row, and select
@@ -5313,67 +10523,596 @@ public class MainController implements Initializable {
         }
     }
 
+    // ==================== Environment Variables Table & Dialogs ====================
+
+    private TableView<KeyValuePair> createVariablesTable(
+            ObservableList<KeyValuePair> data,
+            String nameColumnTitle,
+            String valueColumnTitle,
+            CheckBox masterCheckBox,
+            CheckBox masterSelectBox,
+            int[] pendingFocus) {
+
+        TableView<KeyValuePair> table = new TableView<>();
+        table.getStyleClass().add("key-value-table");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setItems(data);
+        table.setEditable(true);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        table.setPrefHeight(200);
+        table.setMinHeight(160);
+
+        table.setRowFactory(tv -> new TableRow<>() {
+            private final javafx.beans.value.ChangeListener<Boolean> selListener = (obs, oldVal, newVal) -> {
+                pseudoClassStateChanged(ROW_SELECTED_PSEUDO, Boolean.TRUE.equals(newVal));
+            };
+
+            @Override
+            protected void updateItem(KeyValuePair item, boolean empty) {
+                KeyValuePair oldItem = getItem();
+                if (oldItem != null) {
+                    oldItem.selectedProperty().removeListener(selListener);
+                }
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, false);
+                } else {
+                    pseudoClassStateChanged(ROW_SELECTED_PSEUDO, item.isSelected());
+                    item.selectedProperty().addListener(selListener);
+                }
+            }
+        });
+
+        // 1. Tick mark master checkbox
+        masterCheckBox.setAlignment(Pos.CENTER);
+        masterCheckBox.setMaxWidth(Double.MAX_VALUE);
+        masterCheckBox.setSelected(true);
+        masterCheckBox.setOnAction(e -> {
+            boolean selectAll = masterCheckBox.isSelected();
+            for (KeyValuePair kv : data) {
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    kv.setEnabled(selectAll);
+                }
+            }
+            table.refresh();
+        });
+
+        // 1. Tick mark column (38px)
+        TableColumn<KeyValuePair, Boolean> checkCol = new TableColumn<>();
+        checkCol.setGraphic(masterCheckBox);
+        checkCol.getStyleClass().add("param-check-col");
+        checkCol.setMinWidth(38);
+        checkCol.setMaxWidth(38);
+        checkCol.setPrefWidth(38);
+        checkCol.setResizable(false);
+        checkCol.setCellValueFactory(cellData -> cellData.getValue().enabledProperty());
+        checkCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowCheckBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowCheckBox.setVisible(false);
+                } else {
+                    rowCheckBox.setVisible(true);
+                    rowCheckBox.setSelected(item.isEnabled());
+                }
+            }
+
+            {
+                rowCheckBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowCheckBox);
+                getStyleClass().add("param-check-cell");
+                rowCheckBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setEnabled(rowCheckBox.isSelected());
+                        updateVariableMasterCheckBox(data, masterCheckBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.enabledProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.enabledProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        // 2. Variable Name column
+        TableColumn<KeyValuePair, String> varCol = new TableColumn<>(nameColumnTitle != null ? nameColumnTitle : "Variable Name");
+        varCol.setMinWidth(140);
+        varCol.setPrefWidth(200);
+        varCol.setCellValueFactory(cellData -> cellData.getValue().keyProperty());
+        varCol.setCellFactory(col -> createVariableCell(table, data, "Variable Name", 0,
+                KeyValuePair::getKey, KeyValuePair::setKey, masterCheckBox, masterSelectBox, pendingFocus));
+
+        // 3. Value column
+        TableColumn<KeyValuePair, String> valCol = new TableColumn<>(valueColumnTitle != null ? valueColumnTitle : "Value");
+        valCol.setMinWidth(140);
+        valCol.setPrefWidth(240);
+        valCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
+        valCol.setCellFactory(col -> createVariableCell(table, data, "Value", 1,
+                KeyValuePair::getValue, KeyValuePair::setValue, masterCheckBox, masterSelectBox, pendingFocus));
+
+        // 4. Select master checkbox
+        masterSelectBox.setAlignment(Pos.CENTER);
+        masterSelectBox.setMaxWidth(Double.MAX_VALUE);
+        masterSelectBox.setOnAction(e -> {
+            boolean selectAll = masterSelectBox.isSelected();
+            for (KeyValuePair kv : data) {
+                if (selectAll) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        kv.setSelected(true);
+                    }
+                } else {
+                    kv.setSelected(false);
+                }
+            }
+            table.getSelectionModel().clearSelection();
+            table.refresh();
+        });
+
+        // 4. Select column (38px)
+        TableColumn<KeyValuePair, Boolean> selectCol = new TableColumn<>();
+        selectCol.setGraphic(masterSelectBox);
+        selectCol.getStyleClass().add("param-select-col");
+        selectCol.setMinWidth(38);
+        selectCol.setMaxWidth(38);
+        selectCol.setPrefWidth(38);
+        selectCol.setResizable(false);
+        selectCol.setCellValueFactory(cellData -> cellData.getValue().selectedProperty());
+        selectCol.setCellFactory(col -> new TableCell<KeyValuePair, Boolean>() {
+            private final CheckBox rowSelectBox = new CheckBox();
+            private final javafx.beans.InvalidationListener rowStateListener = obs -> updateState();
+            private KeyValuePair boundItem = null;
+
+            private void updateState() {
+                KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                if (item == null || (item.isPlaceholder() && isRowEmpty(item))) {
+                    rowSelectBox.setVisible(false);
+                } else {
+                    rowSelectBox.setVisible(true);
+                    rowSelectBox.setSelected(item.isSelected());
+                }
+            }
+
+            {
+                rowSelectBox.setAlignment(Pos.CENTER);
+                setAlignment(Pos.CENTER);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setGraphic(rowSelectBox);
+                getStyleClass().add("param-select-cell");
+                rowSelectBox.setOnAction(e -> {
+                    KeyValuePair item = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (item != null) {
+                        item.setSelected(rowSelectBox.isSelected());
+                        updateVariableMasterSelectBox(data, masterSelectBox);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean val, boolean empty) {
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().removeListener(rowStateListener);
+                    boundItem.selectedProperty().removeListener(rowStateListener);
+                }
+                super.updateItem(val, empty);
+                boundItem = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (boundItem != null) {
+                    boundItem.placeholderProperty().addListener(rowStateListener);
+                    boundItem.selectedProperty().addListener(rowStateListener);
+                }
+                updateState();
+            }
+        });
+
+        table.getColumns().addAll(checkCol, varCol, valCol, selectCol);
+
+        // Context menu
+        ContextMenu contextMenu = new ContextMenu();
+        MenuItem addItem = new MenuItem("Add Variable");
+        MenuItem deleteItem = new MenuItem("Delete Variable");
+        addItem.setOnAction(e -> addVariableRow(table, data, pendingFocus));
+        deleteItem.setOnAction(e -> removeSelectedVariables(table, data, masterCheckBox, masterSelectBox));
+        contextMenu.getItems().addAll(addItem, deleteItem);
+        table.setContextMenu(contextMenu);
+
+        ensureVariablePlaceholderRow(data);
+        updateVariableMasterCheckBox(data, masterCheckBox);
+        updateVariableMasterSelectBox(data, masterSelectBox);
+
+        return table;
+    }
+
+    private TableCell<KeyValuePair, String> createVariableCell(
+            TableView<KeyValuePair> table,
+            ObservableList<KeyValuePair> data,
+            String placeholder,
+            int colIndex,
+            Function<KeyValuePair, String> getter,
+            BiConsumer<KeyValuePair, String> setter,
+            CheckBox masterCheckBox,
+            CheckBox masterSelectBox,
+            int[] pendingFocus) {
+
+        return new TableCell<KeyValuePair, String>() {
+            private final TextField textField = new TextField();
+            private boolean updating = false;
+
+            {
+                textField.setPromptText(placeholder);
+                textField.getStyleClass().add("param-cell-field");
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+                setAlignment(Pos.CENTER_LEFT);
+                setGraphic(textField);
+                getStyleClass().add("param-table-cell");
+
+                setOnMouseClicked(e -> textField.requestFocus());
+
+                textField.textProperty().addListener((obs, oldVal, newVal) -> {
+                    if (updating) {
+                        return;
+                    }
+                    KeyValuePair row = getTableRow() != null ? getTableRow().getItem() : null;
+                    if (row == null) {
+                        return;
+                    }
+                    String safeVal = newVal != null ? newVal : "";
+                    setter.accept(row, safeVal);
+
+                    if (!isRowEmpty(row)) {
+                        row.setPlaceholder(false);
+                        if (!row.isEnabled()) {
+                            row.setEnabled(true);
+                        }
+                        ensureVariablePlaceholderRow(data);
+                        updateVariableMasterCheckBox(data, masterCheckBox);
+                        updateVariableMasterSelectBox(data, masterSelectBox);
+                    }
+                });
+
+                textField.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                    if (e.isConsumed()) {
+                        return;
+                    }
+                    if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                        e.consume();
+                        int rowIndex = getIndex();
+                        if (colIndex == 0) {
+                            focusVariableCell(table, rowIndex, 2);
+                        } else {
+                            int nextRow = rowIndex + 1;
+                            if (nextRow < data.size()) {
+                                focusVariableCell(table, nextRow, 1);
+                            }
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                KeyValuePair row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                if (empty || row == null) {
+                    updating = true;
+                    try {
+                        textField.setText("");
+                        textField.setVisible(false);
+                    } finally {
+                        updating = false;
+                    }
+                } else {
+                    textField.setVisible(true);
+                    String current = getter.apply(row);
+                    String safeCurrent = current != null ? current : "";
+                    if (!safeCurrent.equals(textField.getText())) {
+                        updating = true;
+                        try {
+                            textField.setText(safeCurrent);
+                        } finally {
+                            updating = false;
+                        }
+                    }
+                    if (!row.isEnabled()) {
+                        textField.setStyle("-fx-text-fill: -text-muted; -fx-opacity: 0.6;");
+                    } else {
+                        textField.setStyle("");
+                    }
+
+                    if (colIndex == 0 && pendingFocus[0] == getIndex()) {
+                        pendingFocus[0] = -1;
+                        Platform.runLater(() -> {
+                            textField.requestFocus();
+                            textField.selectAll();
+                        });
+                    }
+                }
+            }
+        };
+    }
+
+    private void focusVariableCell(TableView<KeyValuePair> table, int rowIdx, int colIdx) {
+        Platform.runLater(() -> {
+            table.scrollTo(rowIdx);
+            if (colIdx >= 0 && colIdx < table.getColumns().size()) {
+                table.getFocusModel().focus(rowIdx, table.getColumns().get(colIdx));
+            }
+            Platform.runLater(() -> {
+                if (colIdx >= 0 && colIdx < table.getColumns().size()) {
+                    var targetCol = table.getColumns().get(colIdx);
+                    for (Node n : table.lookupAll(".param-table-cell")) {
+                        if (n instanceof TableCell<?, ?> tc && tc.getTableColumn() == targetCol && tc.getIndex() == rowIdx) {
+                            if (tc.getGraphic() instanceof TextField tf) {
+                                tf.requestFocus();
+                                tf.selectAll();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private void addVariableRow(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data, int[] pendingFocus) {
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+
+        int targetIndex;
+        if (!data.isEmpty() && data.get(data.size() - 1).isPlaceholder()) {
+            targetIndex = data.size() - 1;
+            data.add(targetIndex, newRow);
+        } else {
+            data.add(newRow);
+            targetIndex = data.size() - 1;
+        }
+
+        ensureVariablePlaceholderRow(data);
+        pendingFocus[0] = targetIndex;
+        table.getSelectionModel().clearSelection();
+        focusVariableCell(table, targetIndex, 1);
+    }
+
+    private void removeSelectedVariables(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data,
+                                         CheckBox masterCheckBox, CheckBox masterSelectBox) {
+        List<KeyValuePair> toDelete = data.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = table.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+
+        if (!toDelete.isEmpty()) {
+            data.removeAll(toDelete);
+            ensureVariablePlaceholderRow(data);
+            updateVariableMasterCheckBox(data, masterCheckBox);
+            updateVariableMasterSelectBox(data, masterSelectBox);
+            table.refresh();
+        }
+    }
+
+    private void ensureVariablePlaceholderRow(ObservableList<KeyValuePair> data) {
+        if (data.isEmpty()) {
+            data.add(new KeyValuePair(true, "", "", "", true));
+            return;
+        }
+        while (data.size() > 1) {
+            KeyValuePair last = data.get(data.size() - 1);
+            KeyValuePair secondLast = data.get(data.size() - 2);
+            if (last.isPlaceholder() && isRowEmpty(last) && secondLast.isPlaceholder() && isRowEmpty(secondLast)) {
+                data.remove(data.size() - 1);
+            } else {
+                break;
+            }
+        }
+        KeyValuePair last = data.get(data.size() - 1);
+        if (!last.isPlaceholder()) {
+            data.add(new KeyValuePair(true, "", "", "", true));
+        }
+    }
+
+    private void updateVariableMasterCheckBox(ObservableList<KeyValuePair> data, CheckBox masterCheckBox) {
+        if (masterCheckBox == null) return;
+        long totalActive = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+            return;
+        }
+        long enabledCount = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isEnabled()).count();
+        if (enabledCount == totalActive) {
+            masterCheckBox.setSelected(true);
+            masterCheckBox.setIndeterminate(false);
+        } else if (enabledCount == 0) {
+            masterCheckBox.setSelected(false);
+            masterCheckBox.setIndeterminate(false);
+        } else {
+            masterCheckBox.setIndeterminate(true);
+        }
+    }
+
+    private void updateVariableMasterSelectBox(ObservableList<KeyValuePair> data, CheckBox masterSelectBox) {
+        if (masterSelectBox == null) return;
+        long totalActive = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder()).count();
+        if (totalActive == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+            return;
+        }
+        long selectedCount = data.stream().filter(kv -> !isRowEmpty(kv) && !kv.isPlaceholder() && kv.isSelected()).count();
+        if (selectedCount == totalActive) {
+            masterSelectBox.setSelected(true);
+            masterSelectBox.setIndeterminate(false);
+        } else if (selectedCount == 0) {
+            masterSelectBox.setSelected(false);
+            masterSelectBox.setIndeterminate(false);
+        } else {
+            masterSelectBox.setIndeterminate(true);
+        }
+    }
+
+    private HBox createVariablesButtonBar(TableView<KeyValuePair> table, ObservableList<KeyValuePair> data,
+                                          CheckBox masterCheckBox, CheckBox masterSelectBox, int[] pendingFocus) {
+        Button addVarButton = new Button("+ Add Variable");
+        addVarButton.getStyleClass().add("add-row-button");
+        addVarButton.setOnAction(e -> addVariableRow(table, data, pendingFocus));
+
+        Button removeVarButton = new Button("Remove Selected");
+        removeVarButton.getStyleClass().add("delete-row-button");
+        removeVarButton.setOnAction(e -> removeSelectedVariables(table, data, masterCheckBox, masterSelectBox));
+
+        HBox buttonBox = new HBox(8, addVarButton, removeVarButton);
+        buttonBox.setAlignment(Pos.CENTER_LEFT);
+        buttonBox.setPadding(new Insets(4, 0, 0, 0));
+        return buttonBox;
+    }
+
     /** Postman-style variable editor: key/value table with add/delete/save. */
     private void openEnvironmentEditor(EnvironmentResponse env) {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Environment");
-        dialog.setHeaderText("Variables of \"" + env.getName() + "\"");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
-        TableView<KeyValuePair> table = new TableView<>();
+        initAndStyleDialog(dialog);
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        // Header
+        VBox headerBox = new VBox(3);
+        Label titleLabel = new Label("Edit Environment");
+        titleLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label subtitleLabel = new Label("Variables of \"" + env.getName() + "\"");
+        subtitleLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: -text-muted;");
+        headerBox.getChildren().addAll(titleLabel, subtitleLabel);
+
+        // Name field
+        Label nameLabel = new Label("Environment Name *");
+        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+        TextField nameField = new TextField(env.getName());
+        nameField.setPromptText("Environment name");
+        nameField.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-color; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 7 10; -fx-text-fill: -text-primary;");
+
+        VBox nameBox = new VBox(5, nameLabel, nameField);
+
+        // Description area
+        Label descriptionLabel = new Label("Description (optional)");
+        descriptionLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+        TextArea descriptionArea = new TextArea(env.getDescription() != null ? env.getDescription() : "");
+        descriptionArea.setPromptText("What is this environment for?");
+        descriptionArea.setPrefRowCount(2);
+        descriptionArea.setWrapText(true);
+        descriptionArea.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-subtle; -fx-border-radius: 6; -fx-background-radius: 6; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+
+        VBox descBox = new VBox(5, descriptionLabel, descriptionArea);
+
+        // Variables
+        Label variablesLabel = new Label("Variables");
+        variablesLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+
         ObservableList<KeyValuePair> data = FXCollections.observableArrayList();
         if (env.getVariables() != null) {
-            env.getVariables().forEach((k, v) -> data.add(new KeyValuePair(k, v, "")));
+            env.getVariables().forEach((k, v) -> data.add(new KeyValuePair(true, k, v != null ? v : "", "", false)));
         }
-        table.setItems(data);
-        table.setEditable(true);
-        table.setPrefSize(460, 260);
 
-        TableColumn<KeyValuePair, String> keyCol = new TableColumn<>("Variable");
-        keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
-        keyCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        keyCol.setOnEditCommit(e -> e.getRowValue().setKey(e.getNewValue()));
-        keyCol.setPrefWidth(170);
+        CheckBox masterCheckBox = new CheckBox();
+        CheckBox masterSelectBox = new CheckBox();
+        int[] pendingFocus = new int[]{-1};
 
-        TableColumn<KeyValuePair, String> valueCol = new TableColumn<>("Value");
-        valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
-        valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        valueCol.setOnEditCommit(e -> e.getRowValue().setValue(e.getNewValue()));
-        valueCol.setPrefWidth(260);
+        TableView<KeyValuePair> table = createVariablesTable(
+                data, "Variable", "Value", masterCheckBox, masterSelectBox, pendingFocus);
 
-        table.getColumns().add(keyCol);
-        table.getColumns().add(valueCol);
+        HBox buttonBox = createVariablesButtonBar(table, data, masterCheckBox, masterSelectBox, pendingFocus);
 
-        Button addBtn = new Button("Add Variable");
-        addBtn.setOnAction(e -> data.add(new KeyValuePair("KEY", "value", "")));
-        Button deleteBtn = new Button("Delete");
-        deleteBtn.setOnAction(e -> {
-            KeyValuePair selected = table.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                data.remove(selected);
+        VBox varBox = new VBox(6, variablesLabel, table, buttonBox);
+        VBox.setVgrow(varBox, Priority.ALWAYS);
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        VBox formContent = new VBox(12, headerBox, nameBox, descBox, varBox);
+        formContent.setPadding(new Insets(16, 20, 16, 20));
+        formContent.setPrefWidth(580);
+        formContent.setMinWidth(560);
+
+        ScrollPane scrollPane = new ScrollPane(formContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setPrefViewportWidth(620);
+        scrollPane.setPrefViewportHeight(460);
+        scrollPane.setMinWidth(580);
+        scrollPane.setMinHeight(380);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
+
+        dialog.getDialogPane().setContent(scrollPane);
+        dialog.getDialogPane().setPrefSize(640, 560);
+        dialog.getDialogPane().setMinSize(600, 480);
+        dialog.setResizable(true);
+
+        dialog.setOnShown(e -> {
+            Window window = dialog.getDialogPane().getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(600);
+                stage.setMinHeight(480);
+                stage.setWidth(640);
+                stage.setHeight(560);
+                stage.centerOnScreen();
             }
+            Platform.runLater(nameField::requestFocus);
         });
-        HBox buttons = new HBox(8, addBtn, deleteBtn);
 
-        VBox content = new VBox(10, table, buttons);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        Node saveBtn = dialog.getDialogPane().lookupButton(saveButtonType);
+        if (saveBtn instanceof Button btn) {
+            btn.getStyleClass().add("primary-button");
+            btn.setDisable(nameField.getText() == null || nameField.getText().trim().isEmpty());
+            nameField.textProperty().addListener((obs, oldV, newV) -> {
+                btn.setDisable(newV == null || newV.trim().isEmpty());
+            });
+        }
+        Node cancelBtn = dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        if (cancelBtn instanceof Button btn) {
+            btn.getStyleClass().add("secondary-button");
+        }
 
         dialog.showAndWait().ifPresent(button -> {
-            if (button == ButtonType.OK) {
+            if (button == saveButtonType) {
                 Map<String, String> variables = new LinkedHashMap<>();
                 for (KeyValuePair kv : data) {
-                    if (kv.getKey() != null && !kv.getKey().isBlank()) {
+                    if (kv.isEnabled() && !kv.isPlaceholder() && kv.getKey() != null && !kv.getKey().isBlank()) {
                         variables.put(kv.getKey().trim(), kv.getValue() == null ? "" : kv.getValue());
                     }
                 }
+
+                String updatedName = nameField.getText() != null && !nameField.getText().isBlank()
+                        ? nameField.getText().trim() : env.getName();
+                String updatedDesc = descriptionArea.getText() != null
+                        ? descriptionArea.getText().trim() : "";
+
                 new Thread(() -> {
                     Optional<EnvironmentResponse> updated =
-                            EnvironmentService.updateEnvironmentVariables(env.getId(), variables);
+                            EnvironmentService.updateEnvironment(env.getId(), updatedName, updatedDesc, variables, env.getIsActive());
                     Platform.runLater(() -> {
                         if (updated.isPresent()) {
-                            updateStatus("Environment saved: " + env.getName());
+                            updateStatus("Environment saved: " + updatedName);
                             loadEnvironments();
                         } else {
                             AlertUtils.showError("Failed to save environment variables");
@@ -5417,6 +11156,12 @@ public class MainController implements Initializable {
         String method = "GET";
         String url = "";
         String body = "";
+        String bodyType = "None";
+        String rawFormat = "JSON";
+        String activeSubTab = "Params";
+        String activeResponseSubTab = "Body";
+        String graphqlQuery = "";
+        String graphqlVariables = "";
         String preScript = "";
         String testsScript = "";
         String authType = "No Auth";
@@ -5425,6 +11170,12 @@ public class MainController implements Initializable {
         String authPassword = "";
         List<KeyValuePair> params = new ArrayList<>();
         List<KeyValuePair> headers = new ArrayList<>();
+        List<KeyValuePair> formData = new ArrayList<>();
+        List<KeyValuePair> urlEncoded = new ArrayList<>();
+        String socketIoNamespace = "";
+        String socketIoEventName = "";
+        String socketIoMessageBody = "";
+        List<SocketIoEventItem> socketIoEvents = new ArrayList<>();
         // Postman-style unsaved indicator (the small dot on the tab)
         boolean dirty = false;
         // FIX: the response viewer used to be one shared set of fields
@@ -5444,6 +11195,12 @@ public class MainController implements Initializable {
             copy.method = this.method;
             copy.url = this.url;
             copy.body = this.body;
+            copy.bodyType = this.bodyType;
+            copy.rawFormat = this.rawFormat;
+            copy.activeSubTab = this.activeSubTab;
+            copy.activeResponseSubTab = this.activeResponseSubTab;
+            copy.graphqlQuery = this.graphqlQuery;
+            copy.graphqlVariables = this.graphqlVariables;
             copy.preScript = this.preScript;
             copy.testsScript = this.testsScript;
             copy.authType = this.authType;
@@ -5452,11 +11209,32 @@ public class MainController implements Initializable {
             copy.authPassword = this.authPassword;
             copy.params = new ArrayList<>();
             for (KeyValuePair kv : this.params) {
-                copy.params.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+                if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                    copy.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
             }
             copy.headers = new ArrayList<>();
             for (KeyValuePair kv : this.headers) {
-                copy.headers.add(new KeyValuePair(kv.getKey(), kv.getValue(), kv.getDescription()));
+                copy.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+            }
+            copy.formData = new ArrayList<>();
+            for (KeyValuePair kv : this.formData) {
+                KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder());
+                item.setType(kv.getType());
+                item.setFilePath(kv.getFilePath());
+                item.setFileName(kv.getFileName());
+                copy.formData.add(item);
+            }
+            copy.urlEncoded = new ArrayList<>();
+            for (KeyValuePair kv : this.urlEncoded) {
+                copy.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), kv.isPlaceholder()));
+            }
+            copy.socketIoNamespace = this.socketIoNamespace;
+            copy.socketIoEventName = this.socketIoEventName;
+            copy.socketIoMessageBody = this.socketIoMessageBody;
+            copy.socketIoEvents = new ArrayList<>();
+            for (SocketIoEventItem item : this.socketIoEvents) {
+                copy.socketIoEvents.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
             }
             copy.dirty = true; // an unsaved copy always starts dirty
             return copy;
@@ -5477,13 +11255,64 @@ public class MainController implements Initializable {
                     if (switchingTabs) {
                         return;
                     }
+                    if (!isNavigatingHistory && oldTab != null && newTab != null && oldTab != newTab) {
+                        tabNavBackStack.push(oldTab);
+                        tabNavForwardStack.clear();
+                        updateNavButtonsState();
+                    }
                     if (oldTab != null && tabStates.containsKey(oldTab)) {
                         captureTabState(oldTab);
                     }
                     if (newTab != null && tabStates.containsKey(newTab)) {
                         restoreTabState(newTab);
+                        syncCollectionsTreeSelectionToActiveTab(newTab);
                     }
+                    scheduleSessionSave();
                 });
+
+        requestTabPane.getTabs().addListener((javafx.collections.ListChangeListener<Tab>) c -> {
+            if (!restoringSession) {
+                scheduleSessionSave();
+            }
+            tabNavBackStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+            tabNavForwardStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+            updateNavButtonsState();
+        });
+        Platform.runLater(this::updateNavButtonsState);
+
+        TabDragReorderHelper.install(requestTabPane, isMoving -> switchingTabs = isMoving);
+
+        if (requestBuilderTabPane != null) {
+            requestBuilderTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldSubTab, newSubTab) -> {
+                if (restoringTabState || switchingTabs) {
+                    return;
+                }
+                Tab active = activeRequestTab();
+                if (active != null && tabStates.containsKey(active)) {
+                    RequestTabState state = tabStates.get(active);
+                    if (state != null && newSubTab != null && newSubTab.getText() != null) {
+                        state.activeSubTab = newSubTab.getText();
+                        scheduleSessionSave();
+                    }
+                }
+            });
+        }
+
+        if (responseTabPane != null) {
+            responseTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldRespTab, newRespTab) -> {
+                if (restoringTabState || switchingTabs) {
+                    return;
+                }
+                Tab active = activeRequestTab();
+                if (active != null && tabStates.containsKey(active)) {
+                    RequestTabState state = tabStates.get(active);
+                    if (state != null && newRespTab != null && newRespTab.getText() != null) {
+                        state.activeResponseSubTab = newRespTab.getText();
+                        scheduleSessionSave();
+                    }
+                }
+            });
+        }
 
         // Live dirty-tracking + method-badge updates. These controls are
         // shared across every tab (the tab switch swaps their content), so
@@ -5498,6 +11327,7 @@ public class MainController implements Initializable {
             if (state != null && nv != null) {
                 state.method = nv;
                 markDirty(active);
+                scheduleSessionSave();
             }
         });
         urlField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
@@ -5508,15 +11338,31 @@ public class MainController implements Initializable {
         if (postRequestScriptsArea != null) {
             postRequestScriptsArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
         }
+        if (socketIoNamespaceField != null) {
+            socketIoNamespaceField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (socketIoEventNameField != null) {
+            socketIoEventNameField.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (socketIoMessageComposeArea != null) {
+            socketIoMessageComposeArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        socketIoEventsData.addListener((javafx.collections.ListChangeListener<SocketIoEventItem>) c -> onEditorFieldChanged());
         paramsData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> {
             onEditorFieldChanged();
-            if (!syncingUrlAndParams) {
+            if (!syncingUrlAndParams && !restoringTabState) {
                 syncParamsToUrl();
             }
         });
         headersData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
-
-        openRequestTab("Untitled Request", null);
+        formData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        urlEncodedData.addListener((javafx.collections.ListChangeListener<KeyValuePair>) c -> onEditorFieldChanged());
+        if (graphqlQueryArea != null) {
+            graphqlQueryArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
+        if (graphqlVariablesArea != null) {
+            graphqlVariablesArea.textProperty().addListener((o, ov, nv) -> onEditorFieldChanged());
+        }
     }
 
     /** True while the URL<->Params sync itself is writing to either side —
@@ -5555,11 +11401,16 @@ public class MainController implements Initializable {
 
         syncingUrlAndParams = true;
         try {
-            // Keep existing rows (and their Description) for keys still present
-            Map<String, KeyValuePair> existingByKey = new HashMap<>();
+            // Keep existing rows (and their Description / Enabled state)
+            Map<String, KeyValuePair> existingByKey = new LinkedHashMap<>();
+            List<KeyValuePair> disabledRows = new ArrayList<>();
             for (KeyValuePair kv : paramsData) {
-                if (!kv.getKey().isEmpty()) {
-                    existingByKey.put(kv.getKey(), kv);
+                if (kv.getKey() != null && !kv.getKey().isEmpty()) {
+                    if (kv.isEnabled()) {
+                        existingByKey.put(kv.getKey(), kv);
+                    } else {
+                        disabledRows.add(kv);
+                    }
                 }
             }
             List<KeyValuePair> rebuilt = new ArrayList<>();
@@ -5569,12 +11420,17 @@ public class MainController implements Initializable {
                     existing.setValue(entry.getValue());
                     rebuilt.add(existing);
                 } else {
-                    rebuilt.add(new KeyValuePair(entry.getKey(), entry.getValue(), ""));
+                    rebuilt.add(new KeyValuePair(true, entry.getKey(), entry.getValue(), ""));
                 }
             }
-            if (!rebuilt.equals(new ArrayList<>(paramsData))) {
-                paramsData.setAll(rebuilt);
+            // Preserve disabled rows in the table
+            for (KeyValuePair disabled : disabledRows) {
+                if (!parsed.containsKey(disabled.getKey())) {
+                    rebuilt.add(disabled);
+                }
             }
+            paramsData.setAll(rebuilt);
+            ensurePlaceholderRow();
         } finally {
             syncingUrlAndParams = false;
         }
@@ -5590,7 +11446,10 @@ public class MainController implements Initializable {
 
         StringBuilder query = new StringBuilder();
         for (KeyValuePair kv : paramsData) {
-            if (kv.getKey() == null || kv.getKey().isEmpty()) {
+            if (!kv.isEnabled()) {
+                continue;
+            }
+            if (kv.getKey() == null || kv.getKey().trim().isEmpty()) {
                 continue;
             }
             if (query.length() > 0) {
@@ -5610,7 +11469,7 @@ public class MainController implements Initializable {
             try {
                 urlField.replaceText(newUrl);
             } finally {
-                syncingUrlAndParams = false;
+                Platform.runLater(() -> syncingUrlAndParams = false);
             }
         }
     }
@@ -5622,6 +11481,7 @@ public class MainController implements Initializable {
             return;
         }
         markDirty(requestTabPane.getSelectionModel().getSelectedItem());
+        scheduleSessionSave();
     }
 
     private void markDirty(Tab tab) {
@@ -5664,6 +11524,7 @@ public class MainController implements Initializable {
 
         restoreTabState(tab); // blank editor for a fresh tab
         refreshTabGraphic(tab);
+        scheduleSessionSave();
         return tab;
     }
 
@@ -5685,6 +11546,7 @@ public class MainController implements Initializable {
             if (requestTabPane.getTabs().isEmpty()) {
                 openRequestTab("Untitled Request", null);
             }
+            scheduleSessionSave();
         });
         setupTabContextMenu(tab);
         return tab;
@@ -5751,6 +11613,7 @@ public class MainController implements Initializable {
 
         restoreTabState(newTab);
         refreshTabGraphic(newTab);
+        scheduleSessionSave();
     }
 
     /** Closes a single tab. Unless {@code force} is true, a tab with
@@ -5773,6 +11636,7 @@ public class MainController implements Initializable {
         if (requestTabPane.getTabs().isEmpty()) {
             openRequestTab("Untitled Request", null);
         }
+        scheduleSessionSave();
     }
 
     /** Closes every tab matched by {@code which} — backs "Close Other
@@ -5813,6 +11677,7 @@ public class MainController implements Initializable {
         if (requestTabPane.getTabs().isEmpty()) {
             openRequestTab("Untitled Request", null);
         }
+        scheduleSessionSave();
     }
 
     /** Postman-style tab label: colored method badge + name + unsaved dot. */
@@ -5821,20 +11686,29 @@ public class MainController implements Initializable {
         if (state == null) {
             return;
         }
-        HBox box = new HBox(6);
+        HBox box = new HBox(8);
         box.setAlignment(Pos.CENTER_LEFT);
 
-        Label methodLabel = new Label(methodBadge(state.method == null ? "GET" : state.method));
-        methodLabel.getStyleClass().add("tab-method-badge");
-        methodLabel.getStyleClass().add("method-" + (state.method == null ? "get" : state.method.toLowerCase(Locale.ROOT)));
+        String curMethod = state.method == null ? "GET" : state.method;
+        Label methodLabel = new Label(methodBadge(curMethod));
+        methodLabel.getStyleClass().addAll("tab-method-badge", "method-chip", "method-chip-" + curMethod.toLowerCase(Locale.ROOT));
+        methodLabel.setAlignment(Pos.CENTER);
+        methodLabel.setMinWidth(48);
+        methodLabel.setPrefWidth(48);
+        methodLabel.setMaxWidth(Region.USE_PREF_SIZE);
+        methodLabel.setTextOverrun(OverrunStyle.CLIP);
 
         Label nameLabel = new Label(state.name);
         nameLabel.getStyleClass().add("tab-name-label");
+
+        methodLabel.setMouseTransparent(true);
+        nameLabel.setMouseTransparent(true);
 
         box.getChildren().addAll(methodLabel, nameLabel);
         if (state.dirty) {
             Label dot = new Label("\u25CF");
             dot.getStyleClass().add("tab-unsaved-dot");
+            dot.setMouseTransparent(true);
             box.getChildren().add(dot);
         }
         tab.setGraphic(box);
@@ -5849,14 +11723,60 @@ public class MainController implements Initializable {
         state.method = methodCombo.getValue();
         state.url = urlField.getText();
         state.body = bodyTextArea.getText();
+        state.graphqlQuery = graphqlQueryArea != null ? graphqlQueryArea.getText() : "";
+        state.graphqlVariables = graphqlVariablesArea != null ? graphqlVariablesArea.getText() : "";
+        Toggle selToggle = bodyTypeGroup != null ? bodyTypeGroup.getSelectedToggle() : null;
+        state.bodyType = (selToggle instanceof ToggleButton btn) ? btn.getText() : "None";
+        if (rawFormatMenu != null && rawFormatMenu.getText() != null && !rawFormatMenu.getText().isBlank()) {
+            state.rawFormat = rawFormatMenu.getText().trim();
+        }
+        if (requestBuilderTabPane != null && requestBuilderTabPane.getSelectionModel().getSelectedItem() != null) {
+            state.activeSubTab = requestBuilderTabPane.getSelectionModel().getSelectedItem().getText();
+        }
+        if (responseTabPane != null && responseTabPane.getSelectionModel().getSelectedItem() != null) {
+            state.activeResponseSubTab = responseTabPane.getSelectionModel().getSelectedItem().getText();
+        }
         state.preScript = preRequestScriptsArea != null ? preRequestScriptsArea.getText() : "";
         state.testsScript = postRequestScriptsArea != null ? postRequestScriptsArea.getText() : "";
         state.authType = authTypeCombo.getValue();
         state.authToken = getAuthTokenForPersistence();
         state.authUsername = usernameField.getText();
         state.authPassword = passwordField.getText();
-        state.params = new ArrayList<>(paramsData);
-        state.headers = new ArrayList<>(headersData);
+        state.params = new ArrayList<>();
+        for (KeyValuePair kv : paramsData) {
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
+        }
+        state.headers = new ArrayList<>();
+        for (KeyValuePair kv : headersData) {
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
+        }
+        state.formData = new ArrayList<>();
+        for (KeyValuePair kv : formData) {
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                item.setType(kv.getType());
+                item.setFilePath(kv.getFilePath());
+                item.setFileName(kv.getFileName());
+                state.formData.add(item);
+            }
+        }
+        state.urlEncoded = new ArrayList<>();
+        for (KeyValuePair kv : urlEncodedData) {
+            if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+            }
+        }
+        state.socketIoNamespace = socketIoNamespaceField != null ? socketIoNamespaceField.getText() : "";
+        state.socketIoEventName = socketIoEventNameField != null ? socketIoEventNameField.getText() : "";
+        state.socketIoMessageBody = socketIoMessageComposeArea != null ? socketIoMessageComposeArea.getText() : "";
+        state.socketIoEvents = new ArrayList<>();
+        for (SocketIoEventItem item : socketIoEventsData) {
+            state.socketIoEvents.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
+        }
 
         // FIX: snapshot the response too, so switching back to this tab
         // later shows ITS response, not whatever the app last displayed.
@@ -5876,8 +11796,24 @@ public class MainController implements Initializable {
         restoringTabState = true;
         try {
             methodCombo.setValue(state.method == null ? "GET" : state.method);
-            urlField.replaceText(state.url == null ? "" : state.url);
+            String stateUrl = state.url;
+            if (stateUrl == null || stateUrl.isEmpty()
+                    || "https://api.example.com/endpoint".equalsIgnoreCase(stateUrl.trim())
+                    || "Enter URL or paste text".equalsIgnoreCase(stateUrl.trim())) {
+                urlField.replaceText("");
+            } else {
+                urlField.replaceText(stateUrl);
+            }
             bodyTextArea.replaceText(state.body == null ? "" : state.body);
+            if (bodyCommentHighlighter != null) {
+                bodyCommentHighlighter.refresh();
+            }
+            if (graphqlQueryArea != null) {
+                graphqlQueryArea.replaceText(state.graphqlQuery != null ? state.graphqlQuery : "");
+            }
+            if (graphqlVariablesArea != null) {
+                graphqlVariablesArea.replaceText(state.graphqlVariables != null ? state.graphqlVariables : "");
+            }
             if (preRequestScriptsArea != null) {
                 preRequestScriptsArea.setText(state.preScript == null ? "" : state.preScript);
             }
@@ -5889,8 +11825,110 @@ public class MainController implements Initializable {
             loadAuthTokenForPersistence(authTypeCombo.getValue(), state.authToken);
             usernameField.replaceText(state.authUsername == null ? "" : state.authUsername);
             passwordField.setText(state.authPassword == null ? "" : state.authPassword);
-            paramsData.setAll(state.params);
-            headersData.setAll(state.headers);
+            paramsData.clear();
+            if (state.params != null && !state.params.isEmpty()) {
+                for (KeyValuePair kv : state.params) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        paramsData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                    }
+                }
+            }
+            ensurePlaceholderRow();
+            headersData.clear();
+            if (state.headers != null && !state.headers.isEmpty()) {
+                for (KeyValuePair kv : state.headers) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        headersData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                    }
+                }
+            }
+            ensureHeadersPlaceholderRow();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
+
+            formData.clear();
+            if (state.formData != null && !state.formData.isEmpty()) {
+                for (KeyValuePair kv : state.formData) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                        item.setType(kv.getType());
+                        item.setFilePath(kv.getFilePath());
+                        item.setFileName(kv.getFileName());
+                        formData.add(item);
+                    }
+                }
+            }
+            ensureFormDataPlaceholderRow();
+            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+
+            urlEncodedData.clear();
+            if (state.urlEncoded != null && !state.urlEncoded.isEmpty()) {
+                for (KeyValuePair kv : state.urlEncoded) {
+                    if (!isRowEmpty(kv) && !kv.isPlaceholder()) {
+                        urlEncodedData.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                    }
+                }
+            }
+            ensureUrlEncodedPlaceholderRow();
+            updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+            updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+
+            if (socketIoNamespaceField != null) {
+                socketIoNamespaceField.setText(state.socketIoNamespace != null ? state.socketIoNamespace : "");
+            }
+            if (socketIoEventNameField != null) {
+                socketIoEventNameField.setText(state.socketIoEventName != null ? state.socketIoEventName : "");
+            }
+            if (socketIoMessageComposeArea != null) {
+                socketIoMessageComposeArea.setText(state.socketIoMessageBody != null ? state.socketIoMessageBody : "");
+            }
+            socketIoEventsData.clear();
+            if (state.socketIoEvents != null && !state.socketIoEvents.isEmpty()) {
+                for (SocketIoEventItem item : state.socketIoEvents) {
+                    socketIoEventsData.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
+                }
+            } else {
+                socketIoEventsData.add(new SocketIoEventItem("", true, ""));
+            }
+            if (rawFormatMenu != null) {
+                String rf = (state.rawFormat != null && !state.rawFormat.isBlank()) ? state.rawFormat : "JSON";
+                rawFormatMenu.setText(rf);
+            }
+            String bType = state.bodyType;
+            if (bType == null || bType.isBlank()) {
+                bType = (state.body != null && !state.body.isBlank()) ? "Raw" : "None";
+            }
+            if (bodyTypeGroup != null) {
+                for (Toggle toggle : bodyTypeGroup.getToggles()) {
+                    if (toggle instanceof ToggleButton tb && tb.getText().equalsIgnoreCase(bType)) {
+                        tb.setSelected(true);
+                        break;
+                    }
+                }
+            }
+            updateBodyViewsVisibility(bType);
+
+            updateRequestBuilderTabs(state.method);
+            updateResponseTabs(state.method);
+
+            if (requestBuilderTabPane != null && state.activeSubTab != null && !state.activeSubTab.isBlank()) {
+                for (Tab subTab : requestBuilderTabPane.getTabs()) {
+                    if (subTab.getText() != null && subTab.getText().equalsIgnoreCase(state.activeSubTab.trim())) {
+                        requestBuilderTabPane.getSelectionModel().select(subTab);
+                        break;
+                    }
+                }
+            }
+
+            if (responseTabPane != null && state.activeResponseSubTab != null && !state.activeResponseSubTab.isBlank()) {
+                for (Tab respTab : responseTabPane.getTabs()) {
+                    if (respTab.getText() != null && respTab.getText().equalsIgnoreCase(state.activeResponseSubTab.trim())) {
+                        responseTabPane.getSelectionModel().select(respTab);
+                        break;
+                    }
+                }
+            }
         } finally {
             restoringTabState = false;
         }
@@ -5923,6 +11961,346 @@ public class MainController implements Initializable {
         return null;
     }
 
+    // ==================== Postman-style session persistence ====================
+
+    private void setupSessionPersistence() {
+        sessionSaveDebounce.setOnFinished(e -> saveCurrentSession());
+        currentSession = SessionStateManager.loadSession(TokenManager.getUserId());
+        restoreSessionTabs();
+
+        Platform.runLater(() -> {
+            Stage stage = Main.getPrimaryStage();
+            if (stage != null) {
+                javafx.event.EventHandler<javafx.stage.WindowEvent> prev = stage.getOnCloseRequest();
+                stage.setOnCloseRequest(e -> {
+                    saveCurrentSession();
+                    if (prev != null) {
+                        prev.handle(e);
+                    }
+                });
+            }
+        });
+    }
+
+    private void restoreSessionTabs() {
+        if (requestTabPane == null) {
+            return;
+        }
+        restoringSession = true;
+        try {
+            if (currentSession == null) {
+                currentSession = SessionStateManager.loadSession(TokenManager.getUserId());
+            }
+            List<TabStateDto> tabDtos = (currentSession != null) ? currentSession.getTabs() : null;
+
+            if (tabDtos != null && !tabDtos.isEmpty()) {
+                requestTabPane.getTabs().clear();
+                tabStates.clear();
+
+                for (TabStateDto dto : tabDtos) {
+                    RequestTabState state = fromTabDto(dto);
+                    Tab tab = createManagedTab(state);
+                    refreshTabGraphic(tab);
+                    requestTabPane.getTabs().add(tab);
+                }
+
+                int targetIndex = currentSession.getActiveTabIndex();
+                if (targetIndex < 0 || targetIndex >= requestTabPane.getTabs().size()) {
+                    targetIndex = 0;
+                }
+                Tab activeTab = requestTabPane.getTabs().get(targetIndex);
+                requestTabPane.getSelectionModel().select(activeTab);
+                restoreTabState(activeTab);
+                refreshTabGraphic(activeTab);
+            } else {
+                if (requestTabPane.getTabs().isEmpty()) {
+                    openRequestTab("Untitled Request", null);
+                }
+            }
+        } catch (Exception e) {
+            logger.warning("Failed to restore session tabs: " + e.getMessage());
+            if (requestTabPane.getTabs().isEmpty()) {
+                openRequestTab("Untitled Request", null);
+            }
+        } finally {
+            restoringSession = false;
+        }
+    }
+
+    private void saveCurrentSession() {
+        if (restoringSession || requestTabPane == null) {
+            return;
+        }
+        try {
+            Tab active = activeRequestTab();
+            if (active != null && tabStates.containsKey(active)) {
+                captureTabState(active);
+            }
+            SessionData session = new SessionData();
+
+            // 1. Tabs
+            List<TabStateDto> tabDtos = new ArrayList<>();
+            for (Tab tab : requestTabPane.getTabs()) {
+                RequestTabState state = tabStates.get(tab);
+                if (state != null) {
+                    tabDtos.add(toTabDto(state));
+                }
+            }
+            session.setTabs(tabDtos);
+            int activeIdx = requestTabPane.getSelectionModel().getSelectedIndex();
+            session.setActiveTabIndex(Math.max(0, activeIdx));
+
+            // 2. Environment
+            if (environmentCombo != null && environmentCombo.getValue() != null) {
+                session.setSelectedEnvironment(environmentCombo.getValue());
+            }
+
+            // 3. Collections tree expanded keys
+            Set<String> expandedKeys = new HashSet<>();
+            captureExpandedKeys(fullCollectionsRoot != null ? fullCollectionsRoot : collectionsTree.getRoot(), expandedKeys);
+            session.setExpandedTreeKeys(expandedKeys);
+
+            // 4. Collections tree selected item
+            if (collectionsTree != null && collectionsTree.getSelectionModel().getSelectedItem() != null) {
+                TreeItem<String> sel = collectionsTree.getSelectionModel().getSelectedItem();
+                Long reqId = requestIdMap.get(sel);
+                if (reqId != null) {
+                    session.setSelectedTreeKey("r:" + reqId);
+                } else {
+                    Long folderId = folderIdMap.get(sel);
+                    if (folderId != null) {
+                        session.setSelectedTreeKey("f:" + folderId);
+                    } else {
+                        Long colId = collectionIdMap.get(sel);
+                        if (colId != null) {
+                            session.setSelectedTreeKey("c:" + colId);
+                        }
+                    }
+                }
+            }
+
+            // 5. Active Workspace
+            if (WorkspaceManager.getCurrentWorkspace() != null) {
+                session.setActiveWorkspaceId(WorkspaceManager.getCurrentWorkspace().getId());
+            }
+
+            this.currentSession = session;
+            SessionStateManager.saveSession(TokenManager.getUserId(), session);
+        } catch (Exception e) {
+            logger.warning("Error saving current session: " + e.getMessage());
+        }
+    }
+
+    private void scheduleSessionSave() {
+        if (restoringSession) {
+            return;
+        }
+        Platform.runLater(() -> {
+            sessionSaveDebounce.stop();
+            sessionSaveDebounce.playFromStart();
+        });
+    }
+
+    private TabStateDto toTabDto(RequestTabState state) {
+        TabStateDto dto = new TabStateDto();
+        dto.setName(state.name);
+        dto.setRequestId(state.requestId);
+        dto.setCollectionId(state.collectionId);
+        dto.setMethod(state.method);
+        dto.setUrl(state.url);
+        dto.setBody(state.body);
+        dto.setBodyType(state.bodyType);
+        dto.setRawFormat(state.rawFormat);
+        dto.setActiveSubTab(state.activeSubTab);
+        dto.setActiveResponseSubTab(state.activeResponseSubTab);
+        dto.setGraphqlQuery(state.graphqlQuery);
+        dto.setGraphqlVariables(state.graphqlVariables);
+        dto.setPreScript(state.preScript);
+        dto.setTestsScript(state.testsScript);
+        dto.setAuthType(state.authType);
+        dto.setAuthToken(state.authToken);
+        dto.setAuthUsername(state.authUsername);
+        dto.setAuthPassword(state.authPassword);
+        dto.setDirty(state.dirty);
+
+        if (state.params != null) {
+            for (KeyValuePair kv : state.params) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
+                    dto.getParams().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
+                }
+            }
+        }
+        if (state.headers != null) {
+            for (KeyValuePair kv : state.headers) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
+                    dto.getHeaders().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
+                }
+            }
+        }
+        if (state.formData != null) {
+            for (KeyValuePair kv : state.formData) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
+                    dto.getFormData().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, kv.getType(), kv.getFilePath(), kv.getFileName()));
+                }
+            }
+        }
+        if (state.urlEncoded != null) {
+            for (KeyValuePair kv : state.urlEncoded) {
+                if (!kv.isPlaceholder() && !isRowEmpty(kv)) {
+                    dto.getUrlEncoded().add(new KeyValuePairDto(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false, "Text", "", ""));
+                }
+            }
+        }
+        dto.setSocketIoNamespace(state.socketIoNamespace);
+        dto.setSocketIoEventName(state.socketIoEventName);
+        dto.setSocketIoMessageBody(state.socketIoMessageBody);
+        if (state.socketIoEvents != null) {
+            for (SocketIoEventItem item : state.socketIoEvents) {
+                dto.getSocketIoEvents().add(new SocketIoEventDto(item.getEventName(), item.isListen(), item.getDescription()));
+            }
+        }
+        return dto;
+    }
+
+    private RequestTabState fromTabDto(TabStateDto dto) {
+        RequestTabState state = new RequestTabState();
+        state.name = dto.getName() != null ? dto.getName() : "Untitled Request";
+        state.requestId = dto.getRequestId();
+        state.collectionId = dto.getCollectionId();
+        state.method = dto.getMethod() != null ? dto.getMethod() : "GET";
+        state.url = dto.getUrl() != null ? dto.getUrl() : "";
+        state.body = dto.getBody() != null ? dto.getBody() : "";
+        state.bodyType = dto.getBodyType() != null ? dto.getBodyType() : "None";
+        state.rawFormat = dto.getRawFormat() != null ? dto.getRawFormat() : "JSON";
+        state.activeSubTab = dto.getActiveSubTab() != null ? dto.getActiveSubTab() : "Params";
+        state.activeResponseSubTab = dto.getActiveResponseSubTab() != null ? dto.getActiveResponseSubTab() : "Body";
+        state.graphqlQuery = dto.getGraphqlQuery() != null ? dto.getGraphqlQuery() : "";
+        state.graphqlVariables = dto.getGraphqlVariables() != null ? dto.getGraphqlVariables() : "";
+        state.preScript = dto.getPreScript() != null ? dto.getPreScript() : "";
+        state.testsScript = dto.getTestsScript() != null ? dto.getTestsScript() : "";
+        state.authType = dto.getAuthType() != null ? dto.getAuthType() : "No Auth";
+        state.authToken = dto.getAuthToken() != null ? dto.getAuthToken() : "";
+        state.authUsername = dto.getAuthUsername() != null ? dto.getAuthUsername() : "";
+        state.authPassword = dto.getAuthPassword() != null ? dto.getAuthPassword() : "";
+        state.dirty = dto.isDirty();
+
+        state.params = new ArrayList<>();
+        if (dto.getParams() != null) {
+            for (KeyValuePairDto kv : dto.getParams()) {
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()))) {
+                    state.params.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
+            }
+        }
+        state.headers = new ArrayList<>();
+        if (dto.getHeaders() != null) {
+            for (KeyValuePairDto kv : dto.getHeaders()) {
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()))) {
+                    state.headers.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
+            }
+        }
+        state.formData = new ArrayList<>();
+        if (dto.getFormData() != null) {
+            for (KeyValuePairDto kv : dto.getFormData()) {
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()) || (kv.getFilePath() != null && !kv.getFilePath().trim().isEmpty()))) {
+                    KeyValuePair item = new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false);
+                    item.setType(kv.getType() != null ? kv.getType() : "Text");
+                    item.setFilePath(kv.getFilePath() != null ? kv.getFilePath() : "");
+                    item.setFileName(kv.getFileName() != null ? kv.getFileName() : "");
+                    state.formData.add(item);
+                }
+            }
+        }
+        state.urlEncoded = new ArrayList<>();
+        if (dto.getUrlEncoded() != null) {
+            for (KeyValuePairDto kv : dto.getUrlEncoded()) {
+                if (kv.getKey() != null && (!kv.getKey().trim().isEmpty() || (kv.getValue() != null && !kv.getValue().trim().isEmpty()) || (kv.getDescription() != null && !kv.getDescription().trim().isEmpty()))) {
+                    state.urlEncoded.add(new KeyValuePair(kv.isEnabled(), kv.getKey(), kv.getValue(), kv.getDescription(), false));
+                }
+            }
+        }
+        state.socketIoNamespace = dto.getSocketIoNamespace() != null ? dto.getSocketIoNamespace() : "";
+        state.socketIoEventName = dto.getSocketIoEventName() != null ? dto.getSocketIoEventName() : "";
+        state.socketIoMessageBody = dto.getSocketIoMessageBody() != null ? dto.getSocketIoMessageBody() : "";
+        state.socketIoEvents = new ArrayList<>();
+        if (dto.getSocketIoEvents() != null) {
+            for (SocketIoEventDto item : dto.getSocketIoEvents()) {
+                state.socketIoEvents.add(new SocketIoEventItem(item.getEventName(), item.isListen(), item.getDescription()));
+            }
+        }
+        return state;
+    }
+
+    private TreeItem<String> findTreeItemByKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        if (key.startsWith("r:")) {
+            try {
+                Long reqId = Long.parseLong(key.substring(2));
+                for (Map.Entry<TreeItem<String>, Long> entry : requestIdMap.entrySet()) {
+                    if (reqId.equals(entry.getValue())) {
+                        return entry.getKey();
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        } else if (key.startsWith("f:")) {
+            try {
+                Long folderId = Long.parseLong(key.substring(2));
+                for (Map.Entry<TreeItem<String>, Long> entry : folderIdMap.entrySet()) {
+                    if (folderId.equals(entry.getValue())) {
+                        return entry.getKey();
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        } else if (key.startsWith("c:")) {
+            try {
+                Long colId = Long.parseLong(key.substring(2));
+                for (Map.Entry<TreeItem<String>, Long> entry : collectionIdMap.entrySet()) {
+                    if (colId.equals(entry.getValue())) {
+                        return entry.getKey();
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    private void restoreCollectionsTreeSelection(String key) {
+        if (key == null || collectionsTree == null) {
+            return;
+        }
+        TreeItem<String> item = findTreeItemByKey(key);
+        if (item != null) {
+            TreeItem<String> p = item.getParent();
+            while (p != null) {
+                p.setExpanded(true);
+                p = p.getParent();
+            }
+            restoringTreeSelection = true;
+            try {
+                collectionsTree.getSelectionModel().select(item);
+                int row = collectionsTree.getRow(item);
+                if (row >= 0) {
+                    collectionsTree.scrollTo(row);
+                }
+            } finally {
+                restoringTreeSelection = false;
+            }
+        }
+    }
+
+    private void syncCollectionsTreeSelectionToActiveTab(Tab tab) {
+        if (tab == null || collectionsTree == null) {
+            return;
+        }
+        RequestTabState state = tabStates.get(tab);
+        if (state != null && state.requestId != null) {
+            restoreCollectionsTreeSelection("r:" + state.requestId);
+        }
+    }
+
     // ==================== Postman-style collections tree ====================
 
     private TreeCell<String> createPostmanTreeCell() {
@@ -5932,14 +12310,17 @@ public class MainController implements Initializable {
             private final Button plusBtn = new Button("+");
             private final Button moreBtn = new Button("⋯");
             private final Region spacer = new Region();
-            private final HBox box = new HBox(6);
+            private final HBox box = new HBox(8);
 
             {
-                methodLabel.getStyleClass().add("tree-method");
+                methodLabel.getStyleClass().addAll("method-chip", "tree-method-chip");
+                methodLabel.setMinWidth(46);
+                methodLabel.setMaxWidth(Region.USE_PREF_SIZE);
+                methodLabel.setAlignment(Pos.CENTER);
                 plusBtn.getStyleClass().add("tree-inline-btn");
                 moreBtn.getStyleClass().add("tree-inline-btn");
-                plusBtn.setTooltip(new Tooltip("Add request"));
-                moreBtn.setTooltip(new Tooltip("More actions"));
+                HoverTooltip.attach(plusBtn, "Add request");
+                HoverTooltip.attach(moreBtn, "More actions");
                 HBox.setHgrow(spacer, Priority.ALWAYS);
                 box.setAlignment(Pos.CENTER_LEFT);
 
@@ -5981,11 +12362,11 @@ public class MainController implements Initializable {
                 TreeItem<String> treeItem = getTreeItem();
                 String method = treeItem != null ? requestMethodMap.get(treeItem) : null;
                 if (method != null) {
-                    // Request row: colored method badge + name (like Postman)
+                    // Request row: colored interactive method pill badge + name (like Postman)
                     methodLabel.setText(methodBadge(method));
-                    methodLabel.getStyleClass().removeIf(s -> s.startsWith("method-"));
-                    methodLabel.getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
-                    box.getChildren().addAll(methodLabel, nameLabel);
+                    methodLabel.getStyleClass().removeIf(s -> s.startsWith("method-") || s.startsWith("method-chip-"));
+                    methodLabel.getStyleClass().addAll("method-chip", "method-chip-" + method.toLowerCase(Locale.ROOT));
+                    box.getChildren().addAll(methodLabel, nameLabel, spacer, moreBtn);
                 } else {
                     // Collection/folder row: icon + name + hover actions
                     Image icon =
@@ -6107,9 +12488,10 @@ public class MainController implements Initializable {
             @Override
             protected void updateItem(Object item, boolean empty) {
                 super.updateItem(item, empty);
-                getStyleClass().removeIf(s -> s.startsWith("method-"));
+                setGraphic(null);
+                setText(null);
+                getStyleClass().removeIf(s -> s.startsWith("method-") || s.startsWith("method-chip-"));
                 if (empty || item == null) {
-                    setText(null);
                     return;
                 }
                 if (item instanceof EnvironmentResponse env) {
@@ -6117,17 +12499,22 @@ public class MainController implements Initializable {
                 } else if (item instanceof TreeItem<?> rawItem) {
                     @SuppressWarnings("unchecked")
                     TreeItem<String> treeItem = (TreeItem<String>) rawItem;
-                    String kind;
                     String method = requestMethodMap.get(treeItem);
                     if (method != null) {
-                        kind = method;
-                        getStyleClass().add("method-" + method.toLowerCase(Locale.ROOT));
+                        Label methodChip = new Label(methodBadge(method));
+                        methodChip.getStyleClass().addAll("method-chip", "method-chip-" + method.toLowerCase(Locale.ROOT));
+                        methodChip.setMinWidth(46);
+                        methodChip.setAlignment(Pos.CENTER);
+                        Label pathLabel = new Label(treePath(treeItem));
+                        pathLabel.setStyle("-fx-text-fill: -text-primary; -fx-font-size: 12px;");
+                        HBox row = new HBox(8, methodChip, pathLabel);
+                        row.setAlignment(Pos.CENTER_LEFT);
+                        setGraphic(row);
                     } else if (collectionIdMap.containsKey(treeItem)) {
-                        kind = "Collection";
+                        setText("Collection  ·  " + treePath(treeItem));
                     } else {
-                        kind = "Folder";
+                        setText("Folder  ·  " + treePath(treeItem));
                     }
-                    setText(kind + "  ·  " + treePath(treeItem));
                 }
             }
         });
@@ -6179,7 +12566,7 @@ public class MainController implements Initializable {
         VBox content = new VBox(8, searchField, results);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         refresh.run();
         Platform.runLater(searchField::requestFocus);
         dialog.showAndWait();
@@ -6256,16 +12643,64 @@ public class MainController implements Initializable {
     private void handleLogout() {
         if (AlertUtils.showConfirmation("Logout", "Are you sure you want to logout?")) {
             try {
-                // Stop reporting this client as online BEFORE clearing the
-                // session — a signed-out app shouldn't show a green dot.
+                // 1. Immediately mark client logged out to suppress any background token-refresh or 401 alerts
+                ApiClient.markLoggedOut();
+
+                // 2. Stop reporting this client as online & stop session background monitor
                 stopPresenceUpdates();
+                TokenManager.stopSessionMonitor();
+
+                // 3. Cancel debounce & save this user's session cleanly before destroying state
+                if (sessionSaveDebounce != null) {
+                    sessionSaveDebounce.stop();
+                }
+                try {
+                    saveCurrentSession();
+                } catch (Exception ignored) {}
+
+                // 4. Clear all workspace context and active session data
+                WorkspaceManager.clear();
+                currentSession = null;
+
+                // 5. Clear in-memory tabs, caches, and tree maps
+                if (requestTabPane != null) {
+                    requestTabPane.getTabs().clear();
+                }
+                tabStates.clear();
+                requestIdMap.clear();
+                collectionIdMap.clear();
+                folderIdMap.clear();
+                commentThreadsCache.clear();
+                collectionVariablesCache.clear();
+
+                // 6. Clear server session and local authentication tokens (asynchronous, non-blocking)
                 ApiClient.logout();
                 TokenManager.clearTokens();
+
+                // 7. Transition to login view
                 Main.showLoginView();
             } catch (Exception e) {
                 AlertUtils.showError("Logout failed: " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * Centers a dialog over the main application window and applies the active theme stylesheet.
+     * Prevents dialogs from opening unanchored at (0, 0) or overflowing the display edges.
+     */
+    private void initAndStyleDialog(Dialog<?> dialog) {
+        if (dialog == null) {
+            return;
+        }
+        Window owner = Main.getPrimaryStage();
+        if (owner == null && collectionsTree != null && collectionsTree.getScene() != null) {
+            owner = collectionsTree.getScene().getWindow();
+        }
+        if (owner != null) {
+            dialog.initOwner(owner);
+        }
+        ThemeManager.styleDialog(dialog.getDialogPane());
     }
 
     @FXML
@@ -6274,29 +12709,72 @@ public class MainController implements Initializable {
             AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
             return;
         }
-        TextInputDialog nameDialog = new TextInputDialog();
-        nameDialog.setTitle("New Collection");
-        nameDialog.setHeaderText("Create a new Collection");
-        nameDialog.setContentText("Collection Name: ");
 
-        Optional<String> nameResult = nameDialog.showAndWait();
-        nameResult.ifPresent(name -> {
-            if (!name.trim().isEmpty()) {
-                TextInputDialog descDialog = new TextInputDialog();
-                descDialog.setTitle("Collection Description");
-                descDialog.setHeaderText("Add a description (optional)");
-                descDialog.setContentText("Description: ");
+        Dialog<CollectionRequest> dialog = new Dialog<>();
+        dialog.setTitle("New Collection");
+        dialog.setHeaderText("Create a new collection to organize your requests");
 
-                descDialog.showAndWait().ifPresent(description -> {
-                    CollectionRequest request = CollectionRequest.builder()
-                            .name(name)
-                            .description(description)
-                            .workspaceId(WorkspaceManager.hasWorkspace() ? WorkspaceManager.getCurrentWorkspace().getId() : null)
-                            .build();
-                    createNewCollection(request);
-                });
+        initAndStyleDialog(dialog);
+
+        ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
+
+        Label nameLabel = new Label("Collection Name *");
+        nameLabel.setStyle("-fx-font-weight: bold;");
+        TextField nameField = new TextField();
+        nameField.setPromptText("e.g. Users API, Auth Service, Payment Gateway");
+
+        Label descLabel = new Label("Description (optional)");
+        descLabel.setStyle("-fx-font-weight: bold;");
+        TextArea descArea = new TextArea();
+        descArea.setPromptText("What requests are grouped in this collection?");
+        descArea.setPrefRowCount(3);
+        descArea.setWrapText(true);
+
+        VBox content = new VBox(10, nameLabel, nameField, descLabel, descArea);
+        content.setPadding(new Insets(14));
+        content.setPrefWidth(440);
+        content.setMinWidth(400);
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().setPrefSize(460, 280);
+        dialog.getDialogPane().setMinSize(420, 240);
+        dialog.setResizable(true);
+
+        Node createBtn = dialog.getDialogPane().lookupButton(createButtonType);
+        if (createBtn != null) {
+            createBtn.setDisable(true);
+            nameField.textProperty().addListener((obs, oldV, newV) -> {
+                createBtn.setDisable(newV == null || newV.trim().isEmpty());
+            });
+        }
+
+        dialog.setOnShown(e -> {
+            Window window = dialog.getDialogPane().getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(420);
+                stage.setMinHeight(240);
+                stage.setWidth(460);
+                stage.setHeight(280);
+                stage.centerOnScreen();
             }
+            Platform.runLater(nameField::requestFocus);
         });
+
+        dialog.setResultConverter(button -> {
+            if (button == createButtonType) {
+                String name = nameField.getText() == null ? "" : nameField.getText().trim();
+                String desc = descArea.getText() == null ? "" : descArea.getText().trim();
+                return CollectionRequest.builder()
+                        .name(name)
+                        .description(desc)
+                        .workspaceId(WorkspaceManager.hasWorkspace() ? WorkspaceManager.getCurrentWorkspace().getId() : null)
+                        .build();
+            }
+            return null;
+        });
+
+        Optional<CollectionRequest> result = dialog.showAndWait();
+        result.ifPresent(this::createNewCollection);
     }
 
     private void createNewCollection(CollectionRequest request) {
@@ -6330,94 +12808,126 @@ public class MainController implements Initializable {
             AlertUtils.showError("You have Viewer access to this workspace — Editor access is needed to create things in it.");
             return;
         }
+
         // Create a custom dialog for environment creation
         Dialog<EnvironmentCreationData> dialog = new Dialog<>();
         dialog.setTitle("Create New Environment");
-        dialog.setHeaderText("Create a new environment with custom variables");
+
+        // Set owner to center the dialog over the application window and apply theme
+        initAndStyleDialog(dialog);
 
         // Set the button types
         ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
 
-        // Create the form layout
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
+        // Header
+        VBox headerBox = new VBox(3);
+        Label titleLabel = new Label("Create New Environment");
+        titleLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: -text-primary;");
+        Label subtitleLabel = new Label("Create a new environment with custom variables");
+        subtitleLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: -text-muted;");
+        headerBox.getChildren().addAll(titleLabel, subtitleLabel);
 
+        // Name field
+        Label nameLabel = new Label("Environment Name *");
+        nameLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
         TextField nameField = new TextField();
-        nameField.setPromptText("Environment name");
+        nameField.setPromptText("e.g. Development, Staging, Production");
+        nameField.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-color; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 7 10; -fx-text-fill: -text-primary;");
+
+        VBox nameBox = new VBox(5, nameLabel, nameField);
+
+        // Description area
+        Label descriptionLabel = new Label("Description (optional)");
+        descriptionLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
         TextArea descriptionArea = new TextArea();
-        descriptionArea.setPromptText("Description (optional)");
-        descriptionArea.setPrefRowCount(3);
+        descriptionArea.setPromptText("What is this environment for?");
+        descriptionArea.setPrefRowCount(2);
+        descriptionArea.setWrapText(true);
+        descriptionArea.setStyle("-fx-background-color: -bg-elevated; -fx-border-color: -border-subtle; -fx-border-radius: 6; -fx-background-radius: 6; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
+
+        VBox descBox = new VBox(5, descriptionLabel, descriptionArea);
 
         // Variables table
-        TableView<Variable> variablesTable = new TableView<>();
-        variablesTable.setPrefHeight(200);
-        variablesTable.setEditable(true); // Make table editable
+        Label variablesLabel = new Label("Variables");
+        variablesLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: -text-primary;");
 
-        // Variable Name column with editable text field
-        TableColumn<Variable, String> nameCol = new TableColumn<>("Variable Name");
-        nameCol.setCellValueFactory(cellData -> cellData.getValue().nameProperty());
-        nameCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        nameCol.setOnEditCommit(event -> {
-            Variable variable = event.getRowValue();
-            variable.setName(event.getNewValue());
-        });
+        ObservableList<KeyValuePair> variablesData = FXCollections.observableArrayList();
+        CheckBox masterCheckBox = new CheckBox();
+        CheckBox masterSelectBox = new CheckBox();
+        int[] pendingFocus = new int[]{-1};
 
-        // Value column with editable text field
-        TableColumn<Variable, String> valueCol = new TableColumn<>("Value");
-        valueCol.setCellValueFactory(cellData -> cellData.getValue().valueProperty());
-        valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        valueCol.setOnEditCommit(event -> {
-            Variable variable = event.getRowValue();
-            variable.setValue(event.getNewValue());
-        });
+        TableView<KeyValuePair> variablesTable = createVariablesTable(
+                variablesData, "Variable Name", "Initial Value", masterCheckBox, masterSelectBox, pendingFocus);
 
-        variablesTable.getColumns().addAll(nameCol, valueCol);
+        HBox buttonBox = createVariablesButtonBar(
+                variablesTable, variablesData, masterCheckBox, masterSelectBox, pendingFocus);
 
-        // Add variable button
-        Button addVarButton = new Button("Add Variable");
-        addVarButton.setOnAction(e -> {
-            Variable newVar = new Variable("", "");
-            variablesTable.getItems().add(newVar);
-            // Select the new row and start editing
-            variablesTable.getSelectionModel().select(newVar);
-            variablesTable.edit(variablesTable.getItems().size() - 1, nameCol);
-        });
+        VBox varBox = new VBox(6, variablesLabel, variablesTable, buttonBox);
+        VBox.setVgrow(varBox, Priority.ALWAYS);
+        VBox.setVgrow(variablesTable, Priority.ALWAYS);
 
-        // Remove variable button
-        Button removeVarButton = new Button("Remove Selected");
-        removeVarButton.setOnAction(e -> {
-            Variable selected = variablesTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                variablesTable.getItems().remove(selected);
+        VBox formContent = new VBox(12, headerBox, nameBox, descBox, varBox);
+        formContent.setPadding(new Insets(16, 20, 16, 20));
+        formContent.setPrefWidth(580);
+        formContent.setMinWidth(560);
+
+        // Wrap in ScrollPane so it gracefully fits any screen height without overflowing offscreen
+        ScrollPane scrollPane = new ScrollPane(formContent);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setPrefViewportWidth(620);
+        scrollPane.setPrefViewportHeight(460);
+        scrollPane.setMinWidth(580);
+        scrollPane.setMinHeight(380);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
+
+        dialog.getDialogPane().setContent(scrollPane);
+        dialog.getDialogPane().setPrefSize(640, 560);
+        dialog.getDialogPane().setMinSize(600, 480);
+        dialog.setResizable(true);
+
+        dialog.setOnShown(e -> {
+            Window window = dialog.getDialogPane().getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setMinWidth(600);
+                stage.setMinHeight(480);
+                stage.setWidth(640);
+                stage.setHeight(560);
+                stage.centerOnScreen();
             }
+            Platform.runLater(nameField::requestFocus);
         });
 
-        HBox buttonBox = new HBox(10, addVarButton, removeVarButton);
-        buttonBox.setAlignment(Pos.CENTER_LEFT);
-
-        grid.add(new Label("Name:"), 0, 0);
-        grid.add(nameField, 1, 0);
-        grid.add(new Label("Description:"), 0, 1);
-        grid.add(descriptionArea, 1, 1);
-        grid.add(new Label("Variables:"), 0, 2);
-        grid.add(variablesTable, 1, 2);
-        grid.add(buttonBox, 1, 3);
-
-        dialog.getDialogPane().setContent(grid);
+        // Validate Create button - only enable if environment name is provided
+        Node createBtn = dialog.getDialogPane().lookupButton(createButtonType);
+        if (createBtn instanceof Button btn) {
+            btn.getStyleClass().add("primary-button");
+            btn.setDisable(true);
+            nameField.textProperty().addListener((obs, oldV, newV) -> {
+                btn.setDisable(newV == null || newV.trim().isEmpty());
+            });
+        }
+        Node cancelBtn = dialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        if (cancelBtn instanceof Button btn) {
+            btn.getStyleClass().add("secondary-button");
+        }
 
         // Convert the result to EnvironmentCreationData when create button is clicked
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == createButtonType) {
-                Map<String, String> variables = variablesTable.getItems().stream()
-                        .filter(v -> v.getName() != null && !v.getName().trim().isEmpty())
-                        .collect(Collectors.toMap(Variable::getName, Variable::getValue));
+                Map<String, String> variables = new LinkedHashMap<>();
+                for (KeyValuePair kv : variablesData) {
+                    if (kv.isEnabled() && !kv.isPlaceholder() && kv.getKey() != null && !kv.getKey().trim().isEmpty()) {
+                        variables.put(kv.getKey().trim(), kv.getValue() != null ? kv.getValue() : "");
+                    }
+                }
 
                 return new EnvironmentCreationData(
                         nameField.getText().trim(),
-                        descriptionArea.getText().trim(),
+                        descriptionArea.getText() != null ? descriptionArea.getText().trim() : "",
                         variables
                 );
             }
@@ -6450,20 +12960,18 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleClearHistory() {
-        if (AlertUtils.showConfirmation("Clear History", "Are you sure you want to clear all history?")) {
+        if (AlertUtils.showConfirmation("Clear History", "Are you sure you want to clear all request history?")) {
+            HistoryStorageService.clearAll();
+            allHistoryEntries.clear();
+            renderHistoryTree(null);
             new Thread(() -> {
                 boolean success = RequestHistoryService.clearUserHistory();
-                if (success) {
-                    Platform.runLater(() -> {
-                        historyData.clear();
-                        updateStatus("History Cleared");
+                Platform.runLater(() -> {
+                    updateStatus("History Cleared");
+                    if (success) {
                         AlertUtils.showSuccess("History cleared successfully");
-                    });
-                } else {
-                    Platform.runLater(() -> {
-                        AlertUtils.showError("Failed to clear history");
-                    });
-                }
+                    }
+                });
             }).start();
         }
     }
@@ -6526,6 +13034,7 @@ public class MainController implements Initializable {
                             if (tabToClear != null) {
                                 refreshTabGraphic(tabToClear);
                             }
+                            scheduleSessionSave();
                         } else {
                             AlertUtils.showError("Failed to save request");
                         }
@@ -6593,6 +13102,7 @@ public class MainController implements Initializable {
                                 state.name = name;
                                 state.dirty = false;
                                 refreshTabGraphic(tabBeingSaved);
+                                scheduleSessionSave();
                             }
                         }
                     });
@@ -6645,6 +13155,7 @@ public class MainController implements Initializable {
         dialog.setTitle("Save Request");
         dialog.setHeaderText("Save current request to collection");
         dialog.setContentText("Request name: ");
+        initAndStyleDialog(dialog);
         Optional<String> result = dialog.showAndWait();
         return result.orElse(null);
     }
@@ -6655,7 +13166,9 @@ public class MainController implements Initializable {
             AlertUtils.showInfo("This is a binary response — use the save icon to download it instead of copying text");
             return;
         }
-        String response = responseBodyArea.getText();
+        String response = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : responseBodyArea.getText();
         if (response != null && !response.isEmpty()) {
             ClipboardContent content = new ClipboardContent();
             content.putString(response);
@@ -6698,6 +13211,9 @@ public class MainController implements Initializable {
             }
         } else {
             // Text response: guess a sensible extension from Content-Type
+            String fullText = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                    ? responseFoldManager.getFullText()
+                    : responseBodyArea.getText();
             String ext = "txt";
             String ct = lastApiResponse.getContentType();
             if (ct != null) {
@@ -6710,8 +13226,8 @@ public class MainController implements Initializable {
                 } else if (ct.contains("csv")) {
                     ext = "csv";
                 }
-            } else if (responseBodyArea.getText().trim().startsWith("{")
-                    || responseBodyArea.getText().trim().startsWith("[")) {
+            } else if (fullText.trim().startsWith("{")
+                    || fullText.trim().startsWith("[")) {
                 ext = "json";
             }
             fileChooser.setInitialFileName("response." + ext);
@@ -6724,7 +13240,7 @@ public class MainController implements Initializable {
                 return;
             }
             try {
-                java.nio.file.Files.writeString(file.toPath(), responseBodyArea.getText());
+                java.nio.file.Files.writeString(file.toPath(), fullText);
                 AlertUtils.showSuccess("Saved to " + file.getName());
                 updateStatus("Response saved: " + file.getName());
             } catch (Exception e) {
@@ -6801,7 +13317,8 @@ public class MainController implements Initializable {
         // Resolve {{variables}} from the selected environment at send time.
         // The UI keeps showing the template; only the outgoing request is resolved.
         Map<String, String> vars = currentEnvironmentVariables();
-        String url = VariableResolver.resolve(buildFullUrl(), vars);
+        final String rawUrl = buildFullUrl();
+        String url = VariableResolver.resolve(rawUrl, vars);
         if ("OAuth 2.0".equals(authTypeCombo.getValue()) && oauth2CurrentTokenField != null
                 && oauth2AddToCombo != null && "Query Params".equals(oauth2AddToCombo.getValue())
                 && !oauth2CurrentTokenField.getText().isBlank()) {
@@ -6856,7 +13373,7 @@ public class MainController implements Initializable {
             @Override
             protected Optional<ApiResponse> call() throws Exception {
                 ApiRequest apiRequest = new ApiRequest();
-                apiRequest.setUrl(finalUrl);
+                apiRequest.setUrl(rawUrl != null && !rawUrl.isBlank() ? rawUrl : finalUrl);
                 apiRequest.setMethod(HttpMethod.valueOf(method));
                 apiRequest.setHeaders(new JSONObject(headers).toString());
                 apiRequest.setBody(body);
@@ -6904,11 +13421,29 @@ public class MainController implements Initializable {
                 lastApiResponse = apiResponse;
                 updateResponseUI(apiResponse, parseHeaders(apiResponse.getResponseHeaders()));
 
-                String historyEntry = method + " " + finalUrl1 + " (" + apiResponse.getStatusCode() + ")";
-                if (!historyData.contains(historyEntry)) {
-                    historyData.add(0, historyEntry);
-                    historyList.setItems(historyData);
-                }
+                RequestTabState activeTabState = tabStates.get(activeRequestTab());
+                String reqName = (activeTabState != null && activeTabState.name != null && !activeTabState.name.isBlank())
+                        ? activeTabState.name
+                        : ((activeRequestTab() != null && activeRequestTab().getText() != null) ? activeRequestTab().getText() : null);
+
+                String historyUrl = (rawUrl != null && !rawUrl.isBlank()) ? rawUrl : finalUrl1;
+                HistoryEntry newHist = HistoryEntry.builder()
+                        .localId(UUID.randomUUID().toString())
+                        .url(historyUrl)
+                        .method(method)
+                        .name(reqName)
+                        .headers(new JSONObject(headers).toString())
+                        .body(body)
+                        .statusCode(apiResponse.getStatusCode())
+                        .duration(apiResponse.getDuration())
+                        .response(apiResponse.getResponse())
+                        .responseHeaders(apiResponse.getResponseHeaders())
+                        .timestamp(LocalDateTime.now().toString())
+                        .build();
+
+                HistoryStorageService.addEntry(newHist);
+                allHistoryEntries.add(0, newHist);
+                renderHistoryTree(historySearchField != null ? historySearchField.getText() : null);
 
                 updateStatus("Request completed");
 
@@ -7176,11 +13711,28 @@ public class MainController implements Initializable {
         socketIoPollThread.start();
     }
 
+    private boolean shouldListenToEvent(String eventName) {
+        if (socketIoEventsData == null || socketIoEventsData.isEmpty()) {
+            return true;
+        }
+        for (SocketIoEventItem item : socketIoEventsData) {
+            if (item.getEventName() != null && !item.getEventName().trim().isEmpty()) {
+                if (item.getEventName().trim().equalsIgnoreCase(eventName != null ? eventName.trim() : "")) {
+                    return item.isListen();
+                }
+            }
+        }
+        return true;
+    }
+
     private void applySocketIoEvents(List<SocketIoEventResponse> events) {
         if (events == null || events.isEmpty() || socketIoEventLog == null) {
             return;
         }
         for (SocketIoEventResponse event : events) {
+            if ("in".equalsIgnoreCase(event.getDirection()) && !shouldListenToEvent(event.getEventName())) {
+                continue;
+            }
             String prefix;
             switch (event.getDirection()) {
                 case "in":
@@ -7211,13 +13763,22 @@ public class MainController implements Initializable {
             return;
         }
         Map<String, String> vars = currentEnvironmentVariables();
-        String data = VariableResolver.resolve(
-                socketIoEventDataField.getText() == null ? "" : socketIoEventDataField.getText(), vars);
+        String rawData = "";
+        if (socketIoMessageComposeArea != null && !socketIoMessageComposeArea.getText().isEmpty()) {
+            rawData = socketIoMessageComposeArea.getText();
+        } else if (socketIoEventDataField != null && socketIoEventDataField.getText() != null) {
+            rawData = socketIoEventDataField.getText();
+        }
+        String data = VariableResolver.resolve(rawData, vars);
         String sid = socketIoSessionId;
         new Thread(() -> {
             try {
                 SocketIoService.emit(sid, eventName, data);
-                Platform.runLater(() -> socketIoEventDataField.clear());
+                Platform.runLater(() -> {
+                    if (socketIoEventDataField != null) {
+                        socketIoEventDataField.clear();
+                    }
+                });
             } catch (IOException e) {
                 Platform.runLater(() -> AlertUtils.showError(
                         "Couldn't emit that event: " + SocketIoService.friendlyMessage(e)));
@@ -7279,16 +13840,37 @@ public class MainController implements Initializable {
         if (responsePreview == null) {
             return;
         }
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(false);
+            responseCodeAreaPane.setManaged(false);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(false);
+            responseVisualizationView.setManaged(false);
+        }
+        responsePreview.setVisible(true);
+        responsePreview.setManaged(true);
+        if (responsePreviewToggle != null) {
+            responsePreviewToggle.setSelected(true);
+        }
+        if (responseVisualizationMenu != null) {
+            responseVisualizationMenu.getStyleClass().remove("active-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                responseVisualizationMenu.getStyleClass().add("inactive-view");
+            }
+        }
+        String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
+        String textColor = ThemeManager.isLight() ? "#6b6b6b" : "#9a9ea9";
         responsePreview.getEngine().loadContent(
-                "<html><body style='margin:0;padding:12px;background:#1d1f24;'>"
-                        + "<p style='font-family:sans-serif;color:#9a9ea9;font-size:12px;'>Rendering PDF preview…</p>"
+                "<html><body style='margin:0;padding:12px;background:" + bg + ";'>"
+                        + "<p style='font-family:sans-serif;color:" + textColor + ";font-size:12px;'>Rendering PDF preview…</p>"
                         + "</body></html>");
 
         new Thread(() -> {
             try {
                 byte[] pdfBytes = Base64.getDecoder().decode(apiResponse.getResponse());
                 StringBuilder html = new StringBuilder(
-                        "<html><body style='margin:0;padding:12px;background:#1d1f24;text-align:center;'>");
+                        "<html><body style='margin:0;padding:12px;background:" + bg + ";text-align:center;'>");
                 try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
                     org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
                     int pageCount = document.getNumberOfPages();
@@ -7304,7 +13886,7 @@ public class MainController implements Initializable {
                                 .append("' style='max-width:100%;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.4);'/>");
                     }
                     if (pageCount > pagesToRender) {
-                        html.append("<p style='font-family:sans-serif;color:#9a9ea9;font-size:12px;'>")
+                        html.append("<p style='font-family:sans-serif;color:" + textColor + ";font-size:12px;'>")
                                 .append(pageCount - pagesToRender)
                                 .append(" more page(s) not shown — save the file to see the rest.</p>");
                     }
@@ -7314,7 +13896,7 @@ public class MainController implements Initializable {
                 Platform.runLater(() -> responsePreview.getEngine().loadContent(finalHtml));
             } catch (Exception e) {
                 Platform.runLater(() -> responsePreview.getEngine().loadContent(
-                        "<html><body style='margin:0;padding:12px;background:#1d1f24;'>"
+                        "<html><body style='margin:0;padding:12px;background:" + bg + ";'>"
                                 + "<p style='font-family:sans-serif;color:#e57373;font-size:12px;'>"
                                 + "Couldn't render a preview: " + e.getMessage() + "</p></body></html>"));
             }
@@ -7323,21 +13905,34 @@ public class MainController implements Initializable {
 
     private void clearResponsePreview() {
         if (responsePreview != null) {
-            responsePreview.getEngine().loadContent("");
+            String bg = ThemeManager.isLight() ? "#ffffff" : "#1d1f24";
+            responsePreview.getEngine().loadContent(
+                    "<html><body style='background:" + bg + ";'></body></html>");
+            responsePreview.setVisible(false);
+            responsePreview.setManaged(false);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(false);
+            responseVisualizationView.setManaged(false);
+        }
+        if (responsePreviewToggle != null) {
+            responsePreviewToggle.setSelected(false);
+        }
+        if (responseVisualizationMenu != null) {
+            responseVisualizationMenu.getStyleClass().remove("active-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                responseVisualizationMenu.getStyleClass().add("inactive-view");
+            }
+        }
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(true);
+            responseCodeAreaPane.setManaged(true);
         }
     }
 
     private void updateResponseUI(ApiResponse apiResponse, Map<String, String> headers) {
-
         Platform.runLater(() -> {
             renderResponse(apiResponse, headers);
-
-            // Add to history (only for an actual new send, not a tab restore)
-            String historyEntry = methodCombo.getValue() + " " + urlField.getText();
-            if (!historyData.contains(historyEntry)) {
-                historyData.add(0, historyEntry);
-                historyList.setItems(historyData);
-            }
         });
     }
 
@@ -7370,16 +13965,20 @@ public class MainController implements Initializable {
             // instead — Save Response (the icon button) does the rest.
             responseBodyArea.setEditable(false);
             boolean isPdf = isPdfResponse(apiResponse);
-            responseBodyArea.replaceText(
-                    "\uD83D\uDCC4  Binary response\n\n"
-                            + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
-                            + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
-                            + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
-                            + (isPdf
-                            ? "PDF preview is shown on the right. Click the save icon above "
-                            + "the response to download the original file."
-                            : "This isn't text, so it can't be shown here — click the save icon "
-                            + "above the response to download it exactly as the server sent it."));
+            String binMsg = "\uD83D\uDCC4  Binary response\n\n"
+                    + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
+                    + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
+                    + "Suggested file name: " + apiResponse.getFileName() + "\n\n"
+                    + (isPdf
+                    ? "PDF preview is shown on the right. Click the save icon above "
+                    + "the response to download the original file."
+                    : "This isn't text, so it can't be shown here — click the save icon "
+                    + "above the response to download it exactly as the server sent it.");
+            if (responseFoldManager != null) {
+                responseFoldManager.setFullText(binMsg);
+            } else {
+                responseBodyArea.replaceText(binMsg);
+            }
             if (isPdf) {
                 renderPdfPreview(apiResponse);
             } else {
@@ -7387,9 +13986,24 @@ public class MainController implements Initializable {
             }
         } else {
             responseBodyArea.setEditable(true);
-            responseBodyArea.replaceText(apiResponse.getResponse() != null ? apiResponse.getResponse() : "");
-            formatResponseBody(apiResponse.getResponse());
             clearResponsePreview();
+            String detectedFormat = "JSON";
+            if (apiResponse.getResponse() != null) {
+                String ctype = apiResponse.getContentType() != null ? apiResponse.getContentType().toLowerCase(Locale.ROOT) : "";
+                String body = apiResponse.getResponse().trim();
+                if (ctype.contains("json") || body.startsWith("{") || body.startsWith("[")) {
+                    detectedFormat = "JSON";
+                } else if (ctype.contains("xml") || body.startsWith("<xml") || body.startsWith("<?xml")) {
+                    detectedFormat = "XML";
+                } else if (ctype.contains("html") || body.toLowerCase(Locale.ROOT).startsWith("<!doctype html") || body.toLowerCase(Locale.ROOT).startsWith("<html")) {
+                    detectedFormat = "HTML";
+                } else if (ctype.contains("javascript")) {
+                    detectedFormat = "JAVASCRIPT";
+                } else {
+                    detectedFormat = "RAW";
+                }
+            }
+            applyResponseFormat(detectedFormat);
         }
 
         responseHeadersData.clear();
@@ -7409,23 +14023,627 @@ public class MainController implements Initializable {
             responseSearch.reset();
         }
         responseBodyArea.setEditable(true);
-        responseBodyArea.replaceText("");
+        if (responseFoldManager != null) {
+            responseFoldManager.setFullText("", currentResponseFormat);
+        } else {
+            responseBodyArea.replaceText("");
+        }
         responseHeadersData.clear();
         clearResponsePreview();
     }
 
-    private void formatResponseBody(String responseBody) {
-        try {
-            if (responseBody.trim().startsWith("{")) {
-                JSONObject json = new JSONObject(responseBody);
-                responseBodyArea.replaceText(json.toString(2));
-            } else if (responseBody.trim().startsWith("<")) {
-                JSONObject json = XML.toJSONObject(responseBody);
-                responseBodyArea.replaceText(json.toString(2));
-            }
-        } catch (Exception e) {
-            // If formatting fails, just use the original response
+    private String getFormatButtonLabel(String fmt) {
+        if (fmt == null) return "{ } JSON";
+        return switch (fmt.toUpperCase(Locale.ROOT)) {
+            case "JSON" -> "{ } JSON";
+            case "XML" -> "</> XML";
+            case "HTML" -> "<i/> HTML";
+            case "JAVASCRIPT", "JS" -> "JS JavaScript";
+            case "RAW" -> "[=] Raw";
+            case "HEX" -> "0x Hex";
+            case "BASE64" -> "64 Base64";
+            default -> "{ } JSON";
+        };
+    }
+
+    private void updateFormatMenuSelection(String format) {
+        if (format == null) format = "JSON";
+        String fmt = format.toUpperCase(Locale.ROOT);
+
+        if (responseFormatMenu != null) {
+            responseFormatMenu.setText(getFormatButtonLabel(fmt));
         }
+
+        if (responseFormatJsonItem != null) {
+            responseFormatJsonItem.setText((fmt.equals("JSON") ? "✓   " : "     ") + "{ } JSON");
+        }
+        if (responseFormatXmlItem != null) {
+            responseFormatXmlItem.setText((fmt.equals("XML") ? "✓   " : "     ") + "</> XML");
+        }
+        if (responseFormatHtmlItem != null) {
+            responseFormatHtmlItem.setText((fmt.equals("HTML") ? "✓   " : "     ") + "<i/> HTML");
+        }
+        if (responseFormatJsItem != null) {
+            responseFormatJsItem.setText((fmt.equals("JAVASCRIPT") || fmt.equals("JS") ? "✓   " : "     ") + "JS JavaScript");
+        }
+        if (responseFormatRawItem != null) {
+            responseFormatRawItem.setText((fmt.equals("RAW") ? "✓   " : "     ") + "[=] Raw");
+        }
+        if (responseFormatHexItem != null) {
+            responseFormatHexItem.setText((fmt.equals("HEX") ? "✓   " : "     ") + "0x Hex");
+        }
+        if (responseFormatBase64Item != null) {
+            responseFormatBase64Item.setText((fmt.equals("BASE64") ? "✓   " : "     ") + "64 Base64");
+        }
+
+        boolean isJson = fmt.equals("JSON");
+        if (responseCollapseAllBtn != null) {
+            responseCollapseAllBtn.setVisible(isJson);
+            responseCollapseAllBtn.setManaged(isJson);
+        }
+        if (responseExpandAllBtn != null) {
+            responseExpandAllBtn.setVisible(isJson);
+            responseExpandAllBtn.setManaged(isJson);
+        }
+    }
+
+    private String formatJsonString(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) return "";
+        String trimmed = responseBody.trim();
+        if (trimmed.startsWith("{")) {
+            try {
+                return new JSONObject(trimmed).toString(2);
+            } catch (Exception ignored) {
+            }
+        } else if (trimmed.startsWith("[")) {
+            try {
+                return new JSONArray(trimmed).toString(2);
+            } catch (Exception ignored) {
+            }
+        }
+        return responseBody;
+    }
+
+    private void applyResponseFormat(String format) {
+        if (format == null) format = "JSON";
+        this.currentResponseFormat = format;
+        updateFormatMenuSelection(format);
+        showResponseCodeView(getFormatButtonLabel(format));
+
+        if (format.equalsIgnoreCase("HEX")) {
+            if (responseWrapToggle != null) responseWrapToggle.setSelected(false);
+            if (responseBodyArea != null) responseBodyArea.setWrapText(false);
+        } else if (format.equalsIgnoreCase("BASE64")) {
+            if (responseWrapToggle != null) responseWrapToggle.setSelected(true);
+            if (responseBodyArea != null) responseBodyArea.setWrapText(true);
+        }
+
+        if (lastApiResponse == null || lastApiResponse.getResponse() == null) {
+            if (responseFoldManager != null) {
+                responseFoldManager.setFullText("", format);
+            } else {
+                responseBodyArea.replaceText("");
+            }
+            return;
+        }
+
+        String rawText = lastApiResponse.getResponse();
+        byte[] rawBytes = rawText.getBytes(StandardCharsets.UTF_8);
+
+        String displayText;
+        switch (format.toUpperCase(Locale.ROOT)) {
+            case "JSON" -> displayText = formatJsonString(rawText);
+            case "XML" -> {
+                if (rawText.trim().startsWith("<")) {
+                    displayText = ResponseSyntaxHighlighter.formatXml(rawText);
+                } else {
+                    displayText = rawText;
+                }
+            }
+            case "HTML", "JAVASCRIPT", "JS", "RAW" -> displayText = rawText;
+            case "HEX" -> displayText = ResponseSyntaxHighlighter.formatHexDump(rawBytes);
+            case "BASE64" -> displayText = ResponseSyntaxHighlighter.formatBase64(rawBytes);
+            default -> displayText = rawText;
+        }
+
+        if (responseFoldManager != null) {
+            responseFoldManager.setFullText(displayText, format);
+        } else {
+            responseBodyArea.replaceText(displayText);
+            responseBodyArea.setStyleSpans(0, ResponseSyntaxHighlighter.computeHighlighting(displayText, format));
+        }
+    }
+
+    /* =========================================================================
+     * Request Raw Body Format & Beautify Handlers
+     * ========================================================================= */
+
+    private void setOrUpdateHeader(String key, String value) {
+        boolean found = false;
+        for (KeyValuePair kv : headersData) {
+            if (key.equalsIgnoreCase(kv.getKey())) {
+                kv.setValue(value);
+                kv.setEnabled(true);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            int insertIdx = !headersData.isEmpty() && headersData.get(headersData.size() - 1).isPlaceholder()
+                    ? headersData.size() - 1 : headersData.size();
+            headersData.add(insertIdx, new KeyValuePair(true, key, value, "", false));
+            ensureHeadersPlaceholderRow();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
+        }
+        if (headersTable != null) {
+            headersTable.refresh();
+        }
+    }
+
+    private void applyRawFormat(String format, String contentType) {
+        if (rawFormatMenu != null) rawFormatMenu.setText(format);
+        setOrUpdateHeader("Content-Type", contentType);
+        if (!restoringTabState) {
+            Tab active = activeRequestTab();
+            if (active != null && tabStates.containsKey(active)) {
+                RequestTabState state = tabStates.get(active);
+                if (state != null) {
+                    state.rawFormat = format;
+                    scheduleSessionSave();
+                }
+            }
+        }
+    }
+
+    @FXML
+    private void handleSelectRawFormatJson() {
+        applyRawFormat("JSON", "application/json");
+    }
+
+    @FXML
+    private void handleSelectRawFormatXml() {
+        applyRawFormat("XML", "application/xml");
+    }
+
+    @FXML
+    private void handleSelectRawFormatHtml() {
+        applyRawFormat("HTML", "text/html");
+    }
+
+    @FXML
+    private void handleSelectRawFormatText() {
+        applyRawFormat("Text", "text/plain");
+    }
+
+    @FXML
+    private void handleSelectRawFormatJs() {
+        applyRawFormat("JavaScript", "application/javascript");
+    }
+
+    @FXML
+    private void handleBeautifyBody() {
+        if (bodyTextArea != null) {
+            prettifyJsonEditor(bodyTextArea);
+        }
+    }
+
+    /* =========================================================================
+     * Response Toolbar Handlers: { } JSON ▾, Preview, Visualization, Wrap, Search
+     * ========================================================================= */
+
+    private void showResponseCodeView(String formatName) {
+        if (formatName != null && responseFormatMenu != null) {
+            responseFormatMenu.setText(formatName);
+        }
+        if (responseFormatMenu != null) {
+            responseFormatMenu.getStyleClass().remove("inactive-view");
+            if (!responseFormatMenu.getStyleClass().contains("active-view")) {
+                responseFormatMenu.getStyleClass().add("active-view");
+            }
+        }
+        if (responseVisualizationMenu != null) {
+            responseVisualizationMenu.setText("🖼 Visualization");
+            responseVisualizationMenu.getStyleClass().remove("active-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                responseVisualizationMenu.getStyleClass().add("inactive-view");
+            }
+        }
+        if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(true);
+            responseCodeAreaPane.setManaged(true);
+        }
+        if (responsePreview != null) {
+            responsePreview.setVisible(false);
+            responsePreview.setManaged(false);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(false);
+            responseVisualizationView.setManaged(false);
+        }
+        if (responseWrapToggle != null) {
+            responseWrapToggle.setVisible(true);
+            responseWrapToggle.setManaged(true);
+        }
+        boolean isJson = "JSON".equalsIgnoreCase(currentResponseFormat);
+        if (responseCollapseAllBtn != null) {
+            responseCollapseAllBtn.setVisible(isJson);
+            responseCollapseAllBtn.setManaged(isJson);
+        }
+        if (responseExpandAllBtn != null) {
+            responseExpandAllBtn.setVisible(isJson);
+            responseExpandAllBtn.setManaged(isJson);
+        }
+        if (responseFindBtn != null) {
+            responseFindBtn.setVisible(true);
+            responseFindBtn.setManaged(true);
+        }
+        if (responseCopyBodyBtn != null) {
+            responseCopyBodyBtn.setVisible(true);
+            responseCopyBodyBtn.setManaged(true);
+        }
+
+        // Hide visualization toolbar buttons
+        if (responseVisCodeBtn != null) {
+            responseVisCodeBtn.setVisible(false);
+            responseVisCodeBtn.setManaged(false);
+        }
+        if (responseVisRefreshBtn != null) {
+            responseVisRefreshBtn.setVisible(false);
+            responseVisRefreshBtn.setManaged(false);
+        }
+        if (responseVisCopyBtn != null) {
+            responseVisCopyBtn.setVisible(false);
+            responseVisCopyBtn.setManaged(false);
+        }
+    }
+
+    @FXML
+    private void handleSelectResponseJson() {
+        applyResponseFormat("JSON");
+    }
+
+    @FXML
+    private void handleSelectResponseXml() {
+        applyResponseFormat("XML");
+    }
+
+    @FXML
+    private void handleSelectResponseHtml() {
+        applyResponseFormat("HTML");
+    }
+
+    @FXML
+    private void handleSelectResponseJs() {
+        applyResponseFormat("JAVASCRIPT");
+    }
+
+    @FXML
+    private void handleSelectResponseRaw() {
+        applyResponseFormat("RAW");
+    }
+
+    @FXML
+    private void handleSelectResponseHex() {
+        applyResponseFormat("HEX");
+    }
+
+    @FXML
+    private void handleSelectResponseBase64() {
+        applyResponseFormat("BASE64");
+    }
+
+    @FXML
+    private void handleSelectResponseText() {
+        applyResponseFormat("RAW");
+    }
+
+    @FXML
+    private void handleToggleResponsePreview() {
+        if (responsePreviewToggle != null && responsePreviewToggle.isSelected()) {
+            if (responseVisualizationMenu != null) {
+                responseVisualizationMenu.setText("🖼 Visualization");
+                responseVisualizationMenu.getStyleClass().remove("active-view");
+                if (!responseVisualizationMenu.getStyleClass().contains("inactive-view")) {
+                    responseVisualizationMenu.getStyleClass().add("inactive-view");
+                }
+            }
+            if (responseFormatMenu != null) {
+                responseFormatMenu.getStyleClass().remove("active-view");
+                if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
+                    responseFormatMenu.getStyleClass().add("inactive-view");
+                }
+            }
+            if (responseCodeAreaPane != null) {
+                responseCodeAreaPane.setVisible(false);
+                responseCodeAreaPane.setManaged(false);
+            }
+            if (responseVisualizationView != null) {
+                responseVisualizationView.setVisible(false);
+                responseVisualizationView.setManaged(false);
+            }
+            if (responseWrapToggle != null) {
+                responseWrapToggle.setVisible(false);
+                responseWrapToggle.setManaged(false);
+            }
+            if (responseCollapseAllBtn != null) {
+                responseCollapseAllBtn.setVisible(false);
+                responseCollapseAllBtn.setManaged(false);
+            }
+            if (responseExpandAllBtn != null) {
+                responseExpandAllBtn.setVisible(false);
+                responseExpandAllBtn.setManaged(false);
+            }
+            if (responseFindBtn != null) {
+                responseFindBtn.setVisible(false);
+                responseFindBtn.setManaged(false);
+            }
+            if (responseCopyBodyBtn != null) {
+                responseCopyBodyBtn.setVisible(false);
+                responseCopyBodyBtn.setManaged(false);
+            }
+            if (responseVisCodeBtn != null) {
+                responseVisCodeBtn.setVisible(false);
+                responseVisCodeBtn.setManaged(false);
+            }
+            if (responseVisRefreshBtn != null) {
+                responseVisRefreshBtn.setVisible(false);
+                responseVisRefreshBtn.setManaged(false);
+            }
+            if (responseVisCopyBtn != null) {
+                responseVisCopyBtn.setVisible(false);
+                responseVisCopyBtn.setManaged(false);
+            }
+            if (responsePreview != null) {
+                responsePreview.setVisible(true);
+                responsePreview.setManaged(true);
+                renderPreviewView();
+            }
+        } else {
+            showResponseCodeView(null);
+        }
+    }
+
+    @FXML
+    private void handleSelectVisualize() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.VISUALIZE);
+    }
+
+    @FXML
+    private void handleSelectVisualizeTable() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.TABLE);
+    }
+
+    @FXML
+    private void handleSelectVisualizeLinearChart() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.LINEAR_CHART);
+    }
+
+    @FXML
+    private void handleSelectVisualizeBarGraph() {
+        showResponseVisualization(ResponseVisualizerGenerator.VisType.BAR_GRAPH);
+    }
+
+    @FXML
+    private void handleVisSwitchToCode() {
+        showResponseCodeView(null);
+    }
+
+    @FXML
+    private void handleVisRefresh() {
+        renderCurrentVisualization();
+    }
+
+    @FXML
+    private void handleVisCopy() {
+        String response = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : (lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : (responseBodyArea != null ? responseBodyArea.getText() : ""));
+        if (response != null && !response.isEmpty()) {
+            ClipboardContent content = new ClipboardContent();
+            content.putString(response);
+            Clipboard.getSystemClipboard().setContent(content);
+            AlertUtils.showSuccess("Visualization data copied to clipboard");
+        }
+    }
+
+    private void showResponseVisualization(ResponseVisualizerGenerator.VisType type) {
+        currentVisType = type;
+        if (responseVisualizationMenu != null) {
+            String menuText = switch (type) {
+                case VISUALIZE -> "🖼 Visualize";
+                case TABLE -> "⊞ Table";
+                case LINEAR_CHART -> "📈 Linear Chart";
+                case BAR_GRAPH -> "📊 Bar Graph";
+            };
+            responseVisualizationMenu.setText(menuText);
+            responseVisualizationMenu.getStyleClass().remove("inactive-view");
+            if (!responseVisualizationMenu.getStyleClass().contains("active-view")) {
+                responseVisualizationMenu.getStyleClass().add("active-view");
+            }
+        }
+        if (responsePreviewToggle != null) responsePreviewToggle.setSelected(false);
+        if (responseFormatMenu != null) {
+            responseFormatMenu.getStyleClass().remove("active-view");
+            if (!responseFormatMenu.getStyleClass().contains("inactive-view")) {
+                responseFormatMenu.getStyleClass().add("inactive-view");
+            }
+        }
+        if (responseCodeAreaPane != null) {
+            responseCodeAreaPane.setVisible(false);
+            responseCodeAreaPane.setManaged(false);
+        }
+        if (responsePreview != null) {
+            responsePreview.setVisible(false);
+            responsePreview.setManaged(false);
+        }
+        if (responseWrapToggle != null) {
+            responseWrapToggle.setVisible(false);
+            responseWrapToggle.setManaged(false);
+        }
+        if (responseCollapseAllBtn != null) {
+            responseCollapseAllBtn.setVisible(false);
+            responseCollapseAllBtn.setManaged(false);
+        }
+        if (responseExpandAllBtn != null) {
+            responseExpandAllBtn.setVisible(false);
+            responseExpandAllBtn.setManaged(false);
+        }
+        if (responseFindBtn != null) {
+            responseFindBtn.setVisible(false);
+            responseFindBtn.setManaged(false);
+        }
+        if (responseCopyBodyBtn != null) {
+            responseCopyBodyBtn.setVisible(false);
+            responseCopyBodyBtn.setManaged(false);
+        }
+        if (responseVisCodeBtn != null) {
+            responseVisCodeBtn.setVisible(true);
+            responseVisCodeBtn.setManaged(true);
+        }
+        if (responseVisRefreshBtn != null) {
+            responseVisRefreshBtn.setVisible(true);
+            responseVisRefreshBtn.setManaged(true);
+        }
+        if (responseVisCopyBtn != null) {
+            responseVisCopyBtn.setVisible(true);
+            responseVisCopyBtn.setManaged(true);
+        }
+        if (responseVisualizationView != null) {
+            responseVisualizationView.setVisible(true);
+            responseVisualizationView.setManaged(true);
+            renderCurrentVisualization();
+        }
+    }
+
+    @FXML
+    private void handleCollapseAllResponse() {
+        if (responsePreview != null && responsePreview.isVisible()) {
+            try {
+                responsePreview.getEngine().executeScript("if (typeof collapseAll === 'function') collapseAll();");
+            } catch (Exception ignored) {}
+        }
+        if (responseFoldManager != null) {
+            responseFoldManager.foldAll();
+        }
+    }
+
+    @FXML
+    private void handleExpandAllResponse() {
+        if (responsePreview != null && responsePreview.isVisible()) {
+            try {
+                responsePreview.getEngine().executeScript("if (typeof expandAll === 'function') expandAll();");
+            } catch (Exception ignored) {}
+        }
+        if (responseFoldManager != null) {
+            responseFoldManager.unfoldAll();
+        }
+    }
+
+    @FXML
+    private void handleToggleResponseWrap() {
+        if (responseBodyArea != null && responseWrapToggle != null) {
+            responseBodyArea.setWrapText(responseWrapToggle.isSelected());
+        }
+    }
+
+    @FXML
+    private void handleOpenResponseSearch() {
+        if (responseSearch != null) {
+            if (responseSearch.getBar().isManaged()) {
+                responseSearch.close();
+            } else {
+                showResponseCodeView(null);
+                responseSearch.open();
+            }
+        }
+    }
+
+    private void renderPreviewView() {
+        if (responsePreview == null) return;
+        if (lastApiResponse != null && isPdfResponse(lastApiResponse)) {
+            renderPdfPreview(lastApiResponse);
+            return;
+        }
+        String text = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : (lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : responseBodyArea.getText());
+        if (text == null) text = "";
+        String trimmed = text.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("<!doctype html") || lower.startsWith("<html")) {
+            responsePreview.getEngine().loadContent(text);
+        } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            boolean isLight = ThemeManager.isLight();
+            String html = JsonTreePreviewGenerator.generateHtml(trimmed, isLight);
+            responsePreview.getEngine().loadContent(html);
+        } else {
+            boolean isLight = ThemeManager.isLight();
+            String bg = isLight ? "#ffffff" : "#1d1f24";
+            String cardBg = isLight ? "#f6f8fa" : "#161b22";
+            String border = isLight ? "#d0d7de" : "#30363d";
+            String textColor = isLight ? "#24292f" : "#c9d1d9";
+            String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><style>"
+                    + "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: " + bg + "; color: " + textColor + "; padding: 16px; margin: 0; }"
+                    + "pre { background: " + cardBg + "; border: 1px solid " + border + "; border-radius: 6px; padding: 12px; font-family: 'Consolas', 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; overflow: auto; white-space: pre-wrap; word-break: break-word; }"
+                    + "</style></head><body><pre>" + escapeHtml(text) + "</pre></body></html>";
+            responsePreview.getEngine().loadContent(html);
+        }
+    }
+
+    private void renderCurrentVisualization() {
+        if (responseVisualizationView == null) return;
+        String raw = (responseFoldManager != null && responseFoldManager.getFullText() != null && !responseFoldManager.getFullText().isEmpty())
+                ? responseFoldManager.getFullText()
+                : (lastApiResponse != null && lastApiResponse.getResponse() != null
+                ? lastApiResponse.getResponse() : (responseBodyArea != null ? responseBodyArea.getText() : ""));
+        boolean isLight = ThemeManager.isLight();
+        String title = getEndpointTitle();
+        String html = ResponseVisualizerGenerator.generateHtml(raw, currentVisType != null ? currentVisType : ResponseVisualizerGenerator.VisType.VISUALIZE, isLight, title);
+        responseVisualizationView.getEngine().loadContent(html);
+    }
+
+    private String getEndpointTitle() {
+        try {
+            Tab active = activeRequestTab();
+            if (active != null && active.getText() != null && !active.getText().isBlank()) {
+                String name = active.getText().trim();
+                if (!name.equalsIgnoreCase("Untitled") && !name.toLowerCase().startsWith("untitled")) {
+                    return name;
+                }
+            }
+            if (urlField != null && urlField.getText() != null && !urlField.getText().isBlank()) {
+                String u = urlField.getText().trim();
+                int q = u.indexOf('?');
+                if (q > 0) u = u.substring(0, q);
+                int lastSlash = u.lastIndexOf('/');
+                if (lastSlash >= 0 && lastSlash < u.length() - 1) {
+                    String seg = u.substring(lastSlash + 1).trim();
+                    if (!seg.isEmpty()) return seg;
+                }
+            }
+            String raw = (responseFoldManager != null && responseFoldManager.getFullText() != null)
+                    ? responseFoldManager.getFullText() : (responseBodyArea != null ? responseBodyArea.getText() : "");
+            if (raw != null && raw.trim().startsWith("{")) {
+                org.json.JSONObject obj = new org.json.JSONObject(raw.trim());
+                if (obj.has("message") && obj.optString("message").toLowerCase().contains("login")) {
+                    return "Login";
+                }
+            }
+        } catch (Exception ignored) {}
+        return "Response";
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String formatSize(long bytes) {
@@ -7493,8 +14711,10 @@ public class MainController implements Initializable {
 
         // Add user-defined headers
         for (KeyValuePair header : headersData) {
-            if (!header.getKey().isEmpty() && !header.getValue().isEmpty()) {
-                headers.put(header.getKey(), header.getValue());
+            if (header.isEnabled() && !header.isPlaceholder()
+                    && header.getKey() != null && !header.getKey().trim().isEmpty()
+                    && header.getValue() != null && !header.getValue().trim().isEmpty()) {
+                headers.put(header.getKey().trim(), header.getValue().trim());
             }
         }
 
@@ -7580,6 +14800,9 @@ public class MainController implements Initializable {
     private List<FormDataField> buildFormDataFields(Map<String, String> vars) {
         List<FormDataField> fields = new ArrayList<>();
         for (KeyValuePair kv : formData) {
+            if (kv.isPlaceholder() || !kv.isEnabled()) {
+                continue;
+            }
             if (kv.getKey() == null || kv.getKey().isBlank()) {
                 continue;
             }
@@ -7669,6 +14892,9 @@ public class MainController implements Initializable {
     private String convertFormDataToJson(ObservableList<KeyValuePair> formData) {
         JSONObject json = new JSONObject();
         for (KeyValuePair pair : formData) {
+            if (pair.isPlaceholder() || !pair.isEnabled()) {
+                continue;
+            }
             if (!pair.getKey().isEmpty() && !pair.getValue().isEmpty()) {
                 json.put(pair.getKey(), pair.getValue());
             }
@@ -7679,10 +14905,15 @@ public class MainController implements Initializable {
     private String convertFormDataToUrlEncoded(ObservableList<KeyValuePair> formData) {
         try {
             StringBuilder result = new StringBuilder();
+            boolean first = true;
             for (int i = 0; i < formData.size(); i++) {
                 KeyValuePair pair = formData.get(i);
+                if (pair.isPlaceholder() || !pair.isEnabled()) {
+                    continue;
+                }
                 if (!pair.getKey().isEmpty() && !pair.getValue().isEmpty()) {
-                    if (i > 0) result.append("&");
+                    if (!first) result.append("&");
+                    first = false;
                     result.append(URLEncoder.encode(pair.getKey(), StandardCharsets.UTF_8.toString()))
                             .append("=")
                             .append(URLEncoder.encode(pair.getValue(), StandardCharsets.UTF_8.toString()));
@@ -7740,7 +14971,12 @@ public class MainController implements Initializable {
         }
 
         if (!hasContentType) {
-            headersData.add(new KeyValuePair("Content-Type", "application/json", "Request content type"));
+            int insertIdx = !headersData.isEmpty() && headersData.get(headersData.size() - 1).isPlaceholder()
+                    ? headersData.size() - 1 : headersData.size();
+            headersData.add(insertIdx, new KeyValuePair(true, "Content-Type", "application/json", "Request content type", false));
+            ensureHeadersPlaceholderRow();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
         }
 
         AlertUtils.showInfo("Sample POST request loaded. Click Send to execute.");
@@ -7748,56 +14984,176 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleAddParamRow() {
-        paramsData.add(new KeyValuePair("", "", ""));
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+
+        int targetIndex;
+        if (!paramsData.isEmpty() && paramsData.get(paramsData.size() - 1).isPlaceholder()) {
+            targetIndex = paramsData.size() - 1;
+            paramsData.add(targetIndex, newRow);
+        } else {
+            paramsData.add(newRow);
+            targetIndex = paramsData.size() - 1;
+        }
+
+        ensurePlaceholderRow();
+
+        pendingFocusParamRow = targetIndex;
+        paramsTable.getSelectionModel().clearSelection();
+        focusParamCell(targetIndex, 1);
+        onEditorFieldChanged();
     }
 
     @FXML
     private void handleDeleteParamRow() {
-        KeyValuePair selected = paramsTable.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            paramsData.remove(selected);
+        // Collect all rows marked by Select checkbox
+        List<KeyValuePair> toDelete = paramsData.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+
+        // If no explicit selection, fall back to the currently focused row
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = paramsTable.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+
+        if (!toDelete.isEmpty()) {
+            paramsData.removeAll(toDelete);
+            ensurePlaceholderRow();
+            syncParamsToUrl();
+            onEditorFieldChanged();
+            updateMasterCheckBox(paramsMasterCheckBox);
+            updateMasterSelectBox(paramsMasterSelectBox);
+            paramsTable.refresh();
         }
     }
 
     @FXML
     private void handleAddHeaderRow() {
-        headersData.add(new KeyValuePair("", "", ""));
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+
+        int targetIndex;
+        if (!headersData.isEmpty() && headersData.get(headersData.size() - 1).isPlaceholder()) {
+            targetIndex = headersData.size() - 1;
+            headersData.add(targetIndex, newRow);
+        } else {
+            headersData.add(newRow);
+            targetIndex = headersData.size() - 1;
+        }
+
+        ensureHeadersPlaceholderRow();
+
+        pendingFocusHeaderRow = targetIndex;
+        headersTable.getSelectionModel().clearSelection();
+        focusHeaderCell(targetIndex, 1);
+        onEditorFieldChanged();
     }
 
     @FXML
     private void handleDeleteHeaderRow() {
-        KeyValuePair selected = headersTable.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            headersData.remove(selected);
+        // Collect all rows marked by Select checkbox
+        List<KeyValuePair> toDelete = headersData.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+
+        // If no explicit selection, fall back to the currently focused row
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = headersTable.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+
+        if (!toDelete.isEmpty()) {
+            headersData.removeAll(toDelete);
+            ensureHeadersPlaceholderRow();
+            onEditorFieldChanged();
+            updateHeadersMasterCheckBox(headersMasterCheckBox);
+            updateHeadersMasterSelectBox(headersMasterSelectBox);
+            headersTable.refresh();
         }
     }
 
     @FXML
     private void handleAddFormDataRow() {
-        // FIX: this button bar is shared between Form Data and
-        // x-www-form-urlencoded (same HBox in the FXML) — it used to
-        // always add to the Form Data list even while looking at the
-        // url-encoded table. It now acts on whichever table is actually
-        // visible.
         if (urlEncodedTable != null && urlEncodedTable.isVisible()) {
-            urlEncodedData.add(new KeyValuePair("", "", ""));
-        } else {
-            formData.add(new KeyValuePair("", "", ""));
+            KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+            newRow.setSelected(false);
+            int targetIndex;
+            if (!urlEncodedData.isEmpty() && urlEncodedData.get(urlEncodedData.size() - 1).isPlaceholder()) {
+                targetIndex = urlEncodedData.size() - 1;
+                urlEncodedData.add(targetIndex, newRow);
+            } else {
+                urlEncodedData.add(newRow);
+                targetIndex = urlEncodedData.size() - 1;
+            }
+            ensureUrlEncodedPlaceholderRow();
+            pendingFocusUrlEncodedRow = targetIndex;
+            urlEncodedTable.getSelectionModel().clearSelection();
+            focusUrlEncodedCell(targetIndex, 1);
+            onEditorFieldChanged();
+            return;
         }
+
+        KeyValuePair newRow = new KeyValuePair(true, "", "", "", false);
+        newRow.setSelected(false);
+        int targetIndex;
+        if (!formData.isEmpty() && formData.get(formData.size() - 1).isPlaceholder()) {
+            targetIndex = formData.size() - 1;
+            formData.add(targetIndex, newRow);
+        } else {
+            formData.add(newRow);
+            targetIndex = formData.size() - 1;
+        }
+        ensureFormDataPlaceholderRow();
+        pendingFocusFormDataRow = targetIndex;
+        formDataTable.getSelectionModel().clearSelection();
+        focusFormDataCell(targetIndex, 1);
+        onEditorFieldChanged();
     }
 
     @FXML
     private void handleDeleteFormDataRow() {
         if (urlEncodedTable != null && urlEncodedTable.isVisible()) {
-            KeyValuePair selected = urlEncodedTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                urlEncodedData.remove(selected);
+            List<KeyValuePair> toDelete = urlEncodedData.stream()
+                    .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                    .collect(Collectors.toList());
+            if (toDelete.isEmpty()) {
+                KeyValuePair active = urlEncodedTable.getSelectionModel().getSelectedItem();
+                if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                    toDelete.add(active);
+                }
+            }
+            if (!toDelete.isEmpty()) {
+                urlEncodedData.removeAll(toDelete);
+                ensureUrlEncodedPlaceholderRow();
+                onEditorFieldChanged();
+                updateUrlEncodedMasterCheckBox(urlEncodedMasterCheckBox);
+                updateUrlEncodedMasterSelectBox(urlEncodedMasterSelectBox);
+                urlEncodedTable.refresh();
             }
             return;
         }
-        KeyValuePair selected = formDataTable.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            formData.remove(selected);
+
+        List<KeyValuePair> toDelete = formData.stream()
+                .filter(kv -> kv.isSelected() && !isRowEmpty(kv) && !kv.isPlaceholder())
+                .collect(Collectors.toList());
+        if (toDelete.isEmpty()) {
+            KeyValuePair active = formDataTable.getSelectionModel().getSelectedItem();
+            if (active != null && !isRowEmpty(active) && !active.isPlaceholder()) {
+                toDelete.add(active);
+            }
+        }
+        if (!toDelete.isEmpty()) {
+            formData.removeAll(toDelete);
+            ensureFormDataPlaceholderRow();
+            onEditorFieldChanged();
+            updateFormDataMasterCheckBox(formDataMasterCheckBox);
+            updateFormDataMasterSelectBox(formDataMasterSelectBox);
+            formDataTable.refresh();
         }
     }
 
@@ -7831,7 +15187,7 @@ public class MainController implements Initializable {
                     ? "Create a folder inside \"" + selectedItem.getValue() + "\""
                     : "Create a new folder");
             dialog.setContentText("Folder name:");
-            ThemeManager.styleDialog(dialog.getDialogPane());
+            initAndStyleDialog(dialog);
 
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(name -> {
@@ -7852,6 +15208,7 @@ public class MainController implements Initializable {
             dialog.setTitle("Rename");
             dialog.setHeaderText("Rename this item");
             dialog.setContentText("New name:");
+            initAndStyleDialog(dialog);
 
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(newName -> {
@@ -8836,7 +16193,7 @@ public class MainController implements Initializable {
                 dialog.setTitle("Select Collection");
                 dialog.setHeaderText("Choose a collection for the new request");
                 dialog.setContentText("Collection:");
-                ThemeManager.styleDialog(dialog.getDialogPane());
+                initAndStyleDialog(dialog);
 
                 Optional<String> result = dialog.showAndWait();
                 result.ifPresent(name -> collections.stream()
@@ -8870,7 +16227,7 @@ public class MainController implements Initializable {
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-        ThemeManager.styleDialog(dialog.getDialogPane());
+        initAndStyleDialog(dialog);
         Platform.runLater(nameField::requestFocus);
 
         dialog.setResultConverter(button -> button == ButtonType.OK
@@ -9308,20 +16665,26 @@ public class MainController implements Initializable {
                     ApiRequest apiRequest = new ApiRequest();
                     apiRequest.setName(name);
                     apiRequest.setMethod(HttpMethod.valueOf(method));
-                    apiRequest.setUrl("https://api.example.com/endpoint");
+                    apiRequest.setUrl("");
                     apiRequest.setHeaders("{}");
                     apiRequest.setBody("");
                     apiRequest.setCollectionId(collectionId);
                     apiRequest.setFolderId(folderId);
 
                     Optional<RequestResponse> savedRequest = RequestService.saveRequest(apiRequest);
+                    if (savedRequest.isEmpty()) {
+                        // Fallback in case remote backend requires non-blank URL
+                        apiRequest.setUrl("https://api.example.com/endpoint");
+                        savedRequest = RequestService.saveRequest(apiRequest);
+                    }
                     if (savedRequest.isPresent()) {
+                        final RequestResponse createdRequest = savedRequest.get();
                         Platform.runLater(() -> {
                             refreshCollectionsTree();
                             updateStatus("Request created: " + name);
                             // Open the new request in its own tab, like Postman
-                            openRequestTab(name, savedRequest.get().getId(), method);
-                            loadRequestIntoUI(savedRequest.get());
+                            openRequestTab(name, createdRequest.getId(), method);
+                            loadRequestIntoUI(createdRequest);
                         });
                     } else {
                         Platform.runLater(() -> {
@@ -9380,6 +16743,9 @@ public class MainController implements Initializable {
         private final SimpleStringProperty key;
         private final SimpleStringProperty value;
         private final SimpleStringProperty description;
+        private final SimpleBooleanProperty enabled;
+        private final SimpleBooleanProperty selected = new SimpleBooleanProperty(false);
+        private final SimpleBooleanProperty placeholder = new SimpleBooleanProperty(false);
         // Only meaningful for the form-data table — "Text" (default) or
         // "File". Every other table (params, headers, cookies...) just
         // never touches these.
@@ -9388,17 +16754,63 @@ public class MainController implements Initializable {
         private final SimpleStringProperty fileName = new SimpleStringProperty("");
 
         public KeyValuePair() {
-            this("", "", "");
+            this(true, "", "", "");
         }
 
         public KeyValuePair(String key, String value) {
-            this(key, value, "");
+            this(true, key, value, "");
         }
 
         public KeyValuePair(String key, String value, String description) {
-            this.key = new SimpleStringProperty(key);
-            this.value = new SimpleStringProperty(value);
-            this.description = new SimpleStringProperty(description);
+            this(true, key, value, description);
+        }
+
+        public KeyValuePair(boolean enabled, String key, String value, String description) {
+            this(enabled, key, value, description, false);
+        }
+
+        public KeyValuePair(boolean enabled, String key, String value, String description, boolean placeholder) {
+            this.enabled = new SimpleBooleanProperty(enabled);
+            this.key = new SimpleStringProperty(key != null ? key : "");
+            this.value = new SimpleStringProperty(value != null ? value : "");
+            this.description = new SimpleStringProperty(description != null ? description : "");
+            this.placeholder.set(placeholder);
+        }
+
+        public boolean isPlaceholder() {
+            return placeholder.get();
+        }
+
+        public SimpleBooleanProperty placeholderProperty() {
+            return placeholder;
+        }
+
+        public void setPlaceholder(boolean placeholder) {
+            this.placeholder.set(placeholder);
+        }
+
+        public boolean isEnabled() {
+            return enabled.get();
+        }
+
+        public SimpleBooleanProperty enabledProperty() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled.set(enabled);
+        }
+
+        public boolean isSelected() {
+            return selected.get();
+        }
+
+        public SimpleBooleanProperty selectedProperty() {
+            return selected;
+        }
+
+        public void setSelected(boolean selected) {
+            this.selected.set(selected);
         }
 
         public String getType() {
@@ -9471,6 +16883,58 @@ public class MainController implements Initializable {
 
         public void setDescription(String description) {
             this.description.set(description);
+        }
+    }
+
+    public static class SocketIoEventItem {
+        private final SimpleStringProperty eventName = new SimpleStringProperty("");
+        private final SimpleBooleanProperty listen = new SimpleBooleanProperty(true);
+        private final SimpleStringProperty description = new SimpleStringProperty("");
+
+        public SocketIoEventItem() {
+            this("", true, "");
+        }
+
+        public SocketIoEventItem(String eventName, boolean listen, String description) {
+            this.eventName.set(eventName != null ? eventName : "");
+            this.listen.set(listen);
+            this.description.set(description != null ? description : "");
+        }
+
+        public String getEventName() {
+            return eventName.get();
+        }
+
+        public void setEventName(String value) {
+            eventName.set(value != null ? value : "");
+        }
+
+        public SimpleStringProperty eventNameProperty() {
+            return eventName;
+        }
+
+        public boolean isListen() {
+            return listen.get();
+        }
+
+        public void setListen(boolean value) {
+            listen.set(value);
+        }
+
+        public SimpleBooleanProperty listenProperty() {
+            return listen;
+        }
+
+        public String getDescription() {
+            return description.get();
+        }
+
+        public void setDescription(String value) {
+            description.set(value != null ? value : "");
+        }
+
+        public SimpleStringProperty descriptionProperty() {
+            return description;
         }
     }
 }

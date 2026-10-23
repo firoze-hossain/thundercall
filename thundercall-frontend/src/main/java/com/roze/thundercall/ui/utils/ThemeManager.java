@@ -32,20 +32,44 @@ public final class ThemeManager {
 
     public static void setLight(boolean light, Scene scene) {
         prefs().put(PREF_KEY, light ? LIGHT : DARK);
-        apply(scene);
+        if (scene != null) {
+            apply(scene);
+        }
+        try {
+            for (Window window : Window.getWindows()) {
+                if (window != null && window.getScene() != null && window.getScene() != scene) {
+                    apply(window.getScene());
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /** Applies the persisted theme to the given scene. Safe to call any time. */
     public static void apply(Scene scene) {
-        if (scene == null || scene.getRoot() == null) {
+        if (scene == null) {
             return;
         }
+        String mainCss = mainCss();
         String lightCss = lightCss();
-        scene.getRoot().getStylesheets().remove(lightCss);
+
+        // Ensure scene-level stylesheets contain main.css and (when in light theme) light.css.
+        // In JavaFX, Tooltips and Popups inherit stylesheets from scene.getStylesheets().
+        if (!scene.getStylesheets().contains(mainCss)) {
+            scene.getStylesheets().add(mainCss);
+        }
+        scene.getStylesheets().remove(lightCss);
         if (isLight()) {
-            // Root stylesheets outrank scene stylesheets; appending after
-            // main.css (declared in FXML) makes the light tokens win.
-            scene.getRoot().getStylesheets().add(lightCss);
+            scene.getStylesheets().add(lightCss);
+        }
+
+        if (scene.getRoot() != null) {
+            scene.getRoot().getStylesheets().remove(lightCss);
+            if (isLight()) {
+                // Root stylesheets outrank scene stylesheets; appending after
+                // main.css (declared in FXML) makes the light tokens win.
+                scene.getRoot().getStylesheets().add(lightCss);
+            }
         }
     }
 
@@ -67,6 +91,9 @@ public final class ThemeManager {
         if (isLight()) {
             pane.getStylesheets().add(lightCss);
         }
+        if (pane.getScene() != null) {
+            apply(pane.getScene());
+        }
         anchorToMainWindow(pane);
     }
 
@@ -82,12 +109,14 @@ public final class ThemeManager {
      */
     private static void anchorToMainWindow(DialogPane pane) {
         if (pane.getScene() != null) {
+            apply(pane.getScene());
             setOwner(pane.getScene().getWindow());
         } else {
             // Dialog implementations create their Scene lazily — attach as
             // soon as it exists, which is still before the dialog is shown.
             pane.sceneProperty().addListener((obs, oldScene, newScene) -> {
                 if (newScene != null) {
+                    apply(newScene);
                     setOwner(newScene.getWindow());
                 }
             });

@@ -20,8 +20,21 @@ public class RequestHistory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = true)
+    private User user;
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "request_id", nullable = true)
     private Request request;
+    @Column(length = 2048)
+    private String url;
+    @Column(length = 16)
+    private String method;
+    @Column(name = "request_name")
+    private String requestName;
+    @Column(columnDefinition = "TEXT")
+    private String requestHeaders;
+    @Column(columnDefinition = "TEXT")
+    private String requestBody;
     @Column(nullable = false)
     @CreationTimestamp
     private LocalDateTime timestamp;

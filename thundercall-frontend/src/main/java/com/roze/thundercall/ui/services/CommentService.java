@@ -46,7 +46,7 @@ public class CommentService {
                 return Optional.ofNullable(response.getData());
             }
         } catch (IOException e) {
-            Platform.runLater(() -> AlertUtils.showError("Failed to load comments: " + e.getMessage()));
+            System.err.println("Failed to load comments for request " + requestId + ": " + e.getMessage());
         }
         return Optional.empty();
     }

@@ -27,6 +27,9 @@
     -danger-soft: rgba(217, 48, 37, 0.08);
     -info: #1a73e8;
 
+    -fx-base: -bg-base;
+    -fx-background: -bg-base;
+    -fx-control-inner-background: -bg-panel;
     -fx-background-color: -bg-base;
 }
 
@@ -35,8 +38,49 @@
 .scroll-bar .thumb:hover { -fx-background-color: #ababab; }
 
 .tooltip {
-    -fx-background-color: #2b2b2b;
-    -fx-text-fill: #ffffff;
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 6 10 6 10;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 3);
+}
+.tooltip .label {
+    -fx-text-fill: #212121;
+}
+
+.graphql-warning-tooltip {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-border-color: #e2e8f0;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 8 12 8 12;
+    -fx-line-spacing: 2px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.12), 10, 0, 0, 3);
+}
+.graphql-warning-tooltip .label {
+    -fx-text-fill: #212121;
+}
+
+.custom-hover-tooltip {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 6 10 6 10;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 3);
+}
+.custom-hover-tooltip .label {
+    -fx-text-fill: #212121;
 }
 
 .send-button { -fx-text-fill: white; }
@@ -50,3 +94,730 @@
 .method-delete  { -fx-text-fill: #d93025; }
 .method-head    { -fx-text-fill: #188038; }
 .method-options { -fx-text-fill: #5f6368; }
+
+/* Pill badges in Light Theme keep white text and the crisp colors like in Shared Workspaces */
+.method-chip,
+.tree-method-chip,
+.tree-method,
+.tab-method-badge {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-padding: 2 4 2 4;
+    -fx-background-radius: 4px;
+    -fx-alignment: CENTER;
+    -fx-min-width: 48px;
+    -fx-pref-width: 48px;
+}
+.tab-method-badge {
+    -fx-min-width: 48px;
+    -fx-pref-width: 48px;
+    -fx-padding: 1 4 1 4;
+}
+
+.method-chip-get,
+.method-chip.method-get,
+.tree-method.method-get,
+.tree-method-chip.method-chip-get,
+.tab-method-badge.method-get {
+    -fx-background-color: #56c99f;
+    -fx-text-fill: white;
+}
+.method-chip-post,
+.method-chip.method-post,
+.tree-method.method-post,
+.tree-method-chip.method-chip-post,
+.tab-method-badge.method-post {
+    -fx-background-color: #d9a83e;
+    -fx-text-fill: white;
+}
+.method-chip-put,
+.method-chip.method-put,
+.tree-method.method-put,
+.tree-method-chip.method-chip-put,
+.tab-method-badge.method-put {
+    -fx-background-color: #6aa8f0;
+    -fx-text-fill: white;
+}
+.method-chip-patch,
+.method-chip-pat,
+.method-chip.method-patch,
+.tree-method.method-patch,
+.tree-method-chip.method-chip-patch,
+.tab-method-badge.method-patch {
+    -fx-background-color: #b98af0;
+    -fx-text-fill: white;
+}
+.method-chip-delete,
+.method-chip-del,
+.method-chip.method-delete,
+.tree-method.method-delete,
+.tree-method-chip.method-chip-delete,
+.tab-method-badge.method-delete,
+.tab-method-badge.method-del {
+    -fx-background-color: #e5726a;
+    -fx-text-fill: white;
+}
+.method-chip-head,
+.method-chip.method-head,
+.tree-method.method-head,
+.tree-method-chip.method-chip-head,
+.tab-method-badge.method-head {
+    -fx-background-color: #7ec98f;
+    -fx-text-fill: white;
+}
+.method-chip-options,
+.method-chip-opt,
+.method-chip.method-options,
+.tree-method.method-options,
+.tree-method-chip.method-chip-options,
+.tab-method-badge.method-options {
+    -fx-background-color: #9aa0a6;
+    -fx-text-fill: white;
+}
+.method-chip-ws,
+.method-chip.method-ws,
+.tree-method.method-ws,
+.tree-method-chip.method-chip-ws,
+.tab-method-badge.method-ws {
+    -fx-background-color: #4dd0e1;
+    -fx-text-fill: white;
+}
+.method-chip-socketio,
+.method-chip.method-socketio,
+.tree-method.method-socketio,
+.tree-method-chip.method-chip-socketio,
+.tab-method-badge.method-socketio {
+    -fx-background-color: #ab47bc;
+    -fx-text-fill: white;
+}
+
+/* Subtle elevation shadow on hover / select for light theme */
+.tree-cell:hover .method-chip,
+.tree-cell:hover .tree-method-chip,
+.tree-cell:hover .tree-method {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.16), 4, 0, 0, 1);
+}
+.tree-cell:selected .method-chip,
+.tree-cell:selected .tree-method-chip,
+.tree-cell:selected .tree-method {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.25), 6, 0, 0, 1);
+}
+
+/* User-friendly row selection color for Light theme (Params / Key-Value tables) */
+.key-value-table .table-row-cell:selected {
+    -fx-background-color: transparent;
+}
+.key-value-table .table-row-cell:selected:hover {
+    -fx-background-color: -bg-hover;
+}
+.table-row-cell:row-selected {
+    -fx-background-color: #ffe8df;
+    -fx-border-color: transparent transparent #ffd0be transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.table-row-cell:row-selected:hover {
+    -fx-background-color: #ffdfd2;
+}
+
+.table-row-cell:row-selected .table-cell {
+    -fx-background-color: transparent;
+}
+
+.table-row-cell:row-selected .param-cell-field {
+    -fx-background-color: transparent;
+    -fx-text-fill: #1f1f1f;
+}
+.table-row-cell:row-selected .param-cell-field:focused {
+    -fx-background-color: #ffffff;
+    -fx-border-color: -accent;
+    -fx-border-width: 1;
+}
+
+/* Light theme checkbox inside key-value tables */
+.key-value-table .check-box .box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #c4c4c4;
+}
+.key-value-table .check-box:hover .box {
+    -fx-border-color: -accent;
+    -fx-background-color: #fff4f0;
+}
+.key-value-table .check-box:selected .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.key-value-table .check-box:selected .mark {
+    -fx-background-color: #ffffff;
+}
+.key-value-table .check-box:indeterminate .box {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+}
+.key-value-table .check-box:indeterminate .mark {
+    -fx-background-color: #ffffff;
+}
+
+/* Header autocomplete popup for Light theme */
+.header-suggestions {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d6d6d6;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.12), 12, 0, 0, 4);
+}
+.header-suggestions .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #212121;
+}
+.header-suggestions .list-cell:filled:selected,
+.header-suggestions .list-cell:filled:hover {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+}
+
+/* Draggable request tabs */
+.request-tab-bar .tab {
+    -fx-cursor: hand;
+}
+.tab-graphic-dragging {
+    -fx-opacity: 0.70;
+    -fx-cursor: closed-hand;
+}
+.request-tab-bar .tab.tab-dragging {
+    -fx-opacity: 0.70;
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: transparent transparent -accent transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-cursor: closed-hand;
+}
+
+/* Light Theme overrides for ScrollPanes and Dialogs */
+.scroll-pane {
+    -fx-background: -bg-panel;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+.dialog-pane {
+    -fx-base: -bg-base;
+    -fx-background: -bg-panel;
+    -fx-background-color: -bg-panel;
+}
+.dialog-pane .scroll-pane,
+.dialog-pane .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: -bg-panel;
+    -fx-border-color: transparent;
+}
+.dialog-section-title {
+    -fx-text-fill: -text-primary;
+}
+.separator .line {
+    -fx-border-color: -border-subtle;
+}
+
+/* ============ Postman Light Theme JSON / Variable syntax highlighting ============ */
+.body-textarea .lineno, .response-body .lineno, .lineno {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #8c9199;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+    -fx-padding: 0 10 0 8;
+    -fx-alignment: center-right;
+    -fx-border-color: transparent #e1e4e8 transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.body-textarea .paragraph-text, .response-body .paragraph-text {
+    -fx-padding: 0 0 0 8;
+}
+
+.body-textarea, .response-body {
+    -fx-background-color: #ffffff;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+.body-textarea .text, .response-body .text {
+    -fx-fill: #24292f;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+
+/* Postman Light Theme JSON / Variable syntax highlighting (High Specificity) */
+.body-textarea .text.json-key,
+.response-body .text.json-key,
+.code-area .text.json-key,
+.styled-text-area .text.json-key,
+.body-textarea .json-key,
+.response-body .json-key,
+.code-area .json-key,
+.styled-text-area .json-key,
+.text.json-key,
+.json-key {
+    -fx-fill: #d73a49;
+    -fx-font-weight: bold;
+}
+
+.body-textarea .text.json-string,
+.response-body .text.json-string,
+.code-area .text.json-string,
+.styled-text-area .text.json-string,
+.body-textarea .json-string,
+.response-body .json-string,
+.code-area .json-string,
+.styled-text-area .json-string,
+.text.json-string,
+.json-string {
+    -fx-fill: #0366d6;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-number,
+.response-body .text.json-number,
+.code-area .text.json-number,
+.styled-text-area .text.json-number,
+.body-textarea .json-number,
+.response-body .json-number,
+.code-area .json-number,
+.styled-text-area .json-number,
+.text.json-number,
+.json-number {
+    -fx-fill: #098658;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-boolean,
+.response-body .text.json-boolean,
+.code-area .text.json-boolean,
+.styled-text-area .text.json-boolean,
+.body-textarea .json-boolean,
+.response-body .json-boolean,
+.code-area .json-boolean,
+.styled-text-area .json-boolean,
+.text.json-boolean,
+.json-boolean {
+    -fx-fill: #005cc5;
+    -fx-font-weight: bold;
+}
+
+.body-textarea .text.json-null,
+.response-body .text.json-null,
+.code-area .text.json-null,
+.styled-text-area .text.json-null,
+.body-textarea .json-null,
+.response-body .json-null,
+.code-area .json-null,
+.styled-text-area .json-null,
+.text.json-null,
+.json-null {
+    -fx-fill: #6e7781;
+    -fx-font-style: italic;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-punctuation,
+.response-body .text.json-punctuation,
+.code-area .text.json-punctuation,
+.styled-text-area .text.json-punctuation,
+.body-textarea .json-punctuation,
+.response-body .json-punctuation,
+.code-area .json-punctuation,
+.styled-text-area .json-punctuation,
+.text.json-punctuation,
+.json-punctuation {
+    -fx-fill: #24292f;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-comment,
+.response-body .text.json-comment,
+.code-area .text.json-comment,
+.styled-text-area .text.json-comment,
+.body-textarea .json-comment,
+.response-body .json-comment,
+.code-area .json-comment,
+.styled-text-area .json-comment,
+.text.json-comment,
+.json-comment {
+    -fx-fill: #6e7781;
+    -fx-font-style: italic;
+    -fx-font-weight: normal;
+}
+
+.body-textarea .text.json-variable,
+.response-body .text.json-variable,
+.code-area .text.json-variable,
+.styled-text-area .text.json-variable,
+.body-textarea .json-variable,
+.response-body .json-variable,
+.code-area .json-variable,
+.styled-text-area .json-variable,
+.text.json-variable,
+.json-variable {
+    -fx-fill: #e65100;
+    -fx-font-weight: bold;
+    -rtfx-background-color: rgba(255, 108, 55, 0.16);
+}
+
+/* Thin Scope / Indentation Guide Lines (Postman Light) */
+.code-area .text.json-indent-guide,
+.body-textarea .text.json-indent-guide,
+.response-body .text.json-indent-guide,
+.text.json-indent-guide {
+    -rtfx-background-color: linear-gradient(from 0.0px 0.0px to 14.4px 0.0px, repeat, rgba(209, 213, 219, 0.75) 0%, rgba(209, 213, 219, 0.75) 6.5%, transparent 6.5%, transparent 100%);
+}
+
+/* Postman Folded Ellipsis Badge { ... */
+.code-area .text.json-folded-badge,
+.body-textarea .text.json-folded-badge,
+.response-body .text.json-folded-badge,
+.text.json-folded-badge {
+    -fx-fill: #57606a;
+    -fx-font-weight: bold;
+    -rtfx-background-color: #eaeef2;
+}
+
+/* Postman Gutter Row & Chevron Styles */
+.gutter-row {
+    -fx-background-color: #ffffff;
+    -fx-padding: 0 4 0 6;
+    -fx-border-color: transparent #e1e4e8 transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.gutter-row .lineno {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-border-color: transparent;
+    -fx-padding: 0 2 0 0;
+    -fx-text-fill: #8c9199;
+    -fx-font-family: "Consolas", "Monaco", "Menlo", "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+.fold-chevron-expanded, .fold-chevron-collapsed {
+    -fx-stroke: #8c9199;
+}
+.fold-arrow-btn {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3px;
+    -fx-padding: 1;
+}
+.fold-arrow-btn:hover {
+    -fx-background-color: #f0f2f5;
+}
+.fold-arrow-btn:hover .fold-chevron-expanded,
+.fold-arrow-btn:hover .fold-chevron-collapsed {
+    -fx-stroke: #24292f;
+}
+
+/* Postman response toolbar for Light Theme */
+.response-body-toolbar {
+    -fx-padding: 5 10 5 10;
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent transparent #e8e8e8 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.response-toolbar-menu.active-view,
+.response-toolbar-menu {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 8 3 8;
+    -fx-border-color: #d6d6d6;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.response-toolbar-menu:hover {
+    -fx-background-color: #e6e6e6;
+}
+.response-toolbar-menu.inactive-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: #57606a;
+    -fx-font-weight: normal;
+}
+.response-toolbar-menu.inactive-view:hover {
+    -fx-background-color: #f0f2f5;
+    -fx-text-fill: #212121;
+}
+.response-toolbar-menu.inactive-view .arrow-button {
+    -fx-padding: 0;
+    -fx-pref-width: 0;
+    -fx-max-width: 0;
+    -fx-min-width: 0;
+    -fx-opacity: 0;
+}
+.response-toolbar-menu.inactive-view .arrow {
+    -fx-padding: 0;
+    -fx-shape: null;
+}
+.response-toolbar-toggle {
+    -fx-background-color: transparent;
+    -fx-text-fill: #57606a;
+    -fx-font-size: 11px;
+    -fx-padding: 4 9 4 9;
+    -fx-border-color: transparent;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.response-toolbar-toggle:hover {
+    -fx-background-color: #f0f2f5;
+    -fx-text-fill: #212121;
+}
+.response-toolbar-toggle:selected {
+    -fx-background-color: #e8e8e8;
+    -fx-border-color: #d6d6d6;
+    -fx-text-fill: #212121;
+    -fx-font-weight: bold;
+}
+.response-toolbar-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #57606a;
+    -fx-font-size: 11px;
+    -fx-padding: 4 8 4 8;
+    -fx-border-color: transparent;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.response-toolbar-btn:hover {
+    -fx-background-color: #f0f2f5;
+    -fx-text-fill: #212121;
+}
+.response-toolbar-btn:selected {
+    -fx-background-color: #e8e8e8;
+    -fx-border-color: #d6d6d6;
+    -fx-text-fill: #212121;
+}
+
+.body-format-btn {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #212121;
+    -fx-border-color: #d6d6d6;
+}
+.body-beautify-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e85a25;
+    -fx-border-color: rgba(255, 108, 55, 0.25);
+}
+.body-beautify-btn:hover {
+    -fx-background-color: rgba(255, 108, 55, 0.10);
+}
+
+/* XML / HTML Syntax Highlighting (Postman Light) */
+.text.xml-tag, .text.html-tag,
+.xml-tag, .html-tag {
+    -fx-fill: #22863a;
+    -fx-font-weight: bold;
+}
+.text.xml-attribute, .text.html-attribute,
+.xml-attribute, .html-attribute {
+    -fx-fill: #6f42c1;
+}
+.text.xml-value, .text.html-value,
+.xml-value, .html-value {
+    -fx-fill: #032f62;
+}
+.text.xml-comment, .text.html-comment,
+.xml-comment, .html-comment {
+    -fx-fill: #6a737d;
+    -fx-font-style: italic;
+}
+
+/* JavaScript Syntax Highlighting (Postman Light) */
+.text.js-keyword,
+.js-keyword {
+    -fx-fill: #d73a49;
+    -fx-font-weight: bold;
+}
+.text.js-string,
+.js-string {
+    -fx-fill: #032f62;
+}
+.text.js-number,
+.js-number {
+    -fx-fill: #005cc5;
+}
+.text.js-comment,
+.js-comment {
+    -fx-fill: #6a737d;
+    -fx-font-style: italic;
+}
+
+/* Hex View Syntax Highlighting (Postman Light) */
+.text.hex-offset,
+.hex-offset {
+    -fx-fill: #800656;
+    -fx-font-weight: bold;
+}
+.text.hex-byte,
+.hex-byte {
+    -fx-fill: #212121;
+}
+.text.hex-ascii,
+.hex-ascii {
+    -fx-fill: #5c8cbc;
+    -fx-font-weight: 500;
+}
+
+/* Base64 View Syntax Highlighting (Postman Light) */
+.text.base64-text,
+.base64-text {
+    -fx-fill: #800656;
+    -fx-font-weight: 500;
+}
+
+/* History list & tree */
+.history-list, .history-tree {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.history-date-header {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #6b7280;
+    -fx-padding: 3 0 2 0;
+}
+.history-url-label {
+    -fx-text-fill: #1f2937;
+    -fx-font-size: 12px;
+}
+.history-status-chip {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #6b7280;
+    -fx-padding: 1 5 1 5;
+    -fx-background-radius: 4px;
+    -fx-background-color: #f3f4f6;
+}
+.history-status-chip.status-2xx {
+    -fx-text-fill: #059669;
+    -fx-background-color: rgba(16, 185, 129, 0.12);
+    -fx-border-color: rgba(16, 185, 129, 0.35);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+}
+.history-status-chip.status-4xx,
+.history-status-chip.status-5xx {
+    -fx-text-fill: #dc2626;
+    -fx-background-color: rgba(239, 68, 68, 0.12);
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+    -fx-border-radius: 4px;
+    -fx-border-width: 1px;
+}
+.tree-inline-btn.tree-delete-btn:hover {
+    -fx-background-color: rgba(239, 68, 68, 0.18);
+    -fx-text-fill: #dc2626;
+}
+
+/* ============================================================
+   Mock Server Modern UI Styles (Light Theme)
+   ============================================================ */
+
+.mock-status-pill {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 8 3 8;
+    -fx-background-radius: 12px;
+}
+.mock-status-active {
+    -fx-background-color: rgba(16, 185, 129, 0.14);
+    -fx-text-fill: #059669;
+    -fx-border-color: rgba(16, 185, 129, 0.4);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+.mock-status-inactive {
+    -fx-background-color: rgba(100, 116, 139, 0.12);
+    -fx-text-fill: #64748b;
+    -fx-border-color: rgba(100, 116, 139, 0.3);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+
+.mock-url-box {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 8 12 8 12;
+}
+
+.mock-code-box {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #0f172a;
+    -fx-padding: 10;
+}
+
+.faker-chip-btn {
+    -fx-background-color: rgba(79, 70, 229, 0.08);
+    -fx-border-color: rgba(79, 70, 229, 0.3);
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+    -fx-text-fill: #4338ca;
+    -fx-font-size: 11px;
+    -fx-font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    -fx-padding: 2 8 2 8;
+    -fx-cursor: hand;
+}
+.faker-chip-btn:hover {
+    -fx-background-color: rgba(79, 70, 229, 0.18);
+    -fx-text-fill: #312e81;
+    -fx-border-color: #4f46e5;
+}
+
+.preset-chip-btn {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cbd5e1;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-text-fill: #334155;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8 2 8;
+    -fx-cursor: hand;
+}
+.preset-chip-btn:hover {
+    -fx-background-color: #f1f5f9;
+    -fx-text-fill: #0f172a;
+    -fx-border-color: #4f46e5;
+}
+
+.mock-inspector-box {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}
+
+.mock-tab-fullview {
+    -fx-background-color: #ffffff;
+}
+
+.sub-tab-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 12 6 12;
+    -fx-background-radius: 6px;
+    -fx-cursor: hand;
+}
+.sub-tab-btn:hover {
+    -fx-text-fill: #0f172a;
+    -fx-background-color: #f1f5f9;
+}
+.sub-tab-btn:selected {
+    -fx-text-fill: #4338ca;
+    -fx-background-color: rgba(79, 70, 229, 0.12);
+    -fx-border-color: rgba(79, 70, 229, 0.35);
+    -fx-border-radius: 6px;
+}
+
+
+

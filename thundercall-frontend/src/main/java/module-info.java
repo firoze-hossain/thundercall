@@ -19,6 +19,7 @@ module com.roze.thundercall {
     requires java.scripting;
     requires java.desktop;
     requires java.net.http;
+    requires jdk.httpserver;
     opens com.roze.thundercall.ui to javafx.graphics, javafx.fxml;
     opens com.roze.thundercall.ui.controllers to javafx.fxml, javafx.base;
     opens com.roze.thundercall.ui.models to javafx.base;

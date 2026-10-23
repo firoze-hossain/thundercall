@@ -44,6 +44,13 @@ public class MockServerController extends BaseController {
         return ok(mockServerService.getMockServer(id, user));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<BaseResponse<MockServerResponse>> updateMockServer(
+            @PathVariable Long id, @Valid @RequestBody MockServerRequest request, Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        return ok(mockServerService.updateMockServer(id, request, user), "Mock server updated");
+    }
+
     @PutMapping("/{id}/enabled")
     public ResponseEntity<BaseResponse<Void>> setEnabled(
             @PathVariable Long id, @RequestParam boolean enabled, Authentication authentication) {
@@ -88,5 +95,32 @@ public class MockServerController extends BaseController {
         User user = authService.getUserFromAuthentication(authentication);
         mockServerService.deleteRoute(id, routeId, user);
         return noContent("Route deleted");
+    }
+
+    @GetMapping("/{id}/logs")
+    public ResponseEntity<BaseResponse<List<com.roze.thundercall.api.dto.MockCallLogResponse>>> getCallLogs(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "50") int limit,
+            Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        return ok(mockServerService.getCallLogs(id, limit, user));
+    }
+
+    @DeleteMapping("/{id}/logs")
+    public ResponseEntity<BaseResponse<Void>> clearCallLogs(
+            @PathVariable Long id, Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        mockServerService.clearCallLogs(id, user);
+        return noContent("Call logs cleared");
+    }
+
+    @PostMapping("/{id}/generate-from-collection/{collectionId}")
+    public ResponseEntity<BaseResponse<List<MockRouteResponse>>> generateFromCollection(
+            @PathVariable Long id,
+            @PathVariable Long collectionId,
+            Authentication authentication) {
+        User user = authService.getUserFromAuthentication(authentication);
+        List<MockRouteResponse> routes = mockServerService.generateRoutesFromCollection(id, collectionId, user);
+        return created(routes, "Generated " + routes.size() + " mock routes from collection");
     }
 }
