@@ -21,7 +21,45 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * and debounced session expiration alerts.
  */
 public class ApiClient {
-    private static final String BASE_URL = "http://localhost:9084/api/v1";
+    private static final String DEFAULT_BASE_URL = "http://localhost:9084/api/v1";
+    private static final String BASE_URL = resolveBaseUrl();
+
+    /**
+     * Resolves the API base URL in order of priority:
+     * 1. JVM System Property (-Dthundercall.api.url=...)
+     * 2. OS Environment variable (THUNDERCALL_API_URL=...)
+     * 3. Embedded config properties file (/app-config.properties injected by Maven during packaging)
+     * 4. Fallback default for local development (http://localhost:9084/api/v1)
+     */
+    private static String resolveBaseUrl() {
+        // 1. Check JVM System Property
+        String sysProp = System.getProperty("thundercall.api.url");
+        if (sysProp != null && !sysProp.isBlank()) {
+            return sysProp.trim();
+        }
+
+        // 2. Check OS Environment variable
+        String envVar = System.getenv("THUNDERCALL_API_URL");
+        if (envVar != null && !envVar.isBlank()) {
+            return envVar.trim();
+        }
+
+        // 3. Check build-time filtered config properties file (populated by GitHub Actions / Maven)
+        try (InputStream in = ApiClient.class.getResourceAsStream("/app-config.properties")) {
+            if (in != null) {
+                java.util.Properties props = new java.util.Properties();
+                props.load(in);
+                String propUrl = props.getProperty("api.base.url");
+                if (propUrl != null && !propUrl.isBlank() && !propUrl.startsWith("${")) {
+                    return propUrl.trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // 4. Default fallback for local development
+        return DEFAULT_BASE_URL;
+    }
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static String token;
     private static String refreshToken;

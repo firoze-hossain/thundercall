@@ -16,6 +16,7 @@
         <hikaricp.version>7.0.0</hikaricp.version>
         <controlsfx.version>11.2.2</controlsfx.version>
         <lombok.version>1.18.38</lombok.version>
+        <api.base.url>http://localhost:9084/api/v1</api.base.url>
     </properties>
 
     <dependencies>
@@ -107,6 +108,22 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>app-config.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>app-config.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

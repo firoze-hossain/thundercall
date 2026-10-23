@@ -67,7 +67,16 @@ jobs:
 
       - name: Build ThunderCall Frontend with Maven
         working-directory: thundercall-frontend
-        run: mvn -B clean package -DskipTests
+        env:
+          PROD_API_URL: ${{ secrets.PROD_API_URL }}
+        run: |
+          if [ -n "$PROD_API_URL" ]; then
+            echo "Packaging with production API URL configured from GitHub Secrets"
+            mvn -B clean package -DskipTests -Dapi.base.url="$PROD_API_URL"
+          else
+            echo "No PROD_API_URL secret found, packaging with default local API URL"
+            mvn -B clean package -DskipTests
+          fi
 
       - name: Prepare common packaging input
         working-directory: thundercall-frontend
