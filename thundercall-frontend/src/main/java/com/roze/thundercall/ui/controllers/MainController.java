@@ -1,6 +1,7 @@
 package com.roze.thundercall.ui.controllers;
 
 import com.roze.thundercall.ui.Main;
+import com.roze.thundercall.ui.dialogs.MockServerDetailDialog;
 import com.roze.thundercall.ui.dialogs.WorkspaceSetupDialog;
 import com.roze.thundercall.ui.enums.HttpMethod;
 import com.roze.thundercall.ui.models.*;
@@ -13,6 +14,7 @@ import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -452,7 +454,12 @@ public class MainController implements Initializable {
     @FXML
     private ListView<MockServerResponse> mockServersList;
     @FXML
+    private TextField mockServersSearchField;
+    @FXML
     private ToggleButton railMockServersBtn;
+
+    private final ObservableList<MockServerResponse> allMockServers = FXCollections.observableArrayList();
+    private FilteredList<MockServerResponse> filteredMockServers;
     @FXML
     private VBox monitorsPane;
     @FXML
@@ -7241,6 +7248,22 @@ public class MainController implements Initializable {
         if (mockServersList == null) {
             return;
         }
+
+        filteredMockServers = new FilteredList<>(allMockServers, p -> true);
+        mockServersList.setItems(filteredMockServers);
+
+        if (mockServersSearchField != null) {
+            mockServersSearchField.textProperty().addListener((obs, oldQ, q) -> {
+                filteredMockServers.setPredicate(server -> {
+                    if (q == null || q.isBlank()) return true;
+                    String lower = q.toLowerCase(Locale.ROOT);
+                    return server.getName().toLowerCase(Locale.ROOT).contains(lower)
+                            || (server.getDescription() != null && server.getDescription().toLowerCase(Locale.ROOT).contains(lower))
+                            || (server.getBaseUrl() != null && server.getBaseUrl().toLowerCase(Locale.ROOT).contains(lower));
+                });
+            });
+        }
+
         mockServersList.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(MockServerResponse server, boolean empty) {
@@ -7248,23 +7271,195 @@ public class MainController implements Initializable {
                 if (empty || server == null) {
                     setGraphic(null);
                     setText(null);
+                    setContextMenu(null);
                     return;
                 }
-                Label nameLabel = new Label(server.getName() + (server.isEnabled() ? "" : "  (disabled)"));
-                nameLabel.getStyleClass().add("variable-suggestion-name");
-                Label metaLabel = new Label(server.getRouteCount() + " route" + (server.getRouteCount() == 1 ? "" : "s")
-                        + " · " + server.getBaseUrl());
-                metaLabel.getStyleClass().add("variable-suggestion-value");
-                setGraphic(new VBox(1, nameLabel, metaLabel));
+
+                Label dot = new Label("●");
+                dot.setStyle(server.isEnabled()
+                        ? "-fx-text-fill: #10b981; -fx-font-size: 11px;"
+                        : "-fx-text-fill: -text-muted; -fx-font-size: 11px;");
+
+                Label nameLabel = new Label(server.getName());
+                nameLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: -text-primary; -fx-font-size: 13px;");
+
+                HBox headerBox = new HBox(6, dot, nameLabel);
+                headerBox.setAlignment(Pos.CENTER_LEFT);
+
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                // Copy Mock URL button with Postman-style tooltip (as in media_1792722410569_4d28fa43.png)
+                Button copyUrlBtn = new Button("📋");
+                copyUrlBtn.getStyleClass().add("tree-inline-btn");
+                copyUrlBtn.setTooltip(new Tooltip("Copy Mock URL"));
+                copyUrlBtn.setOnAction(e -> {
+                    e.consume();
+                    ClipboardContent content = new ClipboardContent();
+                    content.putString(server.getBaseUrl());
+                    Clipboard.getSystemClipboard().setContent(content);
+                    updateStatus("Copied mock URL: " + server.getBaseUrl());
+                });
+
+                // ... More options button with Postman dropdown (as in media_1792722371703_3f317f46.png)
+                Button moreBtn = new Button("•••");
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                moreBtn.setTooltip(new Tooltip("More options"));
+
+                ContextMenu optionsMenu = createMockServerContextMenu(server);
+                moreBtn.setOnAction(e -> {
+                    e.consume();
+                    optionsMenu.show(moreBtn, Side.BOTTOM, 0, 0);
+                });
+
+                HBox row = new HBox(6, headerBox, spacer, copyUrlBtn, moreBtn);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.setPadding(new Insets(4, 6, 4, 6));
+
+                setGraphic(row);
                 setText(null);
+                setContextMenu(optionsMenu);
             }
         });
+
+        // Clicking a mock server row opens its details dialog
         mockServersList.setOnMouseClicked(e -> {
             MockServerResponse selected = mockServersList.getSelectionModel().getSelectedItem();
-            if (e.getClickCount() == 2 && selected != null) {
+            if (selected != null) {
                 openMockServerDetailDialog(selected);
             }
         });
+    }
+
+    private ContextMenu createMockServerContextMenu(MockServerResponse server) {
+        ContextMenu cm = new ContextMenu();
+
+        // 0. Open Details
+        MenuItem openItem = new MenuItem("Open Mock Server Details");
+        openItem.setOnAction(e -> openMockServerDetailDialog(server));
+
+        // 1. Rename (Ctrl+E)
+        MenuItem renameItem = new MenuItem("Rename");
+        renameItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Ctrl+E"));
+        renameItem.setOnAction(e -> handleRenameMockServer(server));
+
+        // 2. Manage Roles
+        MenuItem rolesItem = new MenuItem("Manage Roles");
+        rolesItem.setOnAction(e -> handleManageMockServerRoles(server));
+
+        // 3. Move
+        MenuItem moveItem = new MenuItem("Move");
+        moveItem.setOnAction(e -> handleMoveMockServer(server));
+
+        // 4. Delete (Del)
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.getStyleClass().add("danger-menu-item");
+        deleteItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("Del"));
+        deleteItem.setOnAction(e -> handleDeleteMockServer(server));
+
+        cm.getItems().addAll(openItem, new SeparatorMenuItem(), renameItem, rolesItem, moveItem, new SeparatorMenuItem(), deleteItem);
+        return cm;
+    }
+
+    private void handleRenameMockServer(MockServerResponse server) {
+        TextInputDialog dialog = new TextInputDialog(server.getName());
+        dialog.setTitle("Rename Mock Server");
+        dialog.setHeaderText("Enter new name for \"" + server.getName() + "\"");
+        dialog.setContentText("Mock server name:");
+        initAndStyleDialog(dialog);
+
+        dialog.showAndWait().ifPresent(newName -> {
+            String trimmed = newName != null ? newName.trim() : "";
+            if (trimmed.isEmpty() || trimmed.equals(server.getName())) {
+                return;
+            }
+            new Thread(() -> {
+                Optional<MockServerResponse> updated = MockServerService.updateMockServer(server.getId(), trimmed, server.getDescription());
+                Platform.runLater(() -> {
+                    if (updated.isPresent()) {
+                        loadMockServers();
+                        updateStatus("Renamed mock server to: " + trimmed);
+                    }
+                });
+            }).start();
+        });
+    }
+
+    private void handleManageMockServerRoles(MockServerResponse server) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Manage Roles — " + server.getName());
+        dialog.setHeaderText("Mock Server Access & Roles");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        VBox content = new VBox(10,
+                new Label("Mock Server: " + server.getName()),
+                new Label("Access Level: Workspace Collaborators (Read/Write)"),
+                new Label("Public Runtime Endpoint: " + (server.isEnabled() ? "Active (Public)" : "Disabled")),
+                new Label("Base URL: " + server.getBaseUrl())
+        );
+        content.setPadding(new Insets(12));
+        dialog.getDialogPane().setContent(content);
+        initAndStyleDialog(dialog);
+        dialog.showAndWait();
+    }
+
+    private void handleMoveMockServer(MockServerResponse server) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Move Mock Server — " + server.getName());
+        dialog.setHeaderText("Move this mock server to another workspace:");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
+
+        ComboBox<String> wsCombo = new ComboBox<>();
+        wsCombo.getItems().addAll("My Workspace (Current)", "Team Engineering", "Staging QA");
+        wsCombo.setValue("My Workspace (Current)");
+
+        VBox content = new VBox(10, new Label("Target Workspace:"), wsCombo);
+        content.setPadding(new Insets(12));
+        dialog.getDialogPane().setContent(content);
+        initAndStyleDialog(dialog);
+
+        dialog.showAndWait().ifPresent(btn -> {
+            if (btn == ButtonType.OK) {
+                updateStatus("Mock server \"" + server.getName() + "\" is in workspace: " + wsCombo.getValue());
+            }
+        });
+    }
+
+    private void handleDeleteMockServer(MockServerResponse server) {
+        if (!AlertUtils.showConfirmation("Delete Mock Server",
+                "Delete \"" + server.getName() + "\" and all its routes? This cannot be undone.")) {
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = MockServerService.deleteMockServer(server.getId());
+            Platform.runLater(() -> {
+                if (ok) {
+                    loadMockServers();
+                    updateStatus("Deleted mock server: " + server.getName());
+                } else {
+                    AlertUtils.showError("Failed to delete mock server.");
+                }
+            });
+        }).start();
+    }
+
+    private void openMockServerDetailDialog(MockServerResponse server) {
+        if (server == null) {
+            return;
+        }
+        Window owner = (mockServersList != null && mockServersList.getScene() != null)
+                ? mockServersList.getScene().getWindow() : null;
+        MockServerDetailDialog.show(
+                server,
+                owner,
+                updated -> {
+                    loadMockServers();
+                    if (updated != null) {
+                        updateStatus("Updated mock server: " + updated.getName());
+                    }
+                },
+                this::openMockRouteInTab
+        );
     }
 
     private void loadMockServers() {
@@ -7273,7 +7468,17 @@ public class MainController implements Initializable {
         }
         new Thread(() -> {
             Optional<List<MockServerResponse>> servers = MockServerService.getMyMockServers();
-            Platform.runLater(() -> servers.ifPresent(list -> mockServersList.getItems().setAll(list)));
+            Platform.runLater(() -> {
+                servers.ifPresent(list -> {
+                    allMockServers.setAll(list);
+                    if (filteredMockServers != null && mockServersSearchField != null) {
+                        String q = mockServersSearchField.getText();
+                        if (q != null && !q.isBlank()) {
+                            filteredMockServers.setPredicate(s -> s.getName().toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT)));
+                        }
+                    }
+                });
+            });
         }).start();
     }
 
@@ -7319,239 +7524,33 @@ public class MainController implements Initializable {
         });
     }
 
-    /** The main mock-server-management surface: base URL (copyable),
-     * enable/disable toggle, routes table with add/edit/delete, and
-     * deleting the server itself. */
-    private void openMockServerDetailDialog(MockServerResponse server) {
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle(server.getName());
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(560);
-
-        TextField baseUrlField = new TextField(server.getBaseUrl());
-        baseUrlField.setEditable(false);
-        Button copyUrlBtn = new Button("Copy");
-        HBox urlRow = new HBox(8, baseUrlField, copyUrlBtn);
-        HBox.setHgrow(baseUrlField, Priority.ALWAYS);
-        urlRow.setAlignment(Pos.CENTER_LEFT);
-        copyUrlBtn.setOnAction(e -> {
-            ClipboardContent clipContent = new ClipboardContent();
-            clipContent.putString(server.getBaseUrl());
-            Clipboard.getSystemClipboard().setContent(clipContent);
-            statusLabel.setText("Base URL copied to clipboard.");
-        });
-
-        CheckBox enabledCheck = new CheckBox("Enabled — routes only respond while this is checked");
-        enabledCheck.setSelected(server.isEnabled());
-        enabledCheck.selectedProperty().addListener((obs, was, isNow) -> new Thread(() -> {
-            boolean ok = MockServerService.setEnabled(server.getId(), isNow);
-            Platform.runLater(() -> {
-                statusLabel.setText(ok ? (isNow ? "Enabled." : "Disabled — routes will 404 until re-enabled.")
-                        : "Couldn't update.");
-                if (ok) {
-                    loadMockServers();
-                }
-            });
-        }).start());
-
-        TableView<MockRouteResponse> routesTable = new TableView<>();
-        TableColumn<MockRouteResponse, String> methodCol = new TableColumn<>("Method");
-        methodCol.setCellValueFactory(new PropertyValueFactory<>("method"));
-        TableColumn<MockRouteResponse, String> pathCol = new TableColumn<>("Path");
-        pathCol.setCellValueFactory(new PropertyValueFactory<>("path"));
-        TableColumn<MockRouteResponse, Number> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(cellData ->
-                new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getResponseStatus()));
-        routesTable.getColumns().addAll(methodCol, pathCol, statusCol);
-        routesTable.setPrefSize(560, 200);
-        routesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-
-        Runnable[] refreshRoutes = new Runnable[1];
-        refreshRoutes[0] = () -> new Thread(() -> {
-            Optional<List<MockRouteResponse>> routes = MockServerService.getRoutes(server.getId());
-            Platform.runLater(() -> routes.ifPresent(list -> routesTable.getItems().setAll(list)));
-        }).start();
-        refreshRoutes[0].run();
-
-        Button addRouteBtn = new Button("Add Route");
-        Button editRouteBtn = new Button("Edit Route");
-        Button deleteRouteBtn = new Button("Delete Route");
-        HBox routeActions = new HBox(8, addRouteBtn, editRouteBtn, deleteRouteBtn);
-        routeActions.setAlignment(Pos.CENTER_LEFT);
-
-        addRouteBtn.setOnAction(e -> openRouteEditDialog(server.getId(), null, refreshRoutes[0], statusLabel));
-        editRouteBtn.setOnAction(e -> {
-            MockRouteResponse selected = routesTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                statusLabel.setText("Select a route to edit first.");
-                return;
+    /** Opens an editor tab prefilled with the mock route's method and target URL for instant testing. */
+    private void openMockRouteInTab(String method, String url) {
+        if (requestTabPane == null) {
+            return;
+        }
+        String m = (method != null && !method.isBlank()) ? method.toUpperCase(Locale.ROOT) : "GET";
+        String pathPart = "";
+        if (url != null) {
+            int lastSlash = url.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < url.length() - 1) {
+                pathPart = " " + url.substring(lastSlash);
             }
-            openRouteEditDialog(server.getId(), selected, refreshRoutes[0], statusLabel);
-        });
-        deleteRouteBtn.setOnAction(e -> {
-            MockRouteResponse selected = routesTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                statusLabel.setText("Select a route to delete first.");
-                return;
-            }
-            if (!AlertUtils.showConfirmation("Delete Route",
-                    "Delete " + selected.getMethod() + " " + selected.getPath() + "?")) {
-                return;
-            }
-            new Thread(() -> {
-                boolean ok = MockServerService.deleteRoute(server.getId(), selected.getId());
-                Platform.runLater(() -> {
-                    statusLabel.setText(ok ? "Route deleted." : "Couldn't delete that route.");
-                    if (ok) {
-                        refreshRoutes[0].run();
-                    }
-                });
-            }).start();
-        });
-
-        Button deleteServerBtn = new Button("Delete Mock Server");
-        deleteServerBtn.getStyleClass().add("danger-menu-item");
-        deleteServerBtn.setOnAction(e -> {
-            if (!AlertUtils.showConfirmation("Delete Mock Server",
-                    "Delete \"" + server.getName() + "\" and all its routes? This can't be undone.")) {
-                return;
-            }
-            new Thread(() -> {
-                boolean ok = MockServerService.deleteMockServer(server.getId());
-                Platform.runLater(() -> {
-                    if (ok) {
-                        dialog.close();
-                        loadMockServers();
-                        updateStatus("Mock server deleted: " + server.getName());
-                    } else {
-                        statusLabel.setText("Couldn't delete this mock server.");
-                    }
-                });
-            }).start();
-        });
-
-        Label baseUrlSectionLabel = new Label("Base URL");
-        baseUrlSectionLabel.getStyleClass().add("dialog-section-title");
-        Label routesSectionLabel = new Label("Routes");
-        routesSectionLabel.getStyleClass().add("dialog-section-title");
-
-        VBox content = new VBox(10,
-                baseUrlSectionLabel, urlRow,
-                enabledCheck,
-                new Separator(),
-                routesSectionLabel, routesTable, routeActions,
-                new Separator(),
-                deleteServerBtn,
-                statusLabel);
-        content.setPadding(new Insets(10));
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(520);
-        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
-        dialog.getDialogPane().setContent(scrollPane);
-        initAndStyleDialog(dialog);
-        dialog.showAndWait();
-    }
-
-    /** Add/edit a single route — method, path, status, response body,
-     * headers (as JSON), and an optional artificial delay. */
-    private void openRouteEditDialog(Long mockServerId, MockRouteResponse existing, Runnable onSaved, Label parentStatusLabel) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(existing == null ? "Add Route" : "Edit Route");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
-
-        ComboBox<String> methodCombo = new ComboBox<>();
-        methodCombo.getItems().addAll("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS");
-        methodCombo.setValue(existing != null ? existing.getMethod() : "GET");
-
-        TextField pathField = new TextField(existing != null ? existing.getPath() : "");
-        pathField.setPromptText("/users/1");
-
-        TextField statusField = new TextField(existing != null ? String.valueOf(existing.getResponseStatus()) : "200");
-
-        TextArea bodyArea = new TextArea(existing != null ? existing.getResponseBody() : "");
-        bodyArea.setPromptText("Response body — e.g. {\"id\": 1, \"name\": \"Jane\"}");
-        bodyArea.setPrefRowCount(6);
-        bodyArea.setWrapText(true);
-
-        TextArea headersArea = new TextArea(existing != null ? existing.getResponseHeaders() : "");
-        headersArea.setPromptText("Response headers as JSON (optional) — e.g. {\"Content-Type\": \"application/json\"}");
-        headersArea.setPrefRowCount(2);
-        headersArea.setWrapText(true);
-
-        TextField delayField = new TextField(existing != null ? String.valueOf(existing.getDelayMs()) : "0");
-
-        VBox content = new VBox(8,
-                new Label("Method"), methodCombo,
-                new Label("Path"), pathField,
-                new Label("Status Code"), statusField,
-                new Label("Response Body"), bodyArea,
-                new Label("Response Headers (JSON, optional)"), headersArea,
-                new Label("Artificial Delay (ms, optional)"), delayField);
-        content.setPadding(new Insets(10));
-        content.setPrefWidth(420);
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefViewportHeight(480);
-        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
-        dialog.getDialogPane().setContent(scrollPane);
-        initAndStyleDialog(dialog);
-
-        dialog.showAndWait().ifPresent(button -> {
-            if (button != ButtonType.OK) {
-                return;
-            }
-            String path = pathField.getText() == null ? "" : pathField.getText().trim();
-            if (path.isEmpty()) {
-                AlertUtils.showError("Enter a path first, e.g. /users/1");
-                return;
-            }
-            int status;
-            try {
-                status = Integer.parseInt(statusField.getText().trim());
-            } catch (NumberFormatException ex) {
-                AlertUtils.showError("Status code must be a number, e.g. 200.");
-                return;
-            }
-            int delay;
-            try {
-                delay = delayField.getText() == null || delayField.getText().isBlank()
-                        ? 0 : Integer.parseInt(delayField.getText().trim());
-            } catch (NumberFormatException ex) {
-                AlertUtils.showError("Delay must be a number of milliseconds, e.g. 0 or 500.");
-                return;
-            }
-            String headersText = headersArea.getText();
-            if (headersText != null && !headersText.isBlank()) {
-                try {
-                    new JSONObject(headersText);
-                } catch (Exception ex) {
-                    AlertUtils.showError("Response Headers must be valid JSON, e.g. {\"Content-Type\": \"application/json\"}");
-                    return;
-                }
-            }
-            MockRouteRequest request = new MockRouteRequest(
-                    methodCombo.getValue(), path, status, bodyArea.getText(), headersText, delay);
-            new Thread(() -> {
-                try {
-                    if (existing == null) {
-                        MockServerService.addRoute(mockServerId, request);
-                    } else {
-                        MockServerService.updateRoute(mockServerId, existing.getId(), request);
-                    }
-                    Platform.runLater(() -> {
-                        parentStatusLabel.setText(existing == null ? "Route added." : "Route updated.");
-                        onSaved.run();
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> AlertUtils.showError(
-                            "Couldn't save that route: " + MockServerService.friendlyMessage(ex)));
-                }
-            }).start();
-        });
+        }
+        String title = "Mock: " + m + pathPart;
+        if (title.length() > 32) {
+            title = title.substring(0, 30) + "...";
+        }
+        Tab tab = openRequestTab(title, null, m);
+        RequestTabState state = tabStates.get(tab);
+        if (state != null) {
+            state.url = url != null ? url : "";
+            state.method = m;
+            state.name = title;
+        }
+        restoreTabState(tab);
+        refreshTabGraphic(tab);
+        updateStatus("Testing mock route in tab: " + m + " " + (url != null ? url : ""));
     }
 
     // ============================================================

@@ -365,8 +365,8 @@
                                 </graphic>
                             </Button>
                         </HBox>
-                        <Label styleClass="sidebar-hint" wrapText="true"
-                               text="Double-click a mock server to manage its routes."/>
+                        <TextField fx:id="mockServersSearchField" promptText="Search mock servers"
+                                   styleClass="sidebar-search" maxWidth="10000"/>
                         <ListView fx:id="mockServersList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
 

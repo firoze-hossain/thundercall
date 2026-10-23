@@ -710,5 +710,114 @@
     -fx-text-fill: #dc2626;
 }
 
+/* ============================================================
+   Mock Server Modern UI Styles (Light Theme)
+   ============================================================ */
+
+.mock-status-pill {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 8 3 8;
+    -fx-background-radius: 12px;
+}
+.mock-status-active {
+    -fx-background-color: rgba(16, 185, 129, 0.14);
+    -fx-text-fill: #059669;
+    -fx-border-color: rgba(16, 185, 129, 0.4);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+.mock-status-inactive {
+    -fx-background-color: rgba(100, 116, 139, 0.12);
+    -fx-text-fill: #64748b;
+    -fx-border-color: rgba(100, 116, 139, 0.3);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+
+.mock-url-box {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 8 12 8 12;
+}
+
+.mock-code-box {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #0f172a;
+    -fx-padding: 10;
+}
+
+.faker-chip-btn {
+    -fx-background-color: rgba(79, 70, 229, 0.08);
+    -fx-border-color: rgba(79, 70, 229, 0.3);
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+    -fx-text-fill: #4338ca;
+    -fx-font-size: 11px;
+    -fx-font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    -fx-padding: 2 8 2 8;
+    -fx-cursor: hand;
+}
+.faker-chip-btn:hover {
+    -fx-background-color: rgba(79, 70, 229, 0.18);
+    -fx-text-fill: #312e81;
+    -fx-border-color: #4f46e5;
+}
+
+.preset-chip-btn {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cbd5e1;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-text-fill: #334155;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8 2 8;
+    -fx-cursor: hand;
+}
+.preset-chip-btn:hover {
+    -fx-background-color: #f1f5f9;
+    -fx-text-fill: #0f172a;
+    -fx-border-color: #4f46e5;
+}
+
+.mock-inspector-box {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}
+
+.mock-tab-fullview {
+    -fx-background-color: #ffffff;
+}
+
+.sub-tab-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 12 6 12;
+    -fx-background-radius: 6px;
+    -fx-cursor: hand;
+}
+.sub-tab-btn:hover {
+    -fx-text-fill: #0f172a;
+    -fx-background-color: #f1f5f9;
+}
+.sub-tab-btn:selected {
+    -fx-text-fill: #4338ca;
+    -fx-background-color: rgba(79, 70, 229, 0.12);
+    -fx-border-color: rgba(79, 70, 229, 0.35);
+    -fx-border-radius: 6px;
+}
+
 
 

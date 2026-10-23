@@ -55,6 +55,21 @@ public class MockServerService {
         return Optional.empty();
     }
 
+    public static Optional<MockServerResponse> updateMockServer(Long id, String name, String description) {
+        try {
+            MockServerRequest request = new MockServerRequest(name, description);
+            BaseResponse<MockServerResponse> response = ApiClient.put(BASE_URL + "/" + id, request,
+                    new TypeReference<BaseResponse<MockServerResponse>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to update mock server: " + friendlyMessage(e)));
+        }
+        return Optional.empty();
+    }
+
     public static boolean setEnabled(Long id, boolean enabled) {
         try {
             ApiClient.put(BASE_URL + "/" + id + "/enabled?enabled=" + enabled, null,
@@ -126,6 +141,50 @@ public class MockServerService {
             Platform.runLater(() -> AlertUtils.showError("Failed to delete route: " + friendlyMessage(e)));
             return false;
         }
+    }
+
+    public static Optional<List<MockCallLogResponse>> getCallLogs(Long mockServerId, int limit) {
+        try {
+            BaseResponse<List<MockCallLogResponse>> response = ApiClient.get(
+                    BASE_URL + "/" + mockServerId + "/logs?limit=" + limit,
+                    new TypeReference<BaseResponse<List<MockCallLogResponse>>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            // Silently fail or log, don't spam popups on polling
+        }
+        return Optional.empty();
+    }
+
+    public static boolean clearCallLogs(Long mockServerId) {
+        try {
+            BaseResponse<Void> response = ApiClient.delete(
+                    BASE_URL + "/" + mockServerId + "/logs",
+                    new TypeReference<BaseResponse<Void>>() {
+                    });
+            return response != null && response.isSuccess();
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to clear call logs: " + friendlyMessage(e)));
+            return false;
+        }
+    }
+
+    public static Optional<List<MockRouteResponse>> generateRoutesFromCollection(Long mockServerId, Long collectionId) {
+        try {
+            BaseResponse<List<MockRouteResponse>> response = ApiClient.post(
+                    BASE_URL + "/" + mockServerId + "/generate-from-collection/" + collectionId,
+                    null,
+                    new TypeReference<BaseResponse<List<MockRouteResponse>>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to generate routes from collection: " + friendlyMessage(e)));
+        }
+        return Optional.empty();
     }
 
     /** Strips the "HTTP 4xx: {...}" wrapper down to the server's own

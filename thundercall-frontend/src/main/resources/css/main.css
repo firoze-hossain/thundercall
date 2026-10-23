@@ -3035,4 +3035,113 @@
     -fx-background-color: -danger-soft;
 }
 
+/* ============================================================
+   Mock Server Modern UI Styles (Postman-grade)
+   ============================================================ */
+
+.mock-status-pill {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 8 3 8;
+    -fx-background-radius: 12px;
+}
+.mock-status-active {
+    -fx-background-color: rgba(16, 185, 129, 0.16);
+    -fx-text-fill: #10b981;
+    -fx-border-color: rgba(16, 185, 129, 0.35);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+.mock-status-inactive {
+    -fx-background-color: rgba(148, 163, 184, 0.14);
+    -fx-text-fill: #94a3b8;
+    -fx-border-color: rgba(148, 163, 184, 0.3);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+
+.mock-url-box {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 8 12 8 12;
+}
+
+.mock-code-box {
+    -fx-background-color: #0d1117;
+    -fx-border-color: #30363d;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #e6edf3;
+    -fx-padding: 10;
+}
+
+.faker-chip-btn {
+    -fx-background-color: rgba(99, 102, 241, 0.12);
+    -fx-border-color: rgba(99, 102, 241, 0.35);
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+    -fx-text-fill: #a5b4fc;
+    -fx-font-size: 11px;
+    -fx-font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    -fx-padding: 2 8 2 8;
+    -fx-cursor: hand;
+}
+.faker-chip-btn:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.28);
+    -fx-text-fill: #ffffff;
+    -fx-border-color: #818cf8;
+}
+
+.preset-chip-btn {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8 2 8;
+    -fx-cursor: hand;
+}
+.preset-chip-btn:hover {
+    -fx-background-color: -bg-hover;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -accent;
+}
+
+.mock-inspector-box {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}
+
+.mock-tab-fullview {
+    -fx-background-color: -bg-primary;
+}
+
+.sub-tab-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -text-muted;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 12 6 12;
+    -fx-background-radius: 6px;
+    -fx-cursor: hand;
+}
+.sub-tab-btn:hover {
+    -fx-text-fill: -text-primary;
+    -fx-background-color: -bg-hover;
+}
+.sub-tab-btn:selected {
+    -fx-text-fill: -accent;
+    -fx-background-color: rgba(99, 102, 241, 0.16);
+    -fx-border-color: rgba(99, 102, 241, 0.4);
+    -fx-border-radius: 6px;
+}
+
 
