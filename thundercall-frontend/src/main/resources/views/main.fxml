@@ -70,6 +70,11 @@
                         <MenuItem text="Previous Tab" accelerator="Shortcut+Shift+Tab" onAction="#handlePreviousTab"/>
                     </Menu>
                     <Menu text="Help">
+                        <MenuItem text="Clear Cache and Reload" onAction="#handleClearCacheAndReload"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Documentation" onAction="#handleDocumentation"/>
+                        <MenuItem text="Support" onAction="#handleSupport"/>
+                        <SeparatorMenuItem/>
                         <MenuItem text="Check for Updates…" onAction="#handleCheckForUpdates"/>
                         <MenuItem text="About Thundercall" onAction="#handleAbout"/>
                     </Menu>

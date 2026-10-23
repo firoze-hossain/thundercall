@@ -1,6 +1,7 @@
 package com.roze.thundercall.ui.controllers;
 
 import com.roze.thundercall.ui.Main;
+import com.roze.thundercall.ui.dialogs.AboutDialog;
 import com.roze.thundercall.ui.dialogs.MockServerDetailDialog;
 import com.roze.thundercall.ui.dialogs.MonitorDetailDialog;
 import com.roze.thundercall.ui.dialogs.MonitorEditDialog;
@@ -9728,13 +9729,94 @@ public class MainController implements Initializable {
     }
 
     @FXML
+    private void handleClearCacheAndReload() {
+        boolean hasDirtyTabs = tabStates.values().stream().anyMatch(s -> s != null && s.dirty);
+        if (hasDirtyTabs) {
+            boolean confirmed = AlertUtils.showConfirmation("Clear Cache and Reload",
+                    "You have unsaved changes in one or more open tabs.\n" +
+                    "Clearing cache and reloading will discard any unsaved editor edits and refresh all data from the server. Continue?");
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        // 1. Clear in-memory caches
+        commentThreadsCache.clear();
+        collectionVariablesCache.clear();
+        environmentsMap.clear();
+        introspectedTypeNames.clear();
+        allMockServers.clear();
+        allMonitors.clear();
+        allHistoryEntries.clear();
+
+        // 2. Reset dirty indicators on open tabs
+        tabStates.values().forEach(s -> {
+            if (s != null) {
+                s.dirty = false;
+            }
+        });
+        if (requestTabPane != null) {
+            for (Tab t : requestTabPane.getTabs()) {
+                refreshTabGraphic(t);
+            }
+            Tab active = activeRequestTab();
+            if (active != null) {
+                restoreTabState(active);
+            }
+        }
+
+        // 3. Clear response preview/visualization views if active
+        if (responseVisualizationView != null && responseVisualizationView.isVisible()) {
+            renderCurrentVisualization();
+        }
+
+        // 4. Reload all data cleanly from server
+        loadCollectionsFromServer();
+        loadEnvironments();
+        loadHistory();
+        loadTeams();
+        loadMockServers();
+        loadMonitors();
+        loadTeamWorkspaces();
+        loadUserProfile();
+        refreshOnlineUsers();
+
+        updateStatus("Cache cleared and application reloaded successfully.");
+    }
+
+    @FXML
+    private void handleDocumentation() {
+        openExternalUrl("http://localhost:8000/docs/thundercall");
+    }
+
+    @FXML
+    private void handleSupport() {
+        openExternalUrl("http://localhost:8000/support");
+    }
+
+    private void openExternalUrl(String url) {
+        try {
+            if (Main.getAppHostServices() != null) {
+                Main.getAppHostServices().showDocument(url);
+            } else if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+            }
+        } catch (Exception e) {
+            logger.warning("Failed to open external URL: " + url + " - " + e.getMessage());
+        }
+    }
+
+    @FXML
     private void handleCheckForUpdates() {
         AppUpdateDialog.check(urlField.getScene().getWindow(), true);
     }
 
     @FXML
     private void handleAbout() {
-        AlertUtils.showInfo("Thundercall v" + AppUpdateService.CURRENT_VERSION + "\nA professional API client.\nBackend: Spring Boot  |  Frontend: JavaFX");
+        Window owner = (urlField != null && urlField.getScene() != null)
+                ? urlField.getScene().getWindow()
+                : (mainRootPane != null && mainRootPane.getScene() != null ? mainRootPane.getScene().getWindow() : null);
+        AboutDialog.show(owner);
     }
 
     // ============================================================
