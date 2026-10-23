@@ -67,6 +67,7 @@ jobs:
 
       - name: Build ThunderCall Frontend with Maven
         working-directory: thundercall-frontend
+        shell: bash
         env:
           PROD_API_URL: ${{ secrets.PROD_API_URL }}
         run: |
