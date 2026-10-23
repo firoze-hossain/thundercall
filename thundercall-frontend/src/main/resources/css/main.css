@@ -940,7 +940,9 @@
 }
 .menu-item { -fx-background-radius: 6; -fx-padding: 6 14 6 14; -fx-cursor: hand; }
 .menu-item .label { -fx-text-fill: -text-primary; -fx-font-size: 12px; }
+.menu-item .accelerator-text { -fx-text-fill: -text-muted; -fx-font-size: 11px; }
 .menu-item:hover, .menu-item:focused { -fx-background-color: -bg-hover; }
+.menu-item:hover .accelerator-text, .menu-item:focused .accelerator-text { -fx-text-fill: -text-secondary; }
 .separator-menu-item .line { -fx-border-color: -border-subtle; }
 
 /* Scrollbars */

@@ -39,6 +39,18 @@
                         <MenuItem text="Logout" onAction="#handleLogout"/>
                         <MenuItem text="Exit" onAction="#handleExit"/>
                     </Menu>
+                    <Menu text="Edit">
+                        <MenuItem text="Undo" accelerator="Shortcut+Z" onAction="#handleUndo"/>
+                        <MenuItem text="Redo" accelerator="Shortcut+Shift+Z" onAction="#handleRedo"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Cut" accelerator="Shortcut+X" onAction="#handleCut"/>
+                        <MenuItem text="Copy" accelerator="Shortcut+C" onAction="#handleCopy"/>
+                        <MenuItem text="Paste" accelerator="Shortcut+V" onAction="#handlePaste"/>
+                        <MenuItem text="Paste and Match Style" accelerator="Shortcut+Shift+V" onAction="#handlePasteAndMatchStyle"/>
+                        <MenuItem text="Delete" onAction="#handleDelete"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Select All" accelerator="Shortcut+A" onAction="#handleSelectAll"/>
+                    </Menu>
                     <Menu text="View">
                         <MenuItem text="Dark Theme" onAction="#handleThemeDark"/>
                         <MenuItem text="Light Theme" onAction="#handleThemeLight"/>

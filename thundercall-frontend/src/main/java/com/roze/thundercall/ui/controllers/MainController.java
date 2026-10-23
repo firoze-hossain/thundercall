@@ -28,6 +28,7 @@ import javafx.geometry.Pos;
 import javafx.geometry.Side;
 import javafx.scene.Node;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.control.cell.TextFieldTableCell;
@@ -542,6 +543,13 @@ public class MainController implements Initializable {
                                 javafx.scene.input.KeyCombination.CONTROL_DOWN,
                                 javafx.scene.input.KeyCombination.ALT_DOWN),
                         () -> closeTabSafely(activeRequestTab(), true));
+                if (urlField.getScene() != null) {
+                    urlField.getScene().focusOwnerProperty().addListener((focusObs, oldFocus, newFocus) -> {
+                        if (newFocus != null && resolveTextTarget(newFocus) != null) {
+                            lastFocusedEditor = newFocus;
+                        }
+                    });
+                }
             }
         });
         if (collectionsSearchField != null) {
@@ -9683,6 +9691,178 @@ public class MainController implements Initializable {
     @FXML
     private void handleAbout() {
         AlertUtils.showInfo("Thundercall v" + AppUpdateService.CURRENT_VERSION + "\nA professional API client.\nBackend: Spring Boot  |  Frontend: JavaFX");
+    }
+
+    // ============================================================
+    // Edit Menu Actions (Undo, Redo, Cut, Copy, Paste, Paste and Match Style, Delete, Select All)
+    // ============================================================
+
+    private Node lastFocusedEditor;
+
+    private Node resolveTextTarget(Node node) {
+        Node cur = node;
+        while (cur != null) {
+            if (cur instanceof TextInputControl || cur instanceof CodeArea) {
+                return cur;
+            }
+            cur = cur.getParent();
+        }
+        return null;
+    }
+
+    private Node findActiveTextTarget() {
+        Scene scene = mainRootPane != null ? mainRootPane.getScene() : (urlField != null ? urlField.getScene() : null);
+        Node focused = scene != null ? scene.getFocusOwner() : null;
+        Node resolved = resolveTextTarget(focused);
+        if (resolved != null) {
+            return resolved;
+        }
+        resolved = resolveTextTarget(lastFocusedEditor);
+        if (resolved != null) {
+            return resolved;
+        }
+        if (bodyTextArea != null && bodyTextArea.isVisible()) {
+            return bodyTextArea;
+        }
+        if (urlField != null && urlField.isVisible()) {
+            return urlField;
+        }
+        return null;
+    }
+
+    @FXML
+    private void handleUndo() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            if (tic.isUndoable()) {
+                tic.undo();
+            }
+        } else if (target instanceof CodeArea ca) {
+            if (ca.isUndoAvailable()) {
+                ca.undo();
+            }
+        }
+    }
+
+    @FXML
+    private void handleRedo() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            if (tic.isRedoable()) {
+                tic.redo();
+            }
+        } else if (target instanceof CodeArea ca) {
+            if (ca.isRedoAvailable()) {
+                ca.redo();
+            }
+        }
+    }
+
+    @FXML
+    private void handleCut() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.cut();
+        } else if (target instanceof CodeArea ca) {
+            ca.cut();
+        }
+    }
+
+    @FXML
+    private void handleCopy() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.copy();
+        } else if (target instanceof CodeArea ca) {
+            ca.copy();
+        } else {
+            Scene scene = mainRootPane != null ? mainRootPane.getScene() : null;
+            Node focused = scene != null ? scene.getFocusOwner() : null;
+            if (focused == collectionsTree && collectionsTree.getSelectionModel().getSelectedItem() != null) {
+                ClipboardContent cc = new ClipboardContent();
+                cc.putString(collectionsTree.getSelectionModel().getSelectedItem().getValue());
+                Clipboard.getSystemClipboard().setContent(cc);
+                updateStatus("Copied to clipboard: " + collectionsTree.getSelectionModel().getSelectedItem().getValue());
+            } else if (focused == historyTree && historyTree.getSelectionModel().getSelectedItem() != null) {
+                HistoryNode hn = historyTree.getSelectionModel().getSelectedItem().getValue();
+                if (hn != null && hn.getEntry() != null) {
+                    ClipboardContent cc = new ClipboardContent();
+                    cc.putString(hn.getEntry().getUrl());
+                    Clipboard.getSystemClipboard().setContent(cc);
+                    updateStatus("Copied URL to clipboard: " + hn.getEntry().getUrl());
+                }
+            }
+        }
+    }
+
+    @FXML
+    private void handlePaste() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.paste();
+        } else if (target instanceof CodeArea ca) {
+            ca.paste();
+        }
+    }
+
+    @FXML
+    private void handlePasteAndMatchStyle() {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (!clipboard.hasString()) {
+            return;
+        }
+        String plain = clipboard.getString();
+        if (plain == null) {
+            return;
+        }
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.replaceSelection(plain);
+        } else if (target instanceof CodeArea ca) {
+            ca.replaceSelection(plain);
+        }
+    }
+
+    @FXML
+    private void handleDelete() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            String sel = tic.getSelectedText();
+            if (sel != null && !sel.isEmpty()) {
+                tic.replaceSelection("");
+            } else {
+                tic.deleteNextChar();
+            }
+        } else if (target instanceof CodeArea ca) {
+            String sel = ca.getSelectedText();
+            if (sel != null && !sel.isEmpty()) {
+                ca.replaceSelection("");
+            } else {
+                ca.deleteNextChar();
+            }
+        } else {
+            Scene scene = mainRootPane != null ? mainRootPane.getScene() : null;
+            Node focused = scene != null ? scene.getFocusOwner() : null;
+            if (focused == collectionsTree || (collectionsTree != null && collectionsTree.isFocused())) {
+                handleDeleteItem();
+            }
+        }
+    }
+
+    @FXML
+    private void handleSelectAll() {
+        Node target = findActiveTextTarget();
+        if (target instanceof TextInputControl tic) {
+            tic.selectAll();
+        } else if (target instanceof CodeArea ca) {
+            ca.selectAll();
+        } else {
+            Scene scene = mainRootPane != null ? mainRootPane.getScene() : null;
+            Node focused = scene != null ? scene.getFocusOwner() : null;
+            if (focused instanceof TableView<?> tv) {
+                tv.getSelectionModel().selectAll();
+            }
+        }
     }
 
     @FXML
