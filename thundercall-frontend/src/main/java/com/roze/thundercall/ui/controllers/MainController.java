@@ -23,6 +23,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.geometry.Side;
@@ -77,6 +78,10 @@ public class MainController implements Initializable {
     private BorderPane mainRootPane;
     @FXML
     private Button addRequestBtn;
+    @FXML
+    private Button navBackBtn;
+    @FXML
+    private Button navForwardBtn;
     @FXML
     private TreeView<String> collectionsTree;
     @FXML
@@ -492,6 +497,8 @@ public class MainController implements Initializable {
     private SplitPane sidebarSplitPane;
     @FXML
     private StackPane sidebarContentPane;
+    @FXML
+    private SplitPane mainSplitPane;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -9865,6 +9872,182 @@ public class MainController implements Initializable {
         }
     }
 
+    // ============================================================
+    // View Menu Actions (Toggle Full Screen, Zoom In, Zoom Out, Reset Zoom,
+    // Toggle Two-Pane View, Toggle Sidebar, Go Back, Go Forward, Next Tab, Previous Tab)
+    // ============================================================
+
+    private double currentZoomFactor = 1.0;
+    private static final double ZOOM_STEP = 0.1;
+    private static final double MIN_ZOOM = 0.7;
+    private static final double MAX_ZOOM = 1.8;
+
+    private boolean isSidebarVisible = true;
+    private double[] savedSidebarDividers = new double[]{0.08, 0.28};
+
+    private final Deque<Tab> tabNavBackStack = new ArrayDeque<>();
+    private final Deque<Tab> tabNavForwardStack = new ArrayDeque<>();
+    private boolean isNavigatingHistory = false;
+
+    @FXML
+    private void handleToggleFullScreen() {
+        if (mainRootPane != null && mainRootPane.getScene() != null) {
+            Window window = mainRootPane.getScene().getWindow();
+            if (window instanceof Stage stage) {
+                stage.setFullScreen(!stage.isFullScreen());
+                updateStatus(stage.isFullScreen() ? "Full screen enabled (Press F11 to exit)" : "Full screen disabled");
+            }
+        }
+    }
+
+    private void applyZoom() {
+        int baseSize = (int) Math.round(13.0 * currentZoomFactor);
+        mainRootPane.setStyle("-fx-font-size: " + baseSize + "px;");
+        if (bodyTextArea != null) bodyTextArea.setStyle("-fx-font-size: " + baseSize + "px;");
+        if (responseBodyArea != null) responseBodyArea.setStyle("-fx-font-size: " + baseSize + "px;");
+        if (urlField != null) urlField.setStyle("-fx-font-size: " + baseSize + "px;");
+        updateStatus("Zoom: " + (int) Math.round(currentZoomFactor * 100) + "%");
+    }
+
+    @FXML
+    private void handleZoomIn() {
+        if (currentZoomFactor < MAX_ZOOM) {
+            currentZoomFactor = Math.min(MAX_ZOOM, currentZoomFactor + ZOOM_STEP);
+            applyZoom();
+        }
+    }
+
+    @FXML
+    private void handleZoomOut() {
+        if (currentZoomFactor > MIN_ZOOM) {
+            currentZoomFactor = Math.max(MIN_ZOOM, currentZoomFactor - ZOOM_STEP);
+            applyZoom();
+        }
+    }
+
+    @FXML
+    private void handleResetZoom() {
+        currentZoomFactor = 1.0;
+        mainRootPane.setStyle("");
+        if (bodyTextArea != null) bodyTextArea.setStyle("");
+        if (responseBodyArea != null) responseBodyArea.setStyle("");
+        if (urlField != null) urlField.setStyle("");
+        updateStatus("Zoom reset to 100%");
+    }
+
+    @FXML
+    private void handleToggleTwoPaneView() {
+        if (mainSplitPane == null) {
+            return;
+        }
+        if (mainSplitPane.getOrientation() == Orientation.VERTICAL) {
+            mainSplitPane.setOrientation(Orientation.HORIZONTAL);
+            mainSplitPane.setDividerPositions(0.50);
+            updateStatus("Two-pane view: Side-by-side layout");
+        } else {
+            mainSplitPane.setOrientation(Orientation.VERTICAL);
+            mainSplitPane.setDividerPositions(0.55);
+            updateStatus("Two-pane view: Stacked vertical layout");
+        }
+    }
+
+    @FXML
+    private void handleToggleSidebar() {
+        if (sidebarContentPane == null || sidebarSplitPane == null) {
+            return;
+        }
+        isSidebarVisible = !isSidebarVisible;
+        sidebarContentPane.setVisible(isSidebarVisible);
+        sidebarContentPane.setManaged(isSidebarVisible);
+        if (!isSidebarVisible) {
+            savedSidebarDividers = sidebarSplitPane.getDividerPositions();
+            sidebarSplitPane.setDividerPositions(0.08, 0.08);
+            updateStatus("Sidebar collapsed");
+        } else {
+            double[] pos = (savedSidebarDividers != null && savedSidebarDividers.length >= 2)
+                    ? savedSidebarDividers : new double[]{0.08, 0.28};
+            sidebarSplitPane.setDividerPositions(pos);
+            updateStatus("Sidebar expanded");
+        }
+    }
+
+    private void updateNavButtonsState() {
+        if (navBackBtn != null) {
+            navBackBtn.setDisable(tabNavBackStack.isEmpty());
+        }
+        if (navForwardBtn != null) {
+            navForwardBtn.setDisable(tabNavForwardStack.isEmpty());
+        }
+    }
+
+    @FXML
+    private void handleGoBack() {
+        if (requestTabPane == null) return;
+        tabNavBackStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+        if (!tabNavBackStack.isEmpty()) {
+            Tab current = requestTabPane.getSelectionModel().getSelectedItem();
+            Tab target = tabNavBackStack.pop();
+            if (target != null && requestTabPane.getTabs().contains(target)) {
+                isNavigatingHistory = true;
+                if (current != null) {
+                    tabNavForwardStack.push(current);
+                }
+                requestTabPane.getSelectionModel().select(target);
+                isNavigatingHistory = false;
+                updateNavButtonsState();
+                updateStatus("Navigated back to: " + target.getText());
+            }
+        } else {
+            updateNavButtonsState();
+            updateStatus("No previous tabs in navigation history");
+        }
+    }
+
+    @FXML
+    private void handleGoForward() {
+        if (requestTabPane == null) return;
+        tabNavForwardStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+        if (!tabNavForwardStack.isEmpty()) {
+            Tab current = requestTabPane.getSelectionModel().getSelectedItem();
+            Tab target = tabNavForwardStack.pop();
+            if (target != null && requestTabPane.getTabs().contains(target)) {
+                isNavigatingHistory = true;
+                if (current != null) {
+                    tabNavBackStack.push(current);
+                }
+                requestTabPane.getSelectionModel().select(target);
+                isNavigatingHistory = false;
+                updateNavButtonsState();
+                updateStatus("Navigated forward to: " + target.getText());
+            }
+        } else {
+            updateNavButtonsState();
+            updateStatus("No forward tabs in navigation history");
+        }
+    }
+
+    @FXML
+    private void handleNextTab() {
+        if (requestTabPane == null || requestTabPane.getTabs().isEmpty()) {
+            return;
+        }
+        int count = requestTabPane.getTabs().size();
+        int current = requestTabPane.getSelectionModel().getSelectedIndex();
+        int next = (current + 1) % count;
+        requestTabPane.getSelectionModel().select(next);
+    }
+
+    @FXML
+    private void handlePreviousTab() {
+        if (requestTabPane == null || requestTabPane.getTabs().isEmpty()) {
+            return;
+        }
+        int count = requestTabPane.getTabs().size();
+        int current = requestTabPane.getSelectionModel().getSelectedIndex();
+        int prev = (current - 1 + count) % count;
+        requestTabPane.getSelectionModel().select(prev);
+    }
+
     @FXML
     private void handleCreateWorkspace() {
         showWorkspaceSetup();
@@ -10953,6 +11136,11 @@ public class MainController implements Initializable {
                     if (switchingTabs) {
                         return;
                     }
+                    if (!isNavigatingHistory && oldTab != null && newTab != null && oldTab != newTab) {
+                        tabNavBackStack.push(oldTab);
+                        tabNavForwardStack.clear();
+                        updateNavButtonsState();
+                    }
                     if (oldTab != null && tabStates.containsKey(oldTab)) {
                         captureTabState(oldTab);
                     }
@@ -10967,7 +11155,11 @@ public class MainController implements Initializable {
             if (!restoringSession) {
                 scheduleSessionSave();
             }
+            tabNavBackStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+            tabNavForwardStack.removeIf(t -> !requestTabPane.getTabs().contains(t));
+            updateNavButtonsState();
         });
+        Platform.runLater(this::updateNavButtonsState);
 
         TabDragReorderHelper.install(requestTabPane, isMoving -> switchingTabs = isMoving);
 

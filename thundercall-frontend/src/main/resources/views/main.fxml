@@ -52,8 +52,17 @@
                         <MenuItem text="Select All" accelerator="Shortcut+A" onAction="#handleSelectAll"/>
                     </Menu>
                     <Menu text="View">
-                        <MenuItem text="Dark Theme" onAction="#handleThemeDark"/>
-                        <MenuItem text="Light Theme" onAction="#handleThemeLight"/>
+                        <MenuItem text="Toggle Full Screen" accelerator="F11" onAction="#handleToggleFullScreen"/>
+                        <MenuItem text="Zoom In" accelerator="Shortcut+=" onAction="#handleZoomIn"/>
+                        <MenuItem text="Zoom Out" accelerator="Shortcut+-" onAction="#handleZoomOut"/>
+                        <MenuItem text="Reset Zoom" accelerator="Shortcut+0" onAction="#handleResetZoom"/>
+                        <MenuItem text="Toggle Two-Pane View" accelerator="Alt+Shortcut+V" onAction="#handleToggleTwoPaneView"/>
+                        <MenuItem text="Toggle Sidebar" accelerator="Shortcut+\" onAction="#handleToggleSidebar"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Go Back" accelerator="Alt+Left" onAction="#handleGoBack"/>
+                        <MenuItem text="Go Forward" accelerator="Alt+Right" onAction="#handleGoForward"/>
+                        <MenuItem text="Next Tab" accelerator="Shortcut+Tab" onAction="#handleNextTab"/>
+                        <MenuItem text="Previous Tab" accelerator="Shortcut+Shift+Tab" onAction="#handlePreviousTab"/>
                     </Menu>
                     <Menu text="Help">
                         <MenuItem text="Check for Updates…" onAction="#handleCheckForUpdates"/>
@@ -69,6 +78,14 @@
                     <ImageView fitHeight="24" fitWidth="24" preserveRatio="true">
                         <Image url="@../images/logo.png"/>
                     </ImageView>
+                    <Button fx:id="navBackBtn" styleClass="nav-arrow-button" onAction="#handleGoBack" focusTraversable="false">
+                        <tooltip><Tooltip text="Go Back (Alt+Left Arrow)"/></tooltip>
+                        <graphic><Label text="←" styleClass="nav-arrow-icon"/></graphic>
+                    </Button>
+                    <Button fx:id="navForwardBtn" styleClass="nav-arrow-button" onAction="#handleGoForward" focusTraversable="false">
+                        <tooltip><Tooltip text="Go Forward (Alt+Right Arrow)"/></tooltip>
+                        <graphic><Label text="→" styleClass="nav-arrow-icon"/></graphic>
+                    </Button>
                     <Label text="Home" styleClass="nav-item"/>
                     <MenuButton fx:id="workspacesMenuBtn" text="Workspaces" styleClass="nav-item-menu">
                         <items>
@@ -448,7 +465,7 @@
                         <FlowPane fx:id="onlineUsersBox" hgap="6" vgap="6" styleClass="online-users-box"/>
                     </VBox>
                 </StackPane>
-                    <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
+                    <SplitPane fx:id="mainSplitPane" orientation="VERTICAL" dividerPositions="0.55" styleClass="main-split">
                 <!-- Request builder -->
                 <VBox styleClass="requestResponse-panel">
                     <!-- Postman-style open-request tabs -->

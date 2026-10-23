@@ -1367,6 +1367,38 @@
 .app-menu-bar .menu .label { -fx-text-fill: -text-primary; -fx-font-size: 12px; }
 .app-menu-bar .menu:hover, .app-menu-bar .menu:showing { -fx-background-color: -bg-hover; }
 
+/* Navigation Back / Forward Buttons (Postman-style) */
+.button.nav-arrow-button, .nav-arrow-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-radius: 4px;
+    -fx-border-radius: 4px;
+    -fx-padding: 3 7 3 7;
+    -fx-cursor: hand;
+}
+.button.nav-arrow-button:hover, .nav-arrow-button:hover {
+    -fx-background-color: -bg-hover;
+}
+.button.nav-arrow-button:pressed, .nav-arrow-button:pressed {
+    -fx-background-color: -bg-active;
+}
+.button.nav-arrow-button:disabled, .nav-arrow-button:disabled {
+    -fx-opacity: 0.35;
+    -fx-cursor: default;
+}
+
+.nav-arrow-icon {
+    -fx-font-size: 15px;
+    -fx-text-fill: -text-secondary;
+}
+.button.nav-arrow-button:hover .nav-arrow-icon, .nav-arrow-button:hover .nav-arrow-icon {
+    -fx-text-fill: -text-primary;
+}
+.button.nav-arrow-button:disabled .nav-arrow-icon, .nav-arrow-button:disabled .nav-arrow-icon {
+    -fx-text-fill: -text-muted;
+}
+
 /* Row 2: Home / Workspaces / API Network */
 .nav-item {
     -fx-text-fill: -text-primary;
