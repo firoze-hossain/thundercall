@@ -87,7 +87,7 @@ Docs only — nothing to build or rebuild.
 
 ---
 
-## 2026-08-14 — Request/Response editor: Postman-parity polish
+## 2026-08-14 — Request/Response editor: Editor UX polish
 
 ### Where these go
 ```
@@ -115,8 +115,8 @@ together since they all touch the same code paths:
   "Invalid JSON format" error and block sending. Validation now
   strips comments (and any trailing comma left behind) before
   checking, but the literal text you typed — comments included — is
-  still exactly what gets sent, matching how Postman's own raw editor
-  behaves.
+  still exactly what gets sent, matching standard raw editor
+  behavior.
 - **Comments get their own color.** Previously a commented-out
   `"fatherName": ""` line was highlighted as if it were live JSON.
   Comments now render in a dedicated grey/italic style.
@@ -154,7 +154,7 @@ together since they all touch the same code paths:
   shuffle field order on every format. `JsonPrettyPrinter` is a small,
   dependency-free, hand-written parser/printer instead, specifically
   so field order is always preserved exactly as written — matching
-  Postman's own (JS-based, naturally order-preserving) beautify.
+  industry standard (JS-based, naturally order-preserving) beautify.
 - **The outside-click fix doesn't touch Escape.** Both paths can close
   a popup; whichever fires first wins, the other is just a no-op
   afterward.

@@ -3,13 +3,13 @@
 # ⚡ ThunderCall
 
 **The Free, Calm, and High-Performance API Development Platform.**  
-*A lightweight native desktop client paired with a reactive backend engine — built to provide everything you love about Postman, with zero paywalls, zero seat limits, and zero cloud lock-in.*
+*A lightweight native desktop client paired with a reactive backend engine — built to provide everything you need in a modern API development suite, with zero paywalls, zero seat limits, and zero cloud lock-in.*
 
 [![Release](https://img.shields.io/github/v/release/firoze-hossain/thundercall?color=ff6c37&label=Release&logo=github)](https://github.com/firoze-hossain/thundercall/releases/latest)
 [![Java](https://img.shields.io/badge/Java-21%20LTS-orange?logo=openjdk)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3%20%7C%20WebFlux-brightgreen?logo=springboot)](https://spring.io/projects/spring-boot)
 [![JavaFX](https://img.shields.io/badge/JavaFX-21-blue?logo=java)](https://openjfx.io/)
-[![Postman Compatible](https://img.shields.io/badge/Postman%20v2.1-Compatible-orange?logo=postman)](https://www.postman.com/)
+[![Collection v2.1 Compatible](https://img.shields.io/badge/Collection%20v2.1-Compatible-orange)](https://github.com/firoze-hossain/thundercall)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 [**Download Installers**](#-download--installation) • [**Quickstart Guide**](#-quickstart-tutorial) • [**Documentation**](http://localhost:8000/docs/thundercall) • [**Support Center**](http://localhost:8000/support/thundercall) • [**Contribute**](#-open-source-contribution)
@@ -45,7 +45,7 @@ Modern API clients have become bloated, memory-hungry Electron applications that
 
 - ⚡ **Instant Cold Startup**: Zero Electron overhead. Built with native **JavaFX 21** and **Spring Boot**, opening instantly with a fraction of the RAM usage.
 - 🔒 **Local-First & Private**: Your collections, secrets, and environment tokens are stored locally on your machine. No forced synchronization to unvetted cloud servers.
-- 🔁 **Native Postman v2.1 Compatibility**: Seamlessly import existing Postman collections, folders, environments, and test scripts with 100% schema parity.
+- 🔁 **Native Collection v2.1 Compatibility**: Seamlessly import existing standard collection files, folders, environments, and test scripts with 100% schema parity.
 - 👥 **Team Workspaces Without Per-Seat Fees**: Collaborate with teammates through shared workspaces, fine-grained access control (Owner, Admin, Editor, Viewer), and live presence indicators.
 - 🌐 **Multi-Protocol Engine**: Test standard HTTP/REST (GET, POST, PUT, DELETE, PATCH), full-duplex WebSockets (`ws://`, `wss://`), Socket.IO events, and GraphQL with automatic schema introspection.
 
@@ -69,7 +69,7 @@ ThunderCall operates as an efficient dual-module architecture:
 |   - Reactive HTTP client (Apache HttpClient 5 / WebFlux)                 |
 |   - Mock server route simulator with latency injection                   |
 |   - Dynamic cron-scheduled health monitors                               |
-|   - Postman assertion JavaScript sandbox (pm.test, pm.expect)            |
+|   - JavaScript test assertion sandbox (pm.test, pm.expect)               |
 |   - Local SQLite / H2 or PostgreSQL persistence                          |
 +--------------------------------------------------------------------------+
 ```
@@ -134,14 +134,14 @@ ThunderCall features a carefully crafted user interface with dedicated **Light**
 
 ### 🗂 Collections, Environments & Variables
 - **Filesystem Hierarchy**: Organize endpoints across multi-level nested folders.
-- **Postman v2.1 Import & Export**: One-click import and export of collections and environment JSON files.
+- **Collection v2.1 Import & Export**: One-click import and export of standard collection and environment JSON files.
 - **Dynamic Variable Resolution**: Use `{{variable}}` anywhere (URLs, headers, query params, bodies). Supports hierarchical scope resolution:
   $$\text{Local Scope} \longrightarrow \text{Environment Scope} \longrightarrow \text{Collection Scope} \longrightarrow \text{Global Scope}$$
 - **Variable Autocomplete**: Type `{{` in any editor to trigger variable suggestions with live value previews.
 
 ### 🧪 Automated Testing & Script Sandbox
 - **Pre-Request Scripts**: Run JavaScript before requests to generate timestamps, calculate HMAC signatures, or set nonces.
-- **Test Scripts & Assertions**: Write assertions using familiar Postman syntax:
+- **Test Scripts & Assertions**: Write assertions using familiar JavaScript syntax:
   ```javascript
   pm.test("Status code is 200 OK", function () {
       pm.response.to.have.status(200);
@@ -363,7 +363,7 @@ We welcome contributions from developers worldwide! Whether fixing bugs, adding 
 ### Contribution Guidelines
 - Preserve UI consistency with ThunderCall's design system (rounded corners, subtle borders, ergonomic dark/light palettes).
 - Keep authorization logic routed through `WorkspaceAccessGuard` to preserve team permissions.
-- Test backwards compatibility with the Postman Collection v2.1 schema.
+- Test backwards compatibility with the Collection v2.1 schema.
 
 ---
 
