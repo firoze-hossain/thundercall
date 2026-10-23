@@ -27,7 +27,7 @@ import java.net.URI;
 public final class AboutDialog extends Stage {
 
     private static final String DOCS_URL = "http://localhost:8000/docs/thundercall";
-    private static final String SUPPORT_URL = "http://localhost:8000/support";
+    private static final String SUPPORT_URL = "http://localhost:8000/support/thundercall";
     private static final String GITHUB_URL = "https://github.com/firoze-hossain/thundercall";
 
     public static void show(Window owner) {

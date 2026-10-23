@@ -9791,7 +9791,7 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleSupport() {
-        openExternalUrl("http://localhost:8000/support");
+        openExternalUrl("http://localhost:8000/support/thundercall");
     }
 
     private void openExternalUrl(String url) {
