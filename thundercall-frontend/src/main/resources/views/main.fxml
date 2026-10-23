@@ -28,6 +28,7 @@
                 <!-- Row 1: application menu bar -->
                 <MenuBar styleClass="app-menu-bar">
                     <Menu text="File">
+                        <MenuItem text="New Tab" accelerator="Shortcut+T" onAction="#handleNewTab"/>
                         <MenuItem text="New Collection" onAction="#handleNewCollection"/>
                         <MenuItem text="New Environment" onAction="#handleNewEnvironment"/>
                         <SeparatorMenuItem/>
@@ -35,6 +36,10 @@
                         <MenuItem text="Export…" onAction="#handleExportCollections"/>
                         <SeparatorMenuItem/>
                         <MenuItem text="Settings…" onAction="#handleSettings"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="Close Tab" accelerator="Shortcut+W" onAction="#handleCloseTab"/>
+                        <MenuItem text="Force Close Tab" accelerator="Alt+Shortcut+W" onAction="#handleForceCloseTab"/>
+                        <MenuItem text="Close Window" accelerator="Shortcut+Shift+W" onAction="#handleCloseWindow"/>
                         <SeparatorMenuItem/>
                         <MenuItem text="Logout" onAction="#handleLogout"/>
                         <MenuItem text="Exit" onAction="#handleExit"/>

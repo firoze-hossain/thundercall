@@ -9686,6 +9686,43 @@ public class MainController implements Initializable {
     }
 
     @FXML
+    private void handleNewTab() {
+        openRequestTab("Untitled Request", null);
+        updateStatus("Opened new request tab");
+    }
+
+    @FXML
+    private void handleCloseTab() {
+        Tab active = activeRequestTab();
+        if (active != null) {
+            closeTabSafely(active, false);
+        }
+    }
+
+    @FXML
+    private void handleForceCloseTab() {
+        Tab active = activeRequestTab();
+        if (active != null) {
+            closeTabSafely(active, true);
+        }
+    }
+
+    @FXML
+    private void handleCloseWindow() {
+        Window window = (mainRootPane != null && mainRootPane.getScene() != null)
+                ? mainRootPane.getScene().getWindow()
+                : (urlField != null && urlField.getScene() != null ? urlField.getScene().getWindow() : null);
+        if (window instanceof Stage stage) {
+            stage.fireEvent(new javafx.stage.WindowEvent(stage, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST));
+            if (stage.isShowing()) {
+                stage.close();
+            }
+        } else {
+            handleExit();
+        }
+    }
+
+    @FXML
     private void handleExit() {
         Platform.exit();
     }
