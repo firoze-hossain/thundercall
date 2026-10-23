@@ -2,6 +2,8 @@ package com.roze.thundercall.ui.controllers;
 
 import com.roze.thundercall.ui.Main;
 import com.roze.thundercall.ui.dialogs.MockServerDetailDialog;
+import com.roze.thundercall.ui.dialogs.MonitorDetailDialog;
+import com.roze.thundercall.ui.dialogs.MonitorEditDialog;
 import com.roze.thundercall.ui.dialogs.WorkspaceSetupDialog;
 import com.roze.thundercall.ui.enums.HttpMethod;
 import com.roze.thundercall.ui.models.*;
@@ -465,7 +467,12 @@ public class MainController implements Initializable {
     @FXML
     private ListView<MonitorResponse> monitorsList;
     @FXML
+    private TextField monitorsSearchField;
+    @FXML
     private ToggleButton railMonitorsBtn;
+
+    private final ObservableList<MonitorResponse> allMonitors = FXCollections.observableArrayList();
+    private FilteredList<MonitorResponse> filteredMonitors;
     @FXML
     private VBox teamWorkspacesPane;
     @FXML
@@ -7574,6 +7581,23 @@ public class MainController implements Initializable {
         if (monitorsList == null) {
             return;
         }
+        filteredMonitors = new FilteredList<>(allMonitors, m -> true);
+        monitorsList.setItems(filteredMonitors);
+
+        if (monitorsSearchField != null) {
+            monitorsSearchField.textProperty().addListener((obs, old, text) -> {
+                String q = text == null ? "" : text.trim().toLowerCase();
+                filteredMonitors.setPredicate(m -> {
+                    if (q.isEmpty()) return true;
+                    if (m == null) return false;
+                    boolean matchName = m.getName() != null && m.getName().toLowerCase().contains(q);
+                    boolean matchCol = m.getCollectionName() != null && m.getCollectionName().toLowerCase().contains(q);
+                    boolean matchEnv = m.getEnvironmentName() != null && m.getEnvironmentName().toLowerCase().contains(q);
+                    return matchName || matchCol || matchEnv;
+                });
+            });
+        }
+
         monitorsList.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(MonitorResponse monitor, boolean empty) {
@@ -7581,24 +7605,145 @@ public class MainController implements Initializable {
                 if (empty || monitor == null) {
                     setGraphic(null);
                     setText(null);
+                    setContextMenu(null);
                     return;
                 }
-                Label nameLabel = new Label(monitor.getName() + (monitor.isEnabled() ? "" : "  (disabled)"));
+
+                // Status Indicator Dot
+                Label dot = new Label("●");
+                dot.setStyle(getMonitorStatusDotStyle(monitor));
+
+                Label nameLabel = new Label(monitor.getName());
                 nameLabel.getStyleClass().add("variable-suggestion-name");
+
+                HBox headerBox = new HBox(6, dot, nameLabel);
+                headerBox.setAlignment(Pos.CENTER_LEFT);
+
                 String lastRun = monitor.getLastRunStatus() != null
                         ? "Last run: " + monitor.getLastRunStatus() : "Never run yet";
-                Label metaLabel = new Label(monitor.getCollectionName() + " · " + lastRun);
+                Label metaLabel = new Label(monitor.getCollectionName() + " · Every " + monitor.getIntervalMinutes() + "m · " + lastRun);
                 metaLabel.getStyleClass().add("variable-suggestion-value");
-                setGraphic(new VBox(1, nameLabel, metaLabel));
+
+                VBox leftBox = new VBox(2, headerBox, metaLabel);
+                HBox.setHgrow(leftBox, Priority.ALWAYS);
+
+                // Quick Run Now button
+                Button runBtn = new Button("▶");
+                runBtn.getStyleClass().add("tree-inline-btn");
+                runBtn.setTooltip(new Tooltip("Run monitor now"));
+                runBtn.setOnAction(e -> {
+                    e.consume();
+                    handleRunMonitorNow(monitor);
+                });
+
+                // More options button (•••)
+                Button moreBtn = new Button("•••");
+                moreBtn.getStyleClass().add("tree-inline-btn");
+                moreBtn.setTooltip(new Tooltip("More options"));
+
+                ContextMenu contextMenu = createMonitorContextMenu(monitor);
+                moreBtn.setOnAction(e -> {
+                    e.consume();
+                    contextMenu.show(moreBtn, Side.BOTTOM, 0, 0);
+                });
+
+                HBox row = new HBox(6, leftBox, runBtn, moreBtn);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.setPadding(new Insets(4, 6, 4, 6));
+
+                setGraphic(row);
                 setText(null);
+                setContextMenu(contextMenu);
             }
         });
+
         monitorsList.setOnMouseClicked(e -> {
             MonitorResponse selected = monitorsList.getSelectionModel().getSelectedItem();
-            if (e.getClickCount() == 2 && selected != null) {
+            if (selected != null) {
                 openMonitorDetailDialog(selected);
             }
         });
+    }
+
+    private String getMonitorStatusDotStyle(MonitorResponse monitor) {
+        if (!monitor.isEnabled()) {
+            return "-fx-font-size: 11px; -fx-text-fill: #94a3b8;"; // gray
+        }
+        String status = monitor.getLastRunStatus();
+        if ("passed".equalsIgnoreCase(status)) {
+            return "-fx-font-size: 11px; -fx-text-fill: #10b981;"; // emerald green
+        } else if ("failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) {
+            return "-fx-font-size: 11px; -fx-text-fill: #ef4444;"; // red
+        }
+        return "-fx-font-size: 11px; -fx-text-fill: #38bdf8;"; // sky blue
+    }
+
+    private ContextMenu createMonitorContextMenu(MonitorResponse monitor) {
+        ContextMenu cm = new ContextMenu();
+
+        MenuItem openItem = new MenuItem("Open Dashboard");
+        openItem.setOnAction(e -> openMonitorDetailDialog(monitor));
+
+        MenuItem runNowItem = new MenuItem("Run Now");
+        runNowItem.setOnAction(e -> handleRunMonitorNow(monitor));
+
+        MenuItem toggleItem = new MenuItem(monitor.isEnabled() ? "Pause Monitor" : "Resume Monitor");
+        toggleItem.setOnAction(e -> handleToggleMonitor(monitor));
+
+        MenuItem editItem = new MenuItem("Configure / Edit");
+        editItem.setOnAction(e -> openMonitorEditDialog(monitor));
+
+        MenuItem deleteItem = new MenuItem("Delete");
+        deleteItem.getStyleClass().add("danger-menu-item");
+        deleteItem.setOnAction(e -> handleDeleteMonitor(monitor));
+
+        cm.getItems().addAll(openItem, runNowItem, toggleItem, new SeparatorMenuItem(), editItem, new SeparatorMenuItem(), deleteItem);
+        return cm;
+    }
+
+    private void handleRunMonitorNow(MonitorResponse monitor) {
+        updateStatus("Running monitor \"" + monitor.getName() + "\"...");
+        new Thread(() -> {
+            try {
+                MonitorRunResponse run = MonitorService.runNow(monitor.getId());
+                Platform.runLater(() -> {
+                    updateStatus("Monitor run finished (" + (run.isSuccess() ? "Passed" : "Failed") + ")");
+                    loadMonitors();
+                });
+            } catch (IOException ex) {
+                Platform.runLater(() -> updateStatus("Monitor run failed: " + MonitorService.friendlyMessage(ex)));
+            }
+        }).start();
+    }
+
+    private void handleToggleMonitor(MonitorResponse monitor) {
+        new Thread(() -> {
+            Optional<MonitorResponse> updated = MonitorService.toggleEnabled(monitor.getId());
+            Platform.runLater(() -> {
+                updated.ifPresent(m -> {
+                    updateStatus("Monitor " + (m.isEnabled() ? "resumed" : "paused") + ": " + m.getName());
+                    loadMonitors();
+                });
+            });
+        }).start();
+    }
+
+    private void handleDeleteMonitor(MonitorResponse monitor) {
+        if (!AlertUtils.showConfirmation("Delete Monitor",
+                "Delete \"" + monitor.getName() + "\"? Its run history will be deleted.")) {
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = MonitorService.deleteMonitor(monitor.getId());
+            Platform.runLater(() -> {
+                if (ok) {
+                    updateStatus("Monitor deleted: " + monitor.getName());
+                    loadMonitors();
+                } else {
+                    AlertUtils.showError("Failed to delete monitor.");
+                }
+            });
+        }).start();
     }
 
     private void loadMonitors() {
@@ -7607,7 +7752,7 @@ public class MainController implements Initializable {
         }
         new Thread(() -> {
             Optional<List<MonitorResponse>> monitors = MonitorService.getMyMonitors();
-            Platform.runLater(() -> monitors.ifPresent(list -> monitorsList.getItems().setAll(list)));
+            Platform.runLater(() -> monitors.ifPresent(list -> allMonitors.setAll(list)));
         }).start();
     }
 
@@ -7618,225 +7763,34 @@ public class MainController implements Initializable {
 
     /** Shared by both create and edit — null existing means create. */
     private void openMonitorEditDialog(MonitorResponse existing) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(existing == null ? "Create Monitor" : "Edit Monitor");
-        dialog.setHeaderText("A monitor runs a whole collection on a schedule and tracks pass/fail history.");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
-
-        TextField nameField = new TextField(existing != null ? existing.getName() : "");
-        nameField.setPromptText("Monitor name");
-
-        ComboBox<String> collectionCombo = new ComboBox<>();
-        collectionCombo.setPromptText("Loading collections...");
-        Map<String, Long> collectionIds = new LinkedHashMap<>();
-
-        ComboBox<String> environmentCombo = new ComboBox<>();
-        environmentCombo.getItems().add("(no environment)");
-        environmentCombo.setValue("(no environment)");
-        Map<String, Long> environmentIds = new LinkedHashMap<>();
-
-        ComboBox<String> intervalCombo = new ComboBox<>();
-        intervalCombo.getItems().addAll(MONITOR_INTERVAL_PRESETS.keySet());
-        intervalCombo.setValue("Every 5 minutes");
-        if (existing != null) {
-            for (Map.Entry<String, Integer> entry : MONITOR_INTERVAL_PRESETS.entrySet()) {
-                if (entry.getValue() == existing.getIntervalMinutes()) {
-                    intervalCombo.setValue(entry.getKey());
-                    break;
-                }
-            }
-        }
-
-        CheckBox enabledCheck = new CheckBox("Enabled");
-        enabledCheck.setSelected(existing == null || existing.isEnabled());
-
-        CheckBox notifyCheck = new CheckBox("Email me on failure");
-        notifyCheck.setSelected(existing == null || existing.isNotifyOnFailure());
-
-        TextField notifyEmailField = new TextField(existing != null ? existing.getNotifyEmail() : "");
-        notifyEmailField.setPromptText("Defaults to your account email if left blank");
-
-        VBox content = new VBox(8,
-                new Label("Name"), nameField,
-                new Label("Collection"), collectionCombo,
-                new Label("Environment (optional)"), environmentCombo,
-                new Label("Run"), intervalCombo,
-                enabledCheck, notifyCheck,
-                new Label("Notify Email"), notifyEmailField);
-        content.setPadding(new Insets(10));
-        content.setPrefWidth(380);
-        dialog.getDialogPane().setContent(content);
-        initAndStyleDialog(dialog);
-
-        // Populate the collection/environment pickers in the background so the
-        // dialog itself opens instantly.
-        new Thread(() -> {
-            Optional<List<CollectionResponse>> collections = CollectionService.getUserCollections();
-            Optional<List<EnvironmentResponse>> environments = EnvironmentService.getUserEnvironments();
-            Platform.runLater(() -> {
-                collectionCombo.setPromptText("Choose a collection");
-                collections.ifPresent(list -> {
-                    for (CollectionResponse c : list) {
-                        collectionIds.put(c.getName(), c.getId());
-                        collectionCombo.getItems().add(c.getName());
-                    }
-                    if (existing != null) {
-                        collectionIds.entrySet().stream()
-                                .filter(en -> en.getValue().equals(existing.getCollectionId()))
-                                .findFirst()
-                                .ifPresent(en -> collectionCombo.setValue(en.getKey()));
-                    }
-                });
-                environments.ifPresent(list -> {
-                    for (EnvironmentResponse env : list) {
-                        environmentIds.put(env.getName(), env.getId());
-                        environmentCombo.getItems().add(env.getName());
-                    }
-                    if (existing != null && existing.getEnvironmentId() != null) {
-                        environmentIds.entrySet().stream()
-                                .filter(en -> en.getValue().equals(existing.getEnvironmentId()))
-                                .findFirst()
-                                .ifPresent(en -> environmentCombo.setValue(en.getKey()));
-                    }
-                });
-            });
-        }).start();
-
-        dialog.showAndWait().ifPresent(button -> {
-            if (button != ButtonType.OK) {
-                return;
-            }
-            String name = nameField.getText() == null ? "" : nameField.getText().trim();
-            Long collectionId = collectionIds.get(collectionCombo.getValue());
-            if (name.isEmpty() || collectionId == null) {
-                AlertUtils.showError("Give the monitor a name and choose a collection first.");
-                return;
-            }
-            Long environmentId = environmentIds.get(environmentCombo.getValue());
-            int intervalMinutes = MONITOR_INTERVAL_PRESETS.getOrDefault(intervalCombo.getValue(), 5);
-            MonitorRequest request = new MonitorRequest(
-                    name, collectionId, environmentId, intervalMinutes,
-                    enabledCheck.isSelected(), notifyCheck.isSelected(), notifyEmailField.getText());
-            new Thread(() -> {
-                try {
-                    if (existing == null) {
-                        MonitorService.createMonitor(request);
-                    } else {
-                        MonitorService.updateMonitor(existing.getId(), request);
-                    }
-                    Platform.runLater(() -> {
-                        loadMonitors();
-                        updateStatus(existing == null ? "Monitor created: " + name : "Monitor updated: " + name);
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> AlertUtils.showError(
-                            "Couldn't save that monitor: " + MonitorService.friendlyMessage(ex)));
-                }
-            }).start();
+        Window owner = (monitorsList != null && monitorsList.getScene() != null)
+                ? monitorsList.getScene().getWindow() : Main.getPrimaryStage();
+        MonitorEditDialog.show(existing, owner, saved -> {
+            loadMonitors();
+            updateStatus(existing == null ? "Monitor created: " + saved.getName() : "Monitor updated: " + saved.getName());
         });
     }
 
     /** The main monitor-management surface: schedule/enable summary,
      * Run Now, and a run-history table. */
     private void openMonitorDetailDialog(MonitorResponse monitor) {
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.setTitle(monitor.getName());
-        dialog.setHeaderText(monitor.getCollectionName()
-                + (monitor.getEnvironmentName() != null ? "  ·  env: " + monitor.getEnvironmentName() : "")
-                + "  ·  " + monitor.getIntervalMinutes() + " min interval");
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-
-        Label statusLabel = new Label();
-        statusLabel.setWrapText(true);
-        statusLabel.setMaxWidth(600);
-
-        TableView<MonitorRunResponse> runsTable = new TableView<>();
-        TableColumn<MonitorRunResponse, String> startedCol = new TableColumn<>("Started");
-        startedCol.setCellValueFactory(new PropertyValueFactory<>("startedAt"));
-        TableColumn<MonitorRunResponse, Boolean> successCol = new TableColumn<>("Result");
-        successCol.setCellValueFactory(new PropertyValueFactory<>("success"));
-        successCol.setCellFactory(col -> new TableCell<>() {
-            @Override
-            protected void updateItem(Boolean success, boolean empty) {
-                super.updateItem(success, empty);
-                setText(empty || success == null ? null : (success ? "Passed" : "Failed"));
-            }
-        });
-        TableColumn<MonitorRunResponse, Number> passedCol = new TableColumn<>("Passed");
-        passedCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getPassedRequests()));
-        TableColumn<MonitorRunResponse, Number> failedCol = new TableColumn<>("Failed");
-        failedCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleIntegerProperty(cellData.getValue().getFailedRequests()));
-        TableColumn<MonitorRunResponse, Number> avgCol = new TableColumn<>("Avg ms");
-        avgCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleLongProperty(cellData.getValue().getAvgResponseTimeMs()));
-        runsTable.getColumns().addAll(startedCol, successCol, passedCol, failedCol, avgCol);
-        runsTable.setPrefSize(600, 260);
-        runsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        runsTable.setPlaceholder(new Label("No runs yet — click Run Now, or wait for the schedule to fire."));
-
-        Runnable[] refreshRuns = new Runnable[1];
-        refreshRuns[0] = () -> new Thread(() -> {
-            Optional<List<MonitorRunResponse>> runs = MonitorService.getRuns(monitor.getId());
-            Platform.runLater(() -> runs.ifPresent(list -> runsTable.getItems().setAll(list)));
-        }).start();
-        refreshRuns[0].run();
-
-        Button runNowBtn = new Button("Run Now");
-        Button editBtn = new Button("Edit");
-        Button deleteBtn = new Button("Delete Monitor");
-        deleteBtn.getStyleClass().add("danger-menu-item");
-        HBox actions = new HBox(8, runNowBtn, editBtn, deleteBtn);
-        actions.setAlignment(Pos.CENTER_LEFT);
-
-        runNowBtn.setOnAction(e -> {
-            statusLabel.setText("Running...");
-            runNowBtn.setDisable(true);
-            new Thread(() -> {
-                try {
-                    MonitorService.runNow(monitor.getId());
-                    Platform.runLater(() -> {
-                        statusLabel.setText("Run complete.");
-                        runNowBtn.setDisable(false);
-                        refreshRuns[0].run();
-                        loadMonitors();
-                    });
-                } catch (IOException ex) {
-                    Platform.runLater(() -> {
-                        statusLabel.setText("Couldn't run: " + MonitorService.friendlyMessage(ex));
-                        runNowBtn.setDisable(false);
-                    });
+        if (monitor == null) {
+            return;
+        }
+        Window owner = (monitorsList != null && monitorsList.getScene() != null)
+                ? monitorsList.getScene().getWindow() : Main.getPrimaryStage();
+        MonitorDetailDialog.show(
+                monitor,
+                owner,
+                updated -> {
+                    loadMonitors();
+                    updateStatus("Monitor updated: " + updated.getName());
+                },
+                () -> {
+                    loadMonitors();
+                    updateStatus("Monitor deleted: " + monitor.getName());
                 }
-            }).start();
-        });
-        editBtn.setOnAction(e -> {
-            dialog.close();
-            openMonitorEditDialog(monitor);
-        });
-        deleteBtn.setOnAction(e -> {
-            if (!AlertUtils.showConfirmation("Delete Monitor",
-                    "Delete \"" + monitor.getName() + "\"? Its run history goes with it.")) {
-                return;
-            }
-            new Thread(() -> {
-                boolean ok = MonitorService.deleteMonitor(monitor.getId());
-                Platform.runLater(() -> {
-                    if (ok) {
-                        dialog.close();
-                        loadMonitors();
-                        updateStatus("Monitor deleted: " + monitor.getName());
-                    } else {
-                        statusLabel.setText("Couldn't delete this monitor.");
-                    }
-                });
-            }).start();
-        });
-
-        Label runHistoryLabel = new Label("Run History");
-        runHistoryLabel.getStyleClass().add("dialog-section-title");
-        VBox content = new VBox(10, actions, new Separator(), runHistoryLabel, runsTable, statusLabel);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        initAndStyleDialog(dialog);
-        dialog.showAndWait();
+        );
     }
 
     // ============================================================

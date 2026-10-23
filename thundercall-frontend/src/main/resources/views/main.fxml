@@ -389,8 +389,8 @@
                                 </graphic>
                             </Button>
                         </HBox>
-                        <Label styleClass="sidebar-hint" wrapText="true"
-                               text="Double-click a monitor to see run history or run it now."/>
+                        <TextField fx:id="monitorsSearchField" promptText="Search monitors"
+                                   styleClass="sidebar-search" maxWidth="10000"/>
                         <ListView fx:id="monitorsList" styleClass="history-list" VBox.vgrow="ALWAYS"/>
                     </VBox>
 

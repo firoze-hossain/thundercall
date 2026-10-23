@@ -127,6 +127,20 @@ public class MonitorServiceImpl implements MonitorService {
     }
 
     @Override
+    @Transactional
+    public MonitorResponse toggleEnabled(Long id, User owner) {
+        Monitor monitor = findOwned(id, owner);
+        boolean newEnabled = !monitor.isEnabled();
+        monitor.setEnabled(newEnabled);
+        monitor = monitorRepository.save(monitor);
+        unscheduleMonitor(monitor.getId());
+        if (newEnabled) {
+            scheduleMonitor(monitor);
+        }
+        return toResponse(monitor);
+    }
+
+    @Override
     public List<MonitorRunResponse> getRuns(Long id, User owner) {
         Monitor monitor = findOwned(id, owner); // ownership check
         return monitorRunRepository.findByMonitorIdOrderByStartedAtDesc(monitor.getId(), PageRequest.of(0, 50))
@@ -200,6 +214,8 @@ public class MonitorServiceImpl implements MonitorService {
             entry.put("name", request.getName());
             entry.put("method", request.getMethod().name());
             entry.put("url", request.getUrl());
+            String resolvedUrl = MonitorVariableResolver.resolve(request.getUrl(), vars);
+            entry.put("resolvedUrl", resolvedUrl);
             long requestStart = System.currentTimeMillis();
             try {
                 int statusCode = executeOne(request, vars);
@@ -214,12 +230,25 @@ public class MonitorServiceImpl implements MonitorService {
                 } else {
                     failed++;
                 }
+            } catch (org.springframework.web.client.HttpStatusCodeException ex) {
+                long duration = System.currentTimeMillis() - requestStart;
+                int statusCode = ex.getStatusCode().value();
+                entry.put("statusCode", statusCode);
+                entry.put("durationMs", duration);
+                entry.put("success", false);
+                entry.put("error", "HTTP " + statusCode + " " + ex.getStatusText());
+                totalDuration += duration;
+                failed++;
             } catch (Exception e) {
                 long duration = System.currentTimeMillis() - requestStart;
                 entry.put("statusCode", 0);
                 entry.put("durationMs", duration);
                 entry.put("success", false);
-                entry.put("error", e.getMessage());
+                String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                if (msg.contains("URI is not absolute")) {
+                    msg = "Invalid URL: URI is not absolute (ensure environment variables are configured)";
+                }
+                entry.put("error", msg);
                 totalDuration += duration;
                 failed++;
             }

@@ -64,6 +64,20 @@ public class MonitorService {
         }
     }
 
+    public static Optional<MonitorResponse> toggleEnabled(Long id) {
+        try {
+            BaseResponse<MonitorResponse> response = ApiClient.patch(BASE_URL + "/" + id + "/toggle", null,
+                    new TypeReference<BaseResponse<MonitorResponse>>() {
+                    });
+            if (response != null && response.isSuccess()) {
+                return Optional.ofNullable(response.getData());
+            }
+        } catch (IOException e) {
+            Platform.runLater(() -> AlertUtils.showError("Failed to update monitor status: " + friendlyMessage(e)));
+        }
+        return Optional.empty();
+    }
+
     public static Optional<List<MonitorRunResponse>> getRuns(Long id) {
         try {
             BaseResponse<List<MonitorRunResponse>> response = ApiClient.get(BASE_URL + "/" + id + "/runs",

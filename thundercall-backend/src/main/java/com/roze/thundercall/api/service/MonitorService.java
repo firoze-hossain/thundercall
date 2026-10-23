@@ -18,6 +18,8 @@ public interface MonitorService {
 
     void deleteMonitor(Long id, User owner);
 
+    MonitorResponse toggleEnabled(Long id, User owner);
+
     List<MonitorRunResponse> getRuns(Long id, User owner);
 
     /** Runs the monitor immediately, outside its schedule — the same

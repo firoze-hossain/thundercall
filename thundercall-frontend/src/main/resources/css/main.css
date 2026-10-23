@@ -3144,4 +3144,105 @@
     -fx-border-radius: 6px;
 }
 
+/* ============================================================
+   Monitor Modern Dashboard UI Styles (Postman-grade)
+   ============================================================ */
+
+.monitor-status-pill {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 10 3 10;
+    -fx-background-radius: 12px;
+}
+.monitor-status-healthy {
+    -fx-background-color: rgba(16, 185, 129, 0.16);
+    -fx-text-fill: #10b981;
+    -fx-border-color: rgba(16, 185, 129, 0.35);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+.monitor-status-failing {
+    -fx-background-color: rgba(239, 68, 68, 0.16);
+    -fx-text-fill: #ef4444;
+    -fx-border-color: rgba(239, 68, 68, 0.35);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+.monitor-status-paused {
+    -fx-background-color: rgba(148, 163, 184, 0.14);
+    -fx-text-fill: #94a3b8;
+    -fx-border-color: rgba(148, 163, 184, 0.3);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+.monitor-status-idle {
+    -fx-background-color: rgba(56, 189, 248, 0.14);
+    -fx-text-fill: #38bdf8;
+    -fx-border-color: rgba(56, 189, 248, 0.3);
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+}
+
+.monitor-kpi-card {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 10 14 10 14;
+}
+
+.monitor-kpi-title {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-muted;
+}
+
+.monitor-kpi-value {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-primary;
+}
+
+.monitor-kpi-sub {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-secondary;
+}
+
+.monitor-timeline-container {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 12 16 12 16;
+}
+
+.monitor-req-card {
+    -fx-background-color: -bg-panel;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 8 12 8 12;
+}
+.monitor-req-card:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: -accent;
+}
+
+.monitor-diag-box {
+    -fx-background-color: rgba(239, 68, 68, 0.08);
+    -fx-border-color: rgba(239, 68, 68, 0.3);
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 8 12 8 12;
+}
+
+.monitor-meta-strip {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-subtle;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+    -fx-padding: 8 12 8 12;
+}
+
+
 
