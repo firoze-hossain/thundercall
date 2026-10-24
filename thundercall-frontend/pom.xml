@@ -10,8 +10,9 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
         <javafx.version>21.0.2</javafx.version>
         <hikaricp.version>7.0.0</hikaricp.version>
         <controlsfx.version>11.2.2</controlsfx.version>

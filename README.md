@@ -6,7 +6,7 @@
 *A lightweight native desktop client paired with a reactive backend engine — built to provide everything you need in a modern API development suite, with zero paywalls, zero seat limits, and zero cloud lock-in.*
 
 [![Release](https://img.shields.io/github/v/release/firoze-hossain/thundercall?color=ff6c37&label=Release&logo=github)](https://github.com/firoze-hossain/thundercall/releases/latest)
-[![Java](https://img.shields.io/badge/Java-21%20LTS-orange?logo=openjdk)](https://openjdk.org/)
+[![Java](https://img.shields.io/badge/Java-25%20LTS-orange?logo=openjdk)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3%20%7C%20WebFlux-brightgreen?logo=springboot)](https://spring.io/projects/spring-boot)
 [![JavaFX](https://img.shields.io/badge/JavaFX-21-blue?logo=java)](https://openjfx.io/)
 [![Collection v2.1 Compatible](https://img.shields.io/badge/Collection%20v2.1-Compatible-orange)](https://github.com/firoze-hossain/thundercall)
@@ -43,7 +43,7 @@ Modern API clients have become bloated, memory-hungry Electron applications that
 
 **ThunderCall** is engineered from the ground up to restore speed and privacy to your API development workflow:
 
-- ⚡ **Instant Cold Startup**: Zero Electron overhead. Built with native **JavaFX 21** and **Spring Boot**, opening instantly with a fraction of the RAM usage.
+- ⚡ **Instant Cold Startup**: Zero Electron overhead. Built with native **JavaFX** and **Spring Boot**, opening instantly with a fraction of the RAM usage.
 - 🔒 **Local-First & Private**: Your collections, secrets, and environment tokens are stored locally on your machine. No forced synchronization to unvetted cloud servers.
 - 🔁 **Native Collection v2.1 Compatibility**: Seamlessly import existing standard collection files, folders, environments, and test scripts with 100% schema parity.
 - 👥 **Team Workspaces Without Per-Seat Fees**: Collaborate with teammates through shared workspaces, fine-grained access control (Owner, Admin, Editor, Viewer), and live presence indicators.
@@ -290,7 +290,7 @@ ThunderCall is built on a modern, decoupled Java architecture:
 ### Frontend Subsystem (`thundercall-frontend`)
 | Component | Technology | Description |
 |---|---|---|
-| **Runtime & UI** | Java 21 LTS, JavaFX 21 | Native high-performance cross-platform GUI |
+| **Runtime & UI** | Java 25 LTS, JavaFX | Native high-performance cross-platform GUI |
 | **Code Editor** | RichTextFX, ReactFX | Real-time syntax highlighting, code folding, auto-indent |
 | **JSON Parser** | Jackson Databind & JSR-310 | High-throughput JSON serialization & date formatting |
 | **Vector Icons** | Ikonli (FontAwesome 5) | Crisp resolution-independent icons across DPI scales |
@@ -314,7 +314,7 @@ ThunderCall is built on a modern, decoupled Java architecture:
 To compile and run ThunderCall locally on your machine:
 
 ### Prerequisites
-- **JDK 21 LTS** or later ([Temurin](https://adoptium.net/) or [Oracle OpenJDK](https://jdk.java.net/21/))
+- **JDK 25 LTS** or later ([Temurin](https://adoptium.net/) or [Oracle OpenJDK](https://jdk.java.net/25/))
 - **Maven 3.9+**
 - Git
 
