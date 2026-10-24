@@ -16,6 +16,7 @@ import com.roze.thundercall.api.repository.RequestHistoryRepository;
 import com.roze.thundercall.api.repository.RequestRepository;
 import com.roze.thundercall.api.security.WorkspaceAccessGuard;
 import com.roze.thundercall.api.service.RequestService;
+import com.roze.thundercall.api.utils.BinaryResponseHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
@@ -115,17 +116,17 @@ public class RequestServiceImpl implements RequestService {
             byte[] body = response.getBody() != null ? response.getBody() : new byte[0];
             String contentType = response.getHeaders().getContentType() != null
                     ? response.getHeaders().getContentType().toString() : null;
-            boolean binary = isBinary(contentType);
+            boolean binary = BinaryResponseHelper.isBinary(contentType, body);
 
             ApiResponse apiResponse = ApiResponse.builder()
                     .statusCode(response.getStatusCode().value())
-                    .response(binary ? Base64.getEncoder().encodeToString(body) : decodeText(body, contentType))
+                    .response(binary ? Base64.getEncoder().encodeToString(body) : BinaryResponseHelper.decodeText(body, contentType))
                     .responseHeaders(convertHeadersToString(response.getHeaders()))
                     .duration(duration)
                     .success(success)
                     .binary(binary)
                     .contentType(contentType)
-                    .fileName(guessFileName(response.getHeaders(), apiRequest.url(), contentType))
+                    .fileName(binary ? BinaryResponseHelper.guessFileName(response.getHeaders(), apiRequest.url(), contentType) : null)
                     .sizeBytes(body.length)
                     .build();
 
@@ -291,71 +292,19 @@ public class RequestServiceImpl implements RequestService {
 
     /** Anything that isn't recognizably text is treated as a binary download. */
     private boolean isBinary(String contentType) {
-        if (contentType == null || contentType.isBlank()) {
-            return false; // most simple REST APIs omit it; assume text (JSON/plain)
-        }
-        String ct = contentType.toLowerCase(Locale.ROOT);
-        if (ct.contains("json") || ct.contains("xml") || ct.contains("text")
-                || ct.contains("javascript") || ct.contains("html") || ct.contains("csv")
-                || ct.contains("yaml") || ct.contains("x-www-form-urlencoded")) {
-            return false;
-        }
-        return ct.contains("pdf") || ct.contains("excel") || ct.contains("spreadsheet")
-                || ct.contains("octet-stream") || ct.contains("zip") || ct.contains("image")
-                || ct.contains("audio") || ct.contains("video") || ct.contains("msword")
-                || ct.contains("officedocument");
+        return BinaryResponseHelper.isBinary(contentType);
     }
 
     private String decodeText(byte[] body, String contentType) {
-        Charset charset = StandardCharsets.UTF_8;
-        if (contentType != null) {
-            try {
-                MediaType mt = MediaType.parseMediaType(contentType);
-                if (mt.getCharset() != null) {
-                    charset = mt.getCharset();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return new String(body, charset);
+        return BinaryResponseHelper.decodeText(body, contentType);
     }
 
     private String guessFileName(HttpHeaders headers, String url, String contentType) {
-        String disposition = headers.getFirst(HttpHeaders.CONTENT_DISPOSITION);
-        if (disposition != null) {
-            Matcher m = FILENAME_PATTERN.matcher(disposition);
-            if (m.find()) {
-                return m.group(1).replace("UTF-8''", "");
-            }
-        }
-        String lastSegment = url;
-        int q = lastSegment.indexOf('?');
-        if (q >= 0) {
-            lastSegment = lastSegment.substring(0, q);
-        }
-        int slash = lastSegment.lastIndexOf('/');
-        if (slash >= 0 && slash < lastSegment.length() - 1) {
-            String candidate = lastSegment.substring(slash + 1);
-            if (candidate.contains(".")) {
-                return candidate;
-            }
-        }
-        return "response" + guessExtension(contentType);
+        return BinaryResponseHelper.guessFileName(headers, url, contentType);
     }
 
     private String guessExtension(String contentType) {
-        if (contentType == null) {
-            return ".bin";
-        }
-        String ct = contentType.toLowerCase(Locale.ROOT);
-        if (ct.contains("pdf")) return ".pdf";
-        if (ct.contains("spreadsheet") || ct.contains("excel")) return ".xlsx";
-        if (ct.contains("msword") || ct.contains("wordprocessingml")) return ".docx";
-        if (ct.contains("zip")) return ".zip";
-        if (ct.contains("png")) return ".png";
-        if (ct.contains("jpeg") || ct.contains("jpg")) return ".jpg";
-        if (ct.contains("csv")) return ".csv";
-        return ".bin";
+        return BinaryResponseHelper.guessExtension(contentType);
     }
 
     private void saveRequestHistory(ApiRequest apiRequest, ApiResponse apiResponse, User user) {
