@@ -9607,6 +9607,21 @@ public class MainController implements Initializable {
                             fileChooser.setTitle("Save Response");
                             String suggested = response.getFileName() != null ? response.getFileName() : "response.bin";
                             fileChooser.setInitialFileName(suggested);
+                            int dot = suggested.lastIndexOf('.');
+                            String ext = dot >= 0 ? suggested.substring(dot + 1) : "bin";
+                            if ("xlsx".equalsIgnoreCase(ext) || "xls".equalsIgnoreCase(ext)) {
+                                fileChooser.getExtensionFilters().addAll(
+                                        new FileChooser.ExtensionFilter("Excel Spreadsheets (*.xlsx, *.xls)", "*.xlsx", "*.xls"),
+                                        new FileChooser.ExtensionFilter("All Files", "*.*"));
+                            } else if ("pdf".equalsIgnoreCase(ext)) {
+                                fileChooser.getExtensionFilters().addAll(
+                                        new FileChooser.ExtensionFilter("PDF Documents (*.pdf)", "*.pdf"),
+                                        new FileChooser.ExtensionFilter("All Files", "*.*"));
+                            } else {
+                                fileChooser.getExtensionFilters().addAll(
+                                        new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file (*." + ext + ")", "*." + ext),
+                                        new FileChooser.ExtensionFilter("All Files", "*.*"));
+                            }
                             File file = fileChooser.showSaveDialog(dialog.getDialogPane().getScene().getWindow());
                             if (file == null) {
                                 return;
@@ -13193,9 +13208,20 @@ public class MainController implements Initializable {
             fileChooser.setInitialFileName(suggested);
             int dot = suggested.lastIndexOf('.');
             String ext = dot >= 0 ? suggested.substring(dot + 1) : "bin";
-            fileChooser.getExtensionFilters().addAll(
-                    new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file", "*." + ext),
-                    new FileChooser.ExtensionFilter("All Files", "*.*"));
+            if ("xlsx".equalsIgnoreCase(ext) || "xls".equalsIgnoreCase(ext)) {
+                fileChooser.getExtensionFilters().addAll(
+                        new FileChooser.ExtensionFilter("Excel Spreadsheets (*.xlsx, *.xls)", "*.xlsx", "*.xls"),
+                        new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file (*." + ext + ")", "*." + ext),
+                        new FileChooser.ExtensionFilter("All Files", "*.*"));
+            } else if ("pdf".equalsIgnoreCase(ext)) {
+                fileChooser.getExtensionFilters().addAll(
+                        new FileChooser.ExtensionFilter("PDF Documents (*.pdf)", "*.pdf"),
+                        new FileChooser.ExtensionFilter("All Files", "*.*"));
+            } else {
+                fileChooser.getExtensionFilters().addAll(
+                        new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file (*." + ext + ")", "*." + ext),
+                        new FileChooser.ExtensionFilter("All Files", "*.*"));
+            }
 
             File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
             if (file == null) {
@@ -13217,9 +13243,11 @@ public class MainController implements Initializable {
             String ext = "txt";
             String ct = lastApiResponse.getContentType();
             if (ct != null) {
-                if (ct.contains("json")) {
+                if (ct.contains("spreadsheet") || ct.contains("excel")) {
+                    ext = "xlsx";
+                } else if (ct.contains("json")) {
                     ext = "json";
-                } else if (ct.contains("xml")) {
+                } else if ((ct.contains("/xml") || ct.contains("+xml") || ct.equals("text/xml")) && !ct.contains("openxmlformats")) {
                     ext = "xml";
                 } else if (ct.contains("html")) {
                     ext = "html";
@@ -13232,7 +13260,7 @@ public class MainController implements Initializable {
             }
             fileChooser.setInitialFileName("response." + ext);
             fileChooser.getExtensionFilters().addAll(
-                    new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file", "*." + ext),
+                    new FileChooser.ExtensionFilter(ext.toUpperCase(Locale.ROOT) + " file (*." + ext + ")", "*." + ext),
                     new FileChooser.ExtensionFilter("All Files", "*.*"));
 
             File file = fileChooser.showSaveDialog(Main.getPrimaryStage());
@@ -13833,6 +13861,16 @@ public class MainController implements Initializable {
                 || (fileName != null && fileName.toLowerCase(Locale.ROOT).endsWith(".pdf"));
     }
 
+    private boolean isExcelResponse(ApiResponse apiResponse) {
+        if (apiResponse == null) return false;
+        String contentType = apiResponse.getContentType();
+        String fileName = apiResponse.getFileName();
+        return (contentType != null && (contentType.toLowerCase(Locale.ROOT).contains("spreadsheet")
+                || contentType.toLowerCase(Locale.ROOT).contains("excel")
+                || contentType.toLowerCase(Locale.ROOT).contains("openxmlformats-officedocument.spreadsheetml")))
+                || (fileName != null && (fileName.toLowerCase(Locale.ROOT).endsWith(".xlsx") || fileName.toLowerCase(Locale.ROOT).endsWith(".xls")));
+    }
+
     /** Renders every page of a PDF response as an image and shows them in
      * the response's WebView pane — that pane existed already but was
      * never actually wired up to anything, always blank. */
@@ -13965,6 +14003,7 @@ public class MainController implements Initializable {
             // instead — Save Response (the icon button) does the rest.
             responseBodyArea.setEditable(false);
             boolean isPdf = isPdfResponse(apiResponse);
+            boolean isExcel = isExcelResponse(apiResponse);
             String binMsg = "\uD83D\uDCC4  Binary response\n\n"
                     + "Content-Type: " + (apiResponse.getContentType() != null ? apiResponse.getContentType() : "unknown") + "\n"
                     + "Size: " + formatSize(apiResponse.getSizeBytes()) + "\n"
@@ -13972,8 +14011,11 @@ public class MainController implements Initializable {
                     + (isPdf
                     ? "PDF preview is shown on the right. Click the save icon above "
                     + "the response to download the original file."
+                    : (isExcel
+                    ? "Excel spreadsheet received. Click the save icon above "
+                    + "the response to download the original file."
                     : "This isn't text, so it can't be shown here — click the save icon "
-                    + "above the response to download it exactly as the server sent it.");
+                    + "above the response to download it exactly as the server sent it."));
             if (responseFoldManager != null) {
                 responseFoldManager.setFullText(binMsg);
             } else {
@@ -13993,7 +14035,8 @@ public class MainController implements Initializable {
                 String body = apiResponse.getResponse().trim();
                 if (ctype.contains("json") || body.startsWith("{") || body.startsWith("[")) {
                     detectedFormat = "JSON";
-                } else if (ctype.contains("xml") || body.startsWith("<xml") || body.startsWith("<?xml")) {
+                } else if (((ctype.contains("/xml") || ctype.contains("+xml") || ctype.equals("text/xml")) && !ctype.contains("openxmlformats"))
+                        || body.startsWith("<xml") || body.startsWith("<?xml")) {
                     detectedFormat = "XML";
                 } else if (ctype.contains("html") || body.toLowerCase(Locale.ROOT).startsWith("<!doctype html") || body.toLowerCase(Locale.ROOT).startsWith("<html")) {
                     detectedFormat = "HTML";

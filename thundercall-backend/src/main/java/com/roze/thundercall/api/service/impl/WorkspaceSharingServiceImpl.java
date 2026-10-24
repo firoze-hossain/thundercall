@@ -373,7 +373,7 @@ public class WorkspaceSharingServiceImpl implements WorkspaceSharingService {
             // binary content types and Base64-encoding them instead.
             String responseContentType = response.getHeaders().getContentType() != null
                     ? response.getHeaders().getContentType().toString() : null;
-            boolean isBinaryResponse = com.roze.thundercall.api.utils.BinaryResponseHelper.isBinary(responseContentType);
+            boolean isBinaryResponse = com.roze.thundercall.api.utils.BinaryResponseHelper.isBinary(responseContentType, responseBody);
             return com.roze.thundercall.api.dto.ApiResponse.builder()
                     .statusCode(response.getStatusCode().value())
                     .response(isBinaryResponse
