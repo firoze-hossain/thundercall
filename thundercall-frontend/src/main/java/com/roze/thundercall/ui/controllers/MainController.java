@@ -1512,26 +1512,35 @@ public class MainController implements Initializable {
                     } else {
                         Platform.runLater(() -> {
                             Workspace current = WorkspaceManager.getCurrentWorkspace();
-                            boolean currentBelongsToUser = current != null
-                                    && workspaces.stream().anyMatch(w -> Objects.equals(w.getId(), current.getId()));
+                            boolean isShared = WorkspaceManager.isViewingSharedWorkspace();
 
-                            if (!currentBelongsToUser) {
-                                Workspace target = null;
-                                if (currentSession != null && currentSession.getActiveWorkspaceId() != null) {
-                                    Long savedWsId = currentSession.getActiveWorkspaceId();
-                                    target = workspaces.stream()
-                                            .filter(w -> savedWsId.equals(w.getId()))
-                                            .findFirst()
-                                            .orElse(null);
+                            if (isShared && current != null) {
+                                // User was working in a shared workspace restored from session.
+                                // Preserve it and populate the workspace switcher menu.
+                                refreshWorkspacesMenu(workspaces);
+                                updateWorkspaceLabels();
+                            } else {
+                                boolean currentBelongsToUser = current != null
+                                        && workspaces.stream().anyMatch(w -> Objects.equals(w.getId(), current.getId()));
+
+                                if (!currentBelongsToUser) {
+                                    Workspace target = null;
+                                    if (currentSession != null && currentSession.getActiveWorkspaceId() != null) {
+                                        Long savedWsId = currentSession.getActiveWorkspaceId();
+                                        target = workspaces.stream()
+                                                .filter(w -> savedWsId.equals(w.getId()))
+                                                .findFirst()
+                                                .orElse(null);
+                                    }
+                                    if (target == null && !workspaces.isEmpty()) {
+                                        target = workspaces.get(0);
+                                    }
+                                    WorkspaceManager.setCurrentWorkspace(target);
                                 }
-                                if (target == null && !workspaces.isEmpty()) {
-                                    target = workspaces.get(0);
-                                }
-                                WorkspaceManager.setCurrentWorkspace(target);
+                                refreshWorkspacesMenu(workspaces);
+                                updateWorkspaceLabels();
+                                refreshCollectionsTree();
                             }
-                            refreshWorkspacesMenu(workspaces);
-                            updateWorkspaceLabels();
-                            refreshCollectionsTree();
                         });
                         // FIX: the tour reopened on EVERY login (server flag is
                         // only set when the tour is fully finished). Show it
@@ -1587,11 +1596,17 @@ public class MainController implements Initializable {
                 }
                 workspacesMenuBtn.getItems().add(new SeparatorMenuItem());
                 Menu sharedMenu = new Menu("Shared with me");
+                Workspace current = WorkspaceManager.getCurrentWorkspace();
+                boolean isShared = WorkspaceManager.isViewingSharedWorkspace();
+
                 for (WorkspaceAccessResponse access : sharedList) {
                     MenuItem item = new MenuItem(access.getWorkspaceName() + "  (" + access.getRole() + ")");
-                    if (WorkspaceManager.isViewingSharedWorkspace() && WorkspaceManager.getCurrentWorkspace() != null
-                            && Objects.equals(WorkspaceManager.getCurrentWorkspace().getId(), access.getWorkspaceId())) {
+                    if (isShared && current != null
+                            && Objects.equals(current.getId(), access.getWorkspaceId())) {
                         item.setText("✓ " + access.getWorkspaceName() + "  (" + access.getRole() + ")");
+                        // Sync latest role/owner from server in case it was updated
+                        WorkspaceManager.setCurrentSharedWorkspace(current, access.getRole(), access.getWorkspaceOwnerUsername());
+                        updateWorkspaceLabels();
                     }
                     item.setOnAction(e -> switchToSharedWorkspace(access));
                     sharedMenu.getItems().add(item);
@@ -1617,21 +1632,40 @@ public class MainController implements Initializable {
         Workspace asWorkspace = new Workspace();
         asWorkspace.setId(access.getWorkspaceId());
         asWorkspace.setName(access.getWorkspaceName());
-        WorkspaceManager.setCurrentSharedWorkspace(asWorkspace, access.getRole());
+        WorkspaceManager.setCurrentSharedWorkspace(asWorkspace, access.getRole(), access.getWorkspaceOwnerUsername());
         updateWorkspaceLabels();
-        if (workspaceNameLabel != null) {
-            workspaceNameLabel.setText(access.getWorkspaceName() + "  (" + access.getRole()
-                    + " · owner: " + access.getWorkspaceOwnerUsername() + ")");
-        }
         loadCollectionsFromServer();
         loadEnvironments();
+        reloadWorkspacesMenuAsync();
         updateStatus("Now working in \"" + access.getWorkspaceName() + "\" as " + access.getRole());
+        scheduleSessionSave();
+    }
+
+    private void reloadWorkspacesMenuAsync() {
+        new Thread(() -> {
+            List<Workspace> workspaces =
+                    WorkspaceService.getUserWorkspaces().orElse(new ArrayList<>());
+            workspaces.sort(Comparator.comparing(Workspace::getId));
+            Platform.runLater(() -> refreshWorkspacesMenu(workspaces));
+        }).start();
     }
 
     private void updateWorkspaceLabels() {
         Workspace current = WorkspaceManager.getCurrentWorkspace();
         if (workspaceNameLabel != null && current != null) {
-            workspaceNameLabel.setText(current.getName());
+            if (WorkspaceManager.isViewingSharedWorkspace()) {
+                String role = WorkspaceManager.getSharedRole();
+                String owner = WorkspaceManager.getSharedOwnerUsername();
+                if (owner != null && !owner.isBlank()) {
+                    workspaceNameLabel.setText(current.getName() + "  (" + role + " · owner: " + owner + ")");
+                } else if (role != null && !role.isBlank()) {
+                    workspaceNameLabel.setText(current.getName() + "  (" + role + ")");
+                } else {
+                    workspaceNameLabel.setText(current.getName());
+                }
+            } else {
+                workspaceNameLabel.setText(current.getName());
+            }
         }
     }
 
@@ -9740,6 +9774,9 @@ public class MainController implements Initializable {
 
     @FXML
     private void handleExit() {
+        try {
+            saveCurrentSession();
+        } catch (Exception ignored) {}
         Platform.exit();
     }
 
@@ -11981,6 +12018,7 @@ public class MainController implements Initializable {
     private void setupSessionPersistence() {
         sessionSaveDebounce.setOnFinished(e -> saveCurrentSession());
         currentSession = SessionStateManager.loadSession(TokenManager.getUserId());
+        restoreActiveWorkspaceFromSession();
         restoreSessionTabs();
 
         Platform.runLater(() -> {
@@ -11995,6 +12033,35 @@ public class MainController implements Initializable {
                 });
             }
         });
+    }
+
+    private void restoreActiveWorkspaceFromSession() {
+        Long savedWsId = (currentSession != null) ? currentSession.getActiveWorkspaceId() : null;
+        boolean isShared = (currentSession != null && currentSession.isSharedWorkspace());
+        String role = (currentSession != null) ? currentSession.getSharedWorkspaceRole() : null;
+        String name = (currentSession != null) ? currentSession.getSharedWorkspaceName() : null;
+        String owner = (currentSession != null) ? currentSession.getSharedWorkspaceOwnerUsername() : null;
+
+        // Fallback to TokenManager preferences if session file didn't specify
+        if (savedWsId == null) {
+            savedWsId = TokenManager.getSavedActiveWorkspaceId();
+            isShared = TokenManager.isSavedWorkspaceShared();
+            role = TokenManager.getSavedSharedWorkspaceRole();
+            name = TokenManager.getSavedSharedWorkspaceName();
+            owner = TokenManager.getSavedSharedWorkspaceOwner();
+        }
+
+        if (savedWsId != null && savedWsId > 0) {
+            Workspace ws = new Workspace();
+            ws.setId(savedWsId);
+            ws.setName(name != null ? name : "Workspace " + savedWsId);
+            if (isShared) {
+                WorkspaceManager.setCurrentSharedWorkspace(ws, role != null ? role : "VIEWER", owner);
+            } else {
+                WorkspaceManager.setCurrentWorkspace(ws);
+            }
+            updateWorkspaceLabels();
+        }
     }
 
     private void restoreSessionTabs() {
@@ -12094,9 +12161,29 @@ public class MainController implements Initializable {
                 }
             }
 
-            // 5. Active Workspace
+            // 5. Active Workspace & Shared State
             if (WorkspaceManager.getCurrentWorkspace() != null) {
-                session.setActiveWorkspaceId(WorkspaceManager.getCurrentWorkspace().getId());
+                Long wsId = WorkspaceManager.getCurrentWorkspace().getId();
+                session.setActiveWorkspaceId(wsId);
+                boolean isShared = WorkspaceManager.isViewingSharedWorkspace();
+                session.setSharedWorkspace(isShared);
+                if (isShared) {
+                    session.setSharedWorkspaceRole(WorkspaceManager.getSharedRole());
+                    session.setSharedWorkspaceName(WorkspaceManager.getCurrentWorkspace().getName());
+                    session.setSharedWorkspaceOwnerUsername(WorkspaceManager.getSharedOwnerUsername());
+                } else {
+                    session.setSharedWorkspaceRole(null);
+                    session.setSharedWorkspaceName(WorkspaceManager.getCurrentWorkspace().getName());
+                    session.setSharedWorkspaceOwnerUsername(null);
+                }
+
+                TokenManager.saveActiveWorkspace(
+                        wsId,
+                        isShared,
+                        WorkspaceManager.getSharedRole(),
+                        WorkspaceManager.getCurrentWorkspace().getName(),
+                        WorkspaceManager.getSharedOwnerUsername()
+                );
             }
 
             this.currentSession = session;

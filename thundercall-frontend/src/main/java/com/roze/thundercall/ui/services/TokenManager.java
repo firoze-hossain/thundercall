@@ -33,6 +33,12 @@ public class TokenManager {
     private static final String USER_ID_KEY = "user_id";
     private static final String ROLE_KEY = "role";
 
+    private static final String ACTIVE_WORKSPACE_ID_KEY = "active_workspace_id";
+    private static final String IS_SHARED_WORKSPACE_KEY = "is_shared_workspace";
+    private static final String SHARED_WORKSPACE_ROLE_KEY = "shared_workspace_role";
+    private static final String SHARED_WORKSPACE_NAME_KEY = "shared_workspace_name";
+    private static final String SHARED_WORKSPACE_OWNER_KEY = "shared_workspace_owner";
+
     public static final long SESSION_DURATION_MS = 7L * 24L * 60L * 60L * 1000L; // 7 days (604,800,000 ms)
     private static final String SESSION_CREATED_AT_KEY = "session_created_at";
     private static final String SESSION_EXPIRES_AT_KEY = "session_expires_at";
@@ -45,6 +51,7 @@ public class TokenManager {
      */
     public static void startNewSession(AuthResponse response) {
         WorkspaceManager.clear();
+        clearActiveWorkspace();
         storeTokens(response, true);
     }
 
@@ -261,6 +268,7 @@ public class TokenManager {
         ApiClient.markLoggedOut();
         stopSessionMonitor();
         WorkspaceManager.clear();
+        clearActiveWorkspace();
         prefs.remove(TOKEN_KEY);
         prefs.remove(REFRESH_TOKEN_KEY);
         prefs.remove(USERNAME_KEY);
@@ -271,5 +279,60 @@ public class TokenManager {
         prefs.remove(SESSION_EXPIRES_AT_KEY);
         ApiClient.setToken(null);
         ApiClient.setRefreshToken(null);
+    }
+
+    /**
+     * Stores the last active workspace info (including shared role, name, and owner)
+     * so that application restarts return directly to the same workspace context.
+     */
+    public static void saveActiveWorkspace(Long workspaceId, boolean isShared, String role, String name, String ownerUsername) {
+        if (workspaceId != null && workspaceId > 0) {
+            prefs.putLong(ACTIVE_WORKSPACE_ID_KEY, workspaceId);
+            prefs.putBoolean(IS_SHARED_WORKSPACE_KEY, isShared);
+            if (isShared) {
+                if (role != null) prefs.put(SHARED_WORKSPACE_ROLE_KEY, role);
+                else prefs.remove(SHARED_WORKSPACE_ROLE_KEY);
+
+                if (name != null) prefs.put(SHARED_WORKSPACE_NAME_KEY, name);
+                else prefs.remove(SHARED_WORKSPACE_NAME_KEY);
+
+                if (ownerUsername != null) prefs.put(SHARED_WORKSPACE_OWNER_KEY, ownerUsername);
+                else prefs.remove(SHARED_WORKSPACE_OWNER_KEY);
+            } else {
+                prefs.remove(SHARED_WORKSPACE_ROLE_KEY);
+                if (name != null) prefs.put(SHARED_WORKSPACE_NAME_KEY, name);
+                else prefs.remove(SHARED_WORKSPACE_NAME_KEY);
+                prefs.remove(SHARED_WORKSPACE_OWNER_KEY);
+            }
+        }
+    }
+
+    public static Long getSavedActiveWorkspaceId() {
+        long id = prefs.getLong(ACTIVE_WORKSPACE_ID_KEY, -1L);
+        return id == -1L ? null : id;
+    }
+
+    public static boolean isSavedWorkspaceShared() {
+        return prefs.getBoolean(IS_SHARED_WORKSPACE_KEY, false);
+    }
+
+    public static String getSavedSharedWorkspaceRole() {
+        return prefs.get(SHARED_WORKSPACE_ROLE_KEY, null);
+    }
+
+    public static String getSavedSharedWorkspaceName() {
+        return prefs.get(SHARED_WORKSPACE_NAME_KEY, null);
+    }
+
+    public static String getSavedSharedWorkspaceOwner() {
+        return prefs.get(SHARED_WORKSPACE_OWNER_KEY, null);
+    }
+
+    public static void clearActiveWorkspace() {
+        prefs.remove(ACTIVE_WORKSPACE_ID_KEY);
+        prefs.remove(IS_SHARED_WORKSPACE_KEY);
+        prefs.remove(SHARED_WORKSPACE_ROLE_KEY);
+        prefs.remove(SHARED_WORKSPACE_NAME_KEY);
+        prefs.remove(SHARED_WORKSPACE_OWNER_KEY);
     }
 }

@@ -26,4 +26,10 @@ public class SessionData {
     private Set<String> expandedTreeKeys = new HashSet<>();
     private String selectedTreeKey;
     private Long activeWorkspaceId;
+
+    // Shared workspace session persistence
+    private boolean sharedWorkspace;
+    private String sharedWorkspaceRole;
+    private String sharedWorkspaceName;
+    private String sharedWorkspaceOwnerUsername;
 }

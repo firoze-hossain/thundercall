@@ -11,6 +11,7 @@ import com.roze.thundercall.ui.models.Workspace;
 public class WorkspaceManager {
     private static Workspace currentWorkspace;
     private static String sharedRole;
+    private static String sharedOwnerUsername;
 
     public static Workspace getCurrentWorkspace() {
         return currentWorkspace;
@@ -19,13 +20,19 @@ public class WorkspaceManager {
     public static void setCurrentWorkspace(Workspace workspace) {
         currentWorkspace = workspace;
         sharedRole = null; // switching to one of your own workspaces always clears shared context
+        sharedOwnerUsername = null;
     }
 
     /** Use this when switching INTO a workspace shared with you,
      * instead of setCurrentWorkspace(), so the role sticks. */
     public static void setCurrentSharedWorkspace(Workspace workspace, String role) {
+        setCurrentSharedWorkspace(workspace, role, null);
+    }
+
+    public static void setCurrentSharedWorkspace(Workspace workspace, String role, String ownerUsername) {
         currentWorkspace = workspace;
         sharedRole = role;
+        sharedOwnerUsername = ownerUsername;
     }
 
     public static boolean hasWorkspace() {
@@ -43,6 +50,10 @@ public class WorkspaceManager {
         return sharedRole;
     }
 
+    public static String getSharedOwnerUsername() {
+        return sharedOwnerUsername;
+    }
+
     public static boolean canEditCurrentWorkspace() {
         return sharedRole == null || "EDITOR".equals(sharedRole);
     }
@@ -54,5 +65,6 @@ public class WorkspaceManager {
     public static void clear() {
         currentWorkspace = null;
         sharedRole = null;
+        sharedOwnerUsername = null;
     }
 }

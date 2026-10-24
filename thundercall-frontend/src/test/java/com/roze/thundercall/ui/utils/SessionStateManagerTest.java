@@ -120,4 +120,34 @@ class SessionStateManagerTest {
         assertNotNull(session);
         assertNotNull(session.getTabs());
     }
+
+    @Test
+    void testSharedWorkspaceSessionPersistenceRoundTrip() {
+        Long testUserId = 888888L;
+
+        SessionData session = SessionData.builder()
+                .activeTabIndex(0)
+                .activeWorkspaceId(150L)
+                .sharedWorkspace(true)
+                .sharedWorkspaceRole("EDITOR")
+                .sharedWorkspaceName("CHL ERP Workspace")
+                .sharedWorkspaceOwnerUsername("firoze")
+                .expandedTreeKeys(Set.of("c:10", "f:20"))
+                .selectedTreeKey("r:300")
+                .build();
+
+        SessionStateManager.saveSession(testUserId, session);
+
+        SessionData restored = SessionStateManager.loadSession(testUserId);
+
+        assertNotNull(restored);
+        assertEquals(150L, restored.getActiveWorkspaceId());
+        assertTrue(restored.isSharedWorkspace());
+        assertEquals("EDITOR", restored.getSharedWorkspaceRole());
+        assertEquals("CHL ERP Workspace", restored.getSharedWorkspaceName());
+        assertEquals("firoze", restored.getSharedWorkspaceOwnerUsername());
+        assertTrue(restored.getExpandedTreeKeys().contains("c:10"));
+        assertTrue(restored.getExpandedTreeKeys().contains("f:20"));
+        assertEquals("r:300", restored.getSelectedTreeKey());
+    }
 }
