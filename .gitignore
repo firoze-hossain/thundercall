@@ -24,6 +24,7 @@ hs_err_pid*
 
 # Maven target directory
 target/
+.mvn/
 
 # Stray build-output folder some IDE run configs create when a Maven
 # property like ${project.build.directory} gets used literally in a
