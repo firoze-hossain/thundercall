@@ -80,6 +80,77 @@ class AppUpdateServiceTest {
     }
 
     @Test
+    void testUpdatePackagePreferredOverFullInstaller() throws Exception {
+        String json = """
+        {
+          "tag_name": "v1.0.1",
+          "name": "ThunderCall 1.0.1",
+          "body": "In-place seamless updates",
+          "published_at": "2026-10-31T10:00:00Z",
+          "html_url": "https://github.com/firoze-hossain/thundercall/releases/tag/v1.0.1",
+          "assets": [
+            {
+              "name": "thundercall_1.0.1_amd64.deb",
+              "size": 84000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/thundercall_1.0.1_amd64.deb"
+            },
+            {
+              "name": "thundercall-1.0.1-linux-update.tar.gz",
+              "size": 75000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/thundercall-1.0.1-linux-update.tar.gz"
+            },
+            {
+              "name": "ThunderCall-Setup-1.0.1.exe",
+              "size": 89000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/ThunderCall-Setup-1.0.1.exe"
+            },
+            {
+              "name": "ThunderCall-1.0.1-windows-update.zip",
+              "size": 78000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/ThunderCall-1.0.1-windows-update.zip"
+            },
+            {
+              "name": "ThunderCall-1.0.1.dmg",
+              "size": 95000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/ThunderCall-1.0.1.dmg"
+            },
+            {
+              "name": "ThunderCall-1.0.1.pkg",
+              "size": 93000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/ThunderCall-1.0.1.pkg"
+            },
+            {
+              "name": "ThunderCall-1.0.1-macos-update.tar.gz",
+              "size": 80000000,
+              "browser_download_url": "https://github.com/firoze-hossain/thundercall/releases/download/v1.0.1/ThunderCall-1.0.1-macos-update.tar.gz"
+            }
+          ]
+        }
+        """;
+
+        JsonNode releaseNode = mapper.readTree(json);
+        AppUpdate update = AppUpdateService.parseGitHubRelease(releaseNode, "1.0.0", "Stable", "firoze-hossain/thundercall");
+
+        assertNotNull(update);
+        assertTrue(update.available());
+        assertNotNull(update.release);
+
+        String platform = AppUpdateService.platform();
+        if ("Linux".equals(platform)) {
+            assertEquals("thundercall-1.0.1-linux-update.tar.gz", update.release.effectiveFileName());
+        } else if ("Windows".equals(platform)) {
+            assertEquals("ThunderCall-1.0.1-windows-update.zip", update.release.effectiveFileName());
+        } else if ("macOS".equals(platform)) {
+            assertEquals("ThunderCall-1.0.1-macos-update.tar.gz", update.release.effectiveFileName());
+        }
+    }
+
+    @Test
+    void testGetInstallationDirectory() {
+        assertNotNull(AppUpdateService.getInstallationDirectory());
+    }
+
+    @Test
     void testWebsiteFallbackWhenOffline() {
         // When checking against a non-existent or down endpoint, it must gracefully
         // fall back to GitHub without unhandled exceptions.
