@@ -162,4 +162,26 @@ class AppUpdateServiceTest {
         assertEquals("thundercall", update.project);
         assertEquals(AppUpdateService.currentVersion(), update.currentVersion());
     }
+
+    @Test
+    void testScoreAssetPlatformExclusion() {
+        // macOS runner must NEVER pick Linux or Windows packages
+        assertEquals(0, AppUpdateService.scoreAsset("thundercall-1.0.1-linux-update.tar.gz", "macOS", "x64"));
+        assertEquals(0, AppUpdateService.scoreAsset("thundercall_1.0.1_amd64.deb", "macOS", "x64"));
+        assertEquals(0, AppUpdateService.scoreAsset("ThunderCall-1.0.1-windows-update.zip", "macOS", "x64"));
+        assertEquals(0, AppUpdateService.scoreAsset("ThunderCall-Setup-1.0.1.exe", "macOS", "x64"));
+        assertTrue(AppUpdateService.scoreAsset("ThunderCall-1.0.1-macos-update.tar.gz", "macOS", "x64") >= 2000);
+        assertTrue(AppUpdateService.scoreAsset("ThunderCall-1.0.1.dmg", "macOS", "x64") > 0);
+
+        // Linux runner must NEVER pick macOS or Windows packages
+        assertEquals(0, AppUpdateService.scoreAsset("ThunderCall-1.0.1-macos-update.tar.gz", "Linux", "x64"));
+        assertEquals(0, AppUpdateService.scoreAsset("ThunderCall-1.0.1-windows-update.zip", "Linux", "x64"));
+        assertEquals(0, AppUpdateService.scoreAsset("ThunderCall-Setup-1.0.1.exe", "Linux", "x64"));
+        assertTrue(AppUpdateService.scoreAsset("thundercall-1.0.1-linux-update.tar.gz", "Linux", "x64") >= 2000);
+
+        // Windows runner must NEVER pick Linux or macOS packages
+        assertEquals(0, AppUpdateService.scoreAsset("thundercall-1.0.1-linux-update.tar.gz", "Windows", "x64"));
+        assertEquals(0, AppUpdateService.scoreAsset("ThunderCall-1.0.1-macos-update.tar.gz", "Windows", "x64"));
+        assertTrue(AppUpdateService.scoreAsset("ThunderCall-1.0.1-windows-update.zip", "Windows", "x64") >= 2000);
+    }
 }
